@@ -9,7 +9,7 @@ from history import get_recently_published, add_published, cleanup_history
 # Очищаем историю старше суток
 cleanup_history()
 
-symbols = get_trending_symbols(50)   # увеличим до 50 для большего выбора
+symbols = get_trending_symbols(100)   # увеличим до 50 для большего выбора
 print("TRENDING:", symbols)
 print("BOT STARTED")
 
