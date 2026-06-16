@@ -4,18 +4,13 @@ import ta
 
 def get_symbol_data(symbol):
 
-    url = f"https://fapi.binance.com/fapi/v1/klines?symbol={symbol}&interval=15m&limit=200"
+    url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval=15m&limit=200"
 
     r = requests.get(url)
     data = r.json()
 
-    # ❗ ПРОВЕРКА ОШИБОК BINANCE
     if not isinstance(data, list):
-        print(f"[SKIP] {symbol} API error:", data)
-        return None
-
-    if len(data) == 0:
-        print(f"[SKIP] {symbol} empty data")
+        print("[SKIP]", symbol, data)
         return None
 
     df = pd.DataFrame(data, columns=[
@@ -27,7 +22,6 @@ def get_symbol_data(symbol):
     low = df["l"].astype(float)
 
     rsi = ta.momentum.RSIIndicator(close).rsi().iloc[-1]
-
     ema20 = close.ewm(span=20).mean().iloc[-1]
     ema50 = close.ewm(span=50).mean().iloc[-1]
 
