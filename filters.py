@@ -1,4 +1,4 @@
-def filter_signal(d):
+def score_signal(d):
 
     score = 0
 
@@ -10,15 +10,11 @@ def filter_signal(d):
     if abs(d["change"]) > 2:
         score += 2
 
-    # активность
-    if d["volume"] > 100000:
-        score += 1
-
-    # не перегрето
+    # RSI зона интереса
     if 45 < d["rsi"] < 75:
         score += 2
 
-    # слишком шумно — выкидываем
+    # перегрев
     if d["rsi"] > 85:
         return 0
 
