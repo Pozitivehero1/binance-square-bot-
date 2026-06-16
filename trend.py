@@ -1,29 +1,46 @@
 import requests
 
-def get_trending_symbols(limit=50):
-    """
-    Получает список самых активных монет (USDT-пары).
-    Сначала пробует Binance, при ошибке использует Bybit.
-    """
+# Глобальный кэш для exchangeInfo
+_EXCHANGE_INFO = None
+
+def get_base_asset(symbol):
+    """Возвращает официальный базовый актив для символа (например, 'BTC' для 'BTCUSDT')."""
+    global _EXCHANGE_INFO
+    if _EXCHANGE_INFO is None:
+        try:
+            r = requests.get("https://api.binance.com/api/v3/exchangeInfo", timeout=30)
+            r.raise_for_status()
+            data = r.json()
+            # Строим словарь symbol -> baseAsset
+            _EXCHANGE_INFO = {
+                s["symbol"]: s["baseAsset"]
+                for s in data.get("symbols", [])
+                if s.get("status") == "TRADING" and s.get("quoteAsset") == "USDT"
+            }
+        except Exception as e:
+            print(f"[WARN] Не удалось загрузить exchangeInfo: {e}")
+            _EXCHANGE_INFO = {}
+
+    # Возвращаем baseAsset, если есть, иначе удаляем USDT
+    return _EXCHANGE_INFO.get(symbol, symbol.replace("USDT", ""))
+
+def get_trending_symbols(limit=100):
+    """Получает топ-20 самых активных USDT-пар."""
     try:
-        return _get_trending_binance(limit)
+        r = requests.get(
+            "https://api.binance.com/api/v3/ticker/24hr",
+            headers={"User-Agent": "Mozilla/5.0"},
+            timeout=30
+        )
+        r.raise_for_status()
+        data = r.json()
     except Exception as e:
-        print(f"[WARN] Binance failed: {e}, switching to Bybit...")
-        return _get_trending_bybit(limit)
-
-
-def _get_trending_binance(limit):
-    headers = {"User-Agent": "Mozilla/5.0"}
-    r = requests.get(
-        "https://data-api.binance.vision/api/v3/ticker/24hr",
-        headers=headers,
-        timeout=30
-    )
-    r.raise_for_status()
-    data = r.json()
+        print(f"[ERROR] Не удалось получить тикеры: {e}")
+        return []
 
     if not isinstance(data, list):
-        raise ValueError("Unexpected response format from Binance")
+        print(f"[ERROR] Неожиданный формат ответа: {data}")
+        return []
 
     pairs = []
     for item in data:
@@ -35,42 +52,11 @@ def _get_trending_binance(limit):
         try:
             volume = float(item.get("quoteVolume", 0))
             change = float(item.get("priceChangePercent", 0))
-            pairs.append({"symbol": symbol, "volume": volume, "change": change})
-        except (TypeError, ValueError):
-            continue
-
-    pairs.sort(key=lambda x: (abs(x["change"]), x["volume"]), reverse=True)
-    return [x["symbol"] for x in pairs[:limit]]
-
-
-def _get_trending_bybit(limit):
-    headers = {"User-Agent": "Mozilla/5.0"}
-    r = requests.get(
-        "https://api.bybit.com/v5/market/tickers?category=linear",
-        headers=headers,
-        timeout=30
-    )
-    r.raise_for_status()
-    data = r.json()
-
-    if data.get("retCode") != 0:
-        raise ValueError(f"Bybit error: {data.get('retMsg')}")
-
-    tickers = data.get("result", {}).get("list", [])
-    pairs = []
-
-    for item in tickers:
-        if not isinstance(item, dict):
-            continue
-        symbol = item.get("symbol")
-        if not symbol or not symbol.endswith("USDT"):
-            continue
-        try:
-            # turnover24h – объём в USDT за сутки
-            volume = float(item.get("turnover24h", 0))
-            # price24hPcnt – изменение цены в долях, переводим в проценты
-            change = float(item.get("price24hPcnt", 0)) * 100
-            pairs.append({"symbol": symbol, "volume": volume, "change": change})
+            pairs.append({
+                "symbol": symbol,
+                "volume": volume,
+                "change": change
+            })
         except (TypeError, ValueError):
             continue
 
