@@ -4,12 +4,12 @@ from filters import score_signal
 from writer import write_post
 from publisher import publish
 from trend import get_trending_symbols, get_base_asset
-from history import get_recently_published, add_published, cleanup_history  # если используете
+from history import get_recently_published, add_published, cleanup_history
 
-# Очистка истории (если есть)
+# Очищаем историю старше суток
 cleanup_history()
 
-symbols = get_trending_symbols(100)  # можно увеличить до 50
+symbols = get_trending_symbols(50)   # увеличим до 50 для большего выбора
 print("TRENDING:", symbols)
 print("BOT STARTED")
 
@@ -37,17 +37,16 @@ if not candidates:
     print("No good setups found")
     exit()
 
-# Исключаем недавно опубликованные (если есть история)
+# Исключаем монеты, опубликованные за последние 60 минут
 recent = get_recently_published(minutes=60)
 filtered = [c for c in candidates if c["symbol"] not in recent]
-if filtered:
-    candidates = filtered
-else:
+
+if not filtered:
     print("All candidates were published recently. Skipping.")
     exit()
 
-candidates.sort(key=lambda x: x["score"], reverse=True)
-best = candidates[0]
+filtered.sort(key=lambda x: x["score"], reverse=True)
+best = filtered[0]
 
 print("Generating post for", best["symbol"])
 post = write_post(best)
@@ -55,7 +54,7 @@ print("POST:", post)
 
 response = publish(post)
 if response.status_code == 200:
-    add_published(best["symbol"])  # если используете историю
+    add_published(best["symbol"])
     print("DONE")
 else:
     print("Publication failed, not saving symbol.")
