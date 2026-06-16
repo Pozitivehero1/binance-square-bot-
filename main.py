@@ -4,16 +4,12 @@ from filters import score_signal
 from writer import write_post
 from publisher import publish
 
-symbols = [
-    "BTCUSDT",
-    "ETHUSDT",
-    "SOLUSDT",
-    "BNBUSDT",
-    "XRPUSDT",
-    "DOGEUSDT",
-    "PEPEUSDT",
-    "WIFUSDT"
-]
+from trend import get_trending_symbols
+
+symbols = get_trending_symbols(20)
+
+print("TRENDING:")
+print(symbols)
 
 print("BOT STARTED")
 
