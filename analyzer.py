@@ -5,15 +5,26 @@ import ta
 def get_symbol_data(symbol):
 
     url = f"https://fapi.binance.com/fapi/v1/klines?symbol={symbol}&interval=15m&limit=200"
-    data = requests.get(url).json()
 
-    df = pd.DataFrame(data)
-    df.columns = ["t","o","h","l","c","v","ct","q","n","tb","tq","i"]
+    r = requests.get(url)
+    data = r.json()
+
+    # ❗ ПРОВЕРКА ОШИБОК BINANCE
+    if not isinstance(data, list):
+        print(f"[SKIP] {symbol} API error:", data)
+        return None
+
+    if len(data) == 0:
+        print(f"[SKIP] {symbol} empty data")
+        return None
+
+    df = pd.DataFrame(data, columns=[
+        "t","o","h","l","c","v","ct","q","n","tb","tq","i"
+    ])
 
     close = df["c"].astype(float)
     high = df["h"].astype(float)
     low = df["l"].astype(float)
-    volume = df["v"].astype(float)
 
     rsi = ta.momentum.RSIIndicator(close).rsi().iloc[-1]
 
@@ -26,11 +37,10 @@ def get_symbol_data(symbol):
 
     return {
         "symbol": symbol,
-        "price": close.iloc[-1],
-        "rsi": rsi,
-        "ema20": ema20,
-        "ema50": ema50,
-        "change": change,
-        "atr": atr,
-        "volume": volume.mean()
+        "price": float(close.iloc[-1]),
+        "rsi": float(rsi),
+        "ema20": float(ema20),
+        "ema50": float(ema50),
+        "change": float(change),
+        "atr": float(atr)
     }
