@@ -6,10 +6,10 @@ from publisher import publish
 from trend import get_trending_symbols, get_base_asset
 from history import get_recently_published, add_published, cleanup_history
 
-# Очищаем историю старше суток
+# Очищаем старые записи (старше 7 дней)
 cleanup_history()
 
-symbols = get_trending_symbols(100)   # увеличим до 50 для большего выбора
+symbols = get_trending_symbols(100)  # берём 50 монет для большего выбора
 print("TRENDING:", symbols)
 print("BOT STARTED")
 
@@ -24,7 +24,7 @@ for s in symbols:
 
     d = build_indicators(raw)
     d["symbol"] = s
-    d["basic"] = get_base_asset(s)          # официальный короткий тикер
+    d["basic"] = get_base_asset(s)   # официальный короткий тикер
     score = score_signal(d)
     print(f"{s} score = {score}")
 
@@ -37,14 +37,17 @@ if not candidates:
     print("No good setups found")
     exit()
 
-# Исключаем монеты, опубликованные за последние 60 минут
-recent = get_recently_published(minutes=60)
+# Исключаем монеты, опубликованные за последние 3 часа
+recent = get_recently_published(minutes=180)
+print(f"Recently published (last 3h): {recent}")
+
 filtered = [c for c in candidates if c["symbol"] not in recent]
 
 if not filtered:
     print("All candidates were published recently. Skipping.")
     exit()
 
+# Сортируем по скору (от большего к меньшему)
 filtered.sort(key=lambda x: x["score"], reverse=True)
 best = filtered[0]
 
