@@ -4,7 +4,7 @@ import pandas as pd
 # -------- BINANCE SPOT --------
 def binance_spot(symbol):
     try:
-        url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval=15m&limit=200"
+        url = f"https://data-api.binance.vision/api/v3/klines?symbol={symbol}&interval=15m&limit=200"
         r = requests.get(url, timeout=10)
         data = r.json()
 
