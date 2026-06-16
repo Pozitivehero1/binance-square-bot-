@@ -1,6 +1,6 @@
 import requests
 
-def get_trending_symbols(limit=20):
+def get_trending_symbols(limit=50):
     """
     Получает список самых активных монет (USDT-пары).
     Сначала пробует Binance, при ошибке использует Bybit.
