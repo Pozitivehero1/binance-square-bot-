@@ -15,7 +15,7 @@ def get_trending_symbols(limit=20):
 def _get_trending_binance(limit):
     headers = {"User-Agent": "Mozilla/5.0"}
     r = requests.get(
-        "https://api.binance.com/api/v3/ticker/24hr",
+        "https://data-api.binance.vision/api/v3/ticker/24hr",
         headers=headers,
         timeout=30
     )
