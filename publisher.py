@@ -1,25 +1,28 @@
 import requests
 import os
 
-KEY = os.getenv("SQUARE_API")
-
 def publish(text):
-
     url = "https://www.binance.com/bapi/composite/v1/public/pgc/openApi/content/add"
+
+    headers = {
+        "X-Square-OpenAPI-Key": os.getenv("SQUARE_API"),
+        "clienttype": "binanceSkill",
+        "Content-Type": "application/json"
+    }
 
     payload = {
         "bodyTextOnly": text
     }
 
-    headers = {
-        "X-Square-OpenAPI-Key": KEY,
-        "clienttype": "binanceSkill",
-        "Content-Type": "application/json"
-    }
-
-    r = requests.post(url, headers=headers, json=payload)
+    r = requests.post(
+        url,
+        headers=headers,
+        json=payload,
+        timeout=30
+    )
 
     print("STATUS:", r.status_code)
-    print("RESPONSE:", r.text)
+    print("RESPONSE:")
+    print(r.text)
 
-    return r.text
+    return r
