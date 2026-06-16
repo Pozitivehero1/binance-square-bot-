@@ -10,20 +10,19 @@ def get_trending_symbols(limit=20):
             headers=headers,
             timeout=30
         )
-        r.raise_for_status()  # raise if status != 200
+        r.raise_for_status()          # вызовет исключение при статусе != 200
         data = r.json()
     except Exception as e:
-        print(f"Error fetching tickers: {e}")
+        print(f"[ERROR] Не удалось получить тикеры: {e}")
         return []
 
-    # Ensure data is a list of tickers
+    # Если ответ не список — выводим для диагностики и возвращаем пустой список
     if not isinstance(data, list):
-        print(f"Unexpected response format: {data}")
+        print(f"[ERROR] Неожиданный формат ответа: {data}")
         return []
 
     pairs = []
     for item in data:
-        # item should be a dict; skip if not
         if not isinstance(item, dict):
             continue
         symbol = item.get("symbol")
@@ -40,8 +39,5 @@ def get_trending_symbols(limit=20):
         except (TypeError, ValueError):
             continue
 
-    pairs.sort(
-        key=lambda x: (abs(x["change"]), x["volume"]),
-        reverse=True
-    )
+    pairs.sort(key=lambda x: (abs(x["change"]), x["volume"]), reverse=True)
     return [x["symbol"] for x in pairs[:limit]]
