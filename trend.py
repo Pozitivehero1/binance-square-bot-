@@ -1,17 +1,23 @@
 import requests
 
+# Базовый URL зеркала Binance (доступно из любого региона)
+BINANCE_API = "https://data-api.binance.vision"
+
 # Глобальный кэш для exchangeInfo
 _EXCHANGE_INFO = None
 
 def get_base_asset(symbol):
-    """Возвращает официальный базовый актив для символа (например, 'BTC' для 'BTCUSDT')."""
+    """
+    Возвращает официальный базовый актив (короткий тикер) для символа.
+    Например: 'BTCUSDT' → 'BTC', 'PHBUSDT' → 'PHB'.
+    """
     global _EXCHANGE_INFO
     if _EXCHANGE_INFO is None:
         try:
-            r = requests.get("https://api.binance.com/api/v3/exchangeInfo", timeout=30)
+            url = f"{BINANCE_API}/api/v3/exchangeInfo"
+            r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
             r.raise_for_status()
             data = r.json()
-            # Строим словарь symbol -> baseAsset
             _EXCHANGE_INFO = {
                 s["symbol"]: s["baseAsset"]
                 for s in data.get("symbols", [])
@@ -21,17 +27,13 @@ def get_base_asset(symbol):
             print(f"[WARN] Не удалось загрузить exchangeInfo: {e}")
             _EXCHANGE_INFO = {}
 
-    # Возвращаем baseAsset, если есть, иначе удаляем USDT
     return _EXCHANGE_INFO.get(symbol, symbol.replace("USDT", ""))
 
 def get_trending_symbols(limit=100):
-    """Получает топ-20 самых активных USDT-пар."""
+    """Возвращает топ-N USDT-пар по объёму и изменению за 24ч."""
     try:
-        r = requests.get(
-            "https://api.binance.com/api/v3/ticker/24hr",
-            headers={"User-Agent": "Mozilla/5.0"},
-            timeout=30
-        )
+        url = f"{BINANCE_API}/api/v3/ticker/24hr"
+        r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
         r.raise_for_status()
         data = r.json()
     except Exception as e:
@@ -52,11 +54,7 @@ def get_trending_symbols(limit=100):
         try:
             volume = float(item.get("quoteVolume", 0))
             change = float(item.get("priceChangePercent", 0))
-            pairs.append({
-                "symbol": symbol,
-                "volume": volume,
-                "change": change
-            })
+            pairs.append({"symbol": symbol, "volume": volume, "change": change})
         except (TypeError, ValueError):
             continue
 
