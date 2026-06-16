@@ -11,7 +11,7 @@ import os
 # Очищаем историю старше суток (чтобы не раздувалась)
 cleanup_history()
 
-symbols = get_trending_symbols(20)
+symbols = get_trending_symbols(50)
 print("TRENDING:")
 print(symbols)
 
