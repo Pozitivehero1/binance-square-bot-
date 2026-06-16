@@ -1,6 +1,8 @@
 name: Binance Bot
 
 on:
+  schedule:
+
   workflow_dispatch:
 
 jobs:
@@ -14,13 +16,13 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Cache last published symbol
+      - name: Cache published history
         uses: actions/cache@v3
         with:
-          path: last_published.txt
-          key: last-published-${{ github.run_id }}
+          path: published_history.json
+          key: published-history-${{ github.run_id }}
           restore-keys: |
-            last-published-
+            published-history-
 
       - run: pip install -r requirements.txt
 
