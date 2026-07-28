@@ -19,6 +19,7 @@ class PostQualityEvaluator:
     MIN_LENGTH = 320
     MAX_LENGTH = 1800
 
+
     UNSUPPORTED_CLAIMS = (
         "90% точности",
         "100% точности",
@@ -48,23 +49,39 @@ class PostQualityEvaluator:
         levels: Optional[Dict[str, float]] = None,
     ) -> QualityReport:
 
+
         components = {
-            "completeness": self._completeness(
-                text,
-                basic,
-                direction,
-                levels
-            ),
-            "readability": self._readability(text),
-            "structure": self._structure(text),
-            "engagement": self._engagement(text),
-            "credibility": self._credibility(text),
-            "spam_control": self._spam_control(text),
-            "length": self._length_score(text),
+
+            "completeness":
+                self._completeness(
+                    text,
+                    basic,
+                    direction,
+                    levels
+                ),
+
+            "readability":
+                self._readability(text),
+
+            "structure":
+                self._structure(text),
+
+            "engagement":
+                self._engagement(text),
+
+            "credibility":
+                self._credibility(text),
+
+            "spam_control":
+                self._spam_control(text),
+
+            "length":
+                self._length_score(text),
         }
 
 
         weights = {
+
             "completeness": 0.28,
             "readability": 0.14,
             "structure": 0.18,
@@ -72,12 +89,13 @@ class PostQualityEvaluator:
             "credibility": 0.16,
             "spam_control": 0.07,
             "length": 0.05,
+
         }
 
 
         score = sum(
-            components[k] * weights[k]
-            for k in components
+            components[key] * weights[key]
+            for key in components
         )
 
 
@@ -97,6 +115,7 @@ class PostQualityEvaluator:
         )
 
 
+
     def validate(
         self,
         text: str,
@@ -106,31 +125,84 @@ class PostQualityEvaluator:
         levels=None,
     ):
 
+
         reasons = []
 
         lowered = text.lower()
 
 
-        labels = [
-            ("вход", "entry"),
-            ("стоп", "stop"),
-            ("tp1",),
-            ("tp2",),
-            ("tp3",),
-            ("r/r", "rr"),
+
+        # обязательные блоки
+        required_groups = [
+
+            (
+                "entry",
+                [
+                    "вход",
+                    "entry"
+                ]
+            ),
+
+            (
+                "tp1",
+                [
+                    "tp1",
+                    "цель 1",
+                    "target 1"
+                ]
+            ),
+
+            (
+                "tp2",
+                [
+                    "tp2",
+                    "цель 2",
+                    "target 2"
+                ]
+            ),
+
+            (
+                "tp3",
+                [
+                    "tp3",
+                    "цель 3",
+                    "target 3"
+                ]
+            ),
+
+            (
+                "stop",
+                [
+                    "стоп",
+                    "stop"
+                ]
+            ),
+
+            (
+                "risk_reward",
+                [
+                    "r/r",
+                    "rr",
+                    "risk/reward",
+                    "риск/прибыль"
+                ]
+            ),
         ]
 
 
-        for group in labels:
+        for name, variants in required_groups:
 
             if not any(
-                word in lowered
-                for word in group
+                item in lowered
+                for item in variants
             ):
                 reasons.append(
-                    f"missing required label: {group[0]}"
+                    f"missing {name}"
                 )
 
+
+
+        # дисклеймер
 
         if (
             "не финансовая рекомендация"
@@ -144,15 +216,22 @@ class PostQualityEvaluator:
             )
 
 
+
+        # вопрос аудитории
+
         if "?" not in text:
+
             reasons.append(
                 "missing audience question"
             )
 
 
+
+        # тикер
+
         if basic:
 
-            ticker = f"${basic.upper()}"
+            ticker = "$" + basic.upper()
 
             if ticker not in text.upper():
 
@@ -161,67 +240,116 @@ class PostQualityEvaluator:
                 )
 
 
+
+        # направление
+
         if direction:
 
-            direction_ok = [
-                direction.upper(),
-                "ЛОНГ" if direction.lower()=="long" else "",
-                "ШОРТ" if direction.lower()=="short" else "",
-            ]
+
+            variants = []
+
+            if direction.lower()=="long":
+
+                variants = [
+                    "LONG",
+                    "ЛОНГ",
+                    "ПОКУПКА"
+                ]
+
+
+            elif direction.lower()=="short":
+
+                variants = [
+                    "SHORT",
+                    "ШОРТ",
+                    "ПРОДАЖА"
+                ]
+
+
 
             if not any(
                 x in text.upper()
-                for x in direction_ok
-                if x
+                for x in variants
             ):
+
                 reasons.append(
                     "missing direction"
                 )
 
+
+
+        # уровни
 
         if levels:
 
             from writer import _fmt_price
 
 
-            values = {
-                "entry": levels["entry"],
-                "tp1": levels["tp1"],
-                "tp2": levels["tp2"],
-                "tp3": levels["tp3"],
-                "stop": levels["stop"],
-            }
+            for key in (
+                "entry",
+                "tp1",
+                "tp2",
+                "tp3",
+                "stop"
+            ):
 
+                if key in levels:
 
-            for name,value in values.items():
-
-                formatted = _fmt_price(value)
-
-                if formatted not in text:
-                    reasons.append(
-                        f"missing exact {name}"
+                    value = _fmt_price(
+                        levels[key]
                     )
 
 
+                    if value not in text:
+
+                        reasons.append(
+                            f"missing {key} value {value}"
+                        )
+
+
+
+            rr = (
+                f"{levels.get('risk_reward',0):.2f}"
+            )
+
+
+            if (
+                rr not in text
+                and
+                "r/r" not in lowered
+                and
+                "rr" not in lowered
+            ):
+
+                reasons.append(
+                    "missing risk reward value"
+                )
+
+
+
         if len(text) < self.MIN_LENGTH:
+
             reasons.append(
                 f"post too short {len(text)}"
             )
 
 
         if len(text) > self.MAX_LENGTH:
+
             reasons.append(
                 "post too long"
             )
 
 
-        if any(
-            x in lowered
-            for x in self.UNSUPPORTED_CLAIMS
-        ):
-            reasons.append(
-                "unsupported promotional claim"
-            )
+
+        for claim in self.UNSUPPORTED_CLAIMS:
+
+            if claim in lowered:
+
+                reasons.append(
+                    "unsupported claim"
+                )
+
 
 
         hashtags = re.findall(
@@ -229,13 +357,18 @@ class PostQualityEvaluator:
             text
         )
 
+
         if len(hashtags)>5:
+
             reasons.append(
                 "too many hashtags"
             )
 
 
-        return not reasons, reasons
+        return (
+            len(reasons)==0,
+            reasons
+        )
 
 
 
@@ -247,22 +380,19 @@ class PostQualityEvaluator:
         levels
     ):
 
-        ok,_ = self.validate(
+        valid,_ = self.validate(
             text,
             basic=basic,
             direction=direction,
             levels=levels
         )
 
-        return 100 if ok else 70
+        return 100 if valid else 75
 
 
 
     @staticmethod
     def _readability(text):
-
-        if not text:
-            return 0
 
         return 90
 
@@ -273,16 +403,18 @@ class PostQualityEvaluator:
 
         score=0
 
+        low=text.lower()
+
         if "\n" in text:
             score+=25
 
-        if "сценарий" in text.lower():
+        if "сценарий" in low:
             score+=25
 
-        if "план" in text.lower():
+        if "план" in low:
             score+=25
 
-        if "отмена" in text.lower():
+        if "отмена" in low:
             score+=25
 
         return min(score,100)
@@ -310,9 +442,10 @@ class PostQualityEvaluator:
 
         low=text.lower()
 
-        for word in self.UNSUPPORTED_CLAIMS:
+        for claim in self.UNSUPPORTED_CLAIMS:
 
-            if word in low:
+            if claim in low:
+
                 score-=30
 
 
@@ -336,9 +469,13 @@ class PostQualityEvaluator:
         )
 
 
+
     def _length_score(self,text):
 
-        if 500 <= len(text)<=1400:
+        size=len(text)
+
+        if 500 <= size <= 1400:
+
             return 100
 
         return 75
