@@ -38,9 +38,9 @@ class SignalFilter:
     MIN_ADX = float(os.getenv("MIN_ADX", "18"))
     MIN_ATR_PCT = float(os.getenv("MIN_ATR_PCT", "0.25"))
     MAX_ATR_PCT = float(os.getenv("MAX_ATR_PCT", "7.0"))
-    MIN_RR = float(os.getenv("MIN_RR", "1.5"))
-    MIN_MTF_ALIGN = float(os.getenv("MIN_MTF_ALIGN", "0.5"))
-    MIN_VOLUME_REL = float(os.getenv("MIN_VOLUME_REL", "0.75"))
+    MIN_RR = float(os.getenv("MIN_RR", "1.25"))
+    MIN_MTF_ALIGN = float(os.getenv("MIN_MTF_ALIGN", "0.34"))
+    MIN_VOLUME_REL = float(os.getenv("MIN_VOLUME_REL", "0.65"))
 
     def __init__(self, min_score: Optional[float] = None):
         self.min_score = float(min_score) if min_score is not None else self.MIN_SCORE
