@@ -92,7 +92,14 @@ class PostMemory:
                 except OSError:
                     pass
 
-    def add_post(self, symbol: str, text: str) -> None:
+    def add_post(
+        self,
+        symbol: str,
+        text: str,
+        *,
+        post_style: str = "",
+        signal_type: str = "",
+    ) -> None:
         lines = [line.strip() for line in text.splitlines() if line.strip()]
         title = lines[0] if lines else ""
         content_lines = [line for line in lines if not line.startswith("#")]
@@ -111,6 +118,8 @@ class PostMemory:
                 "title_signature": self.normalize_text(title),
                 "cta": cta,
                 "text_signature": self.normalize_text(text),
+                "post_style": str(post_style or ""),
+                "signal_type": str(signal_type or ""),
             }
         )
         self.items = self.items[-self.max_items :]
@@ -127,6 +136,27 @@ class PostMemory:
 
     def get_last_ctas(self, n: int = 10) -> List[str]:
         return [str(item.get("cta", "")) for item in self.items[-n:] if item.get("cta")]
+
+
+    def get_last_post_styles(self, n: int = 10) -> List[str]:
+        return [
+            str(item.get("post_style", ""))
+            for item in self.items[-n:]
+            if item.get("post_style")
+        ]
+
+    def get_last_signal_types(self, n: int = 10) -> List[str]:
+        return [
+            str(item.get("signal_type", ""))
+            for item in self.items[-n:]
+            if item.get("signal_type")
+        ]
+
+    def signal_type_frequency(self, n: int = 20) -> dict:
+        counts = {}
+        for signal_type in self.get_last_signal_types(n):
+            counts[signal_type] = counts.get(signal_type, 0) + 1
+        return counts
 
     def get_last_styles(self, n: int = 10) -> List[str]:
         # Backward-compatible method. Signatures are more useful than old MD5 hashes.

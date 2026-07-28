@@ -1,8 +1,8 @@
 """Post quality scoring and hard validation for automated publishing."""
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
+import re
 from typing import Dict, List, Optional, Tuple
 
 
@@ -15,10 +15,8 @@ class QualityReport:
 
 
 class PostQualityEvaluator:
-
     MIN_LENGTH = 320
     MAX_LENGTH = 1800
-
 
     UNSUPPORTED_CLAIMS = (
         "90% точности",
@@ -35,10 +33,8 @@ class PostQualityEvaluator:
         "лёгкая прибыль",
     )
 
-
     def evaluate(self, text: str) -> float:
         return self.report(text).score
-
 
     def report(
         self,
@@ -48,438 +44,195 @@ class PostQualityEvaluator:
         direction: Optional[str] = None,
         levels: Optional[Dict[str, float]] = None,
     ) -> QualityReport:
-
-
-        components = {
-
-            "completeness":
-                self._completeness(
-                    text,
-                    basic,
-                    direction,
-                    levels
-                ),
-
-            "readability":
-                self._readability(text),
-
-            "structure":
-                self._structure(text),
-
-            "engagement":
-                self._engagement(text),
-
-            "credibility":
-                self._credibility(text),
-
-            "spam_control":
-                self._spam_control(text),
-
-            "length":
-                self._length_score(text),
-        }
-
-
-        weights = {
-
-            "completeness": 0.28,
-            "readability": 0.14,
-            "structure": 0.18,
-            "engagement": 0.12,
-            "credibility": 0.16,
-            "spam_control": 0.07,
-            "length": 0.05,
-
-        }
-
-
-        score = sum(
-            components[key] * weights[key]
-            for key in components
-        )
-
-
-        _, reasons = self.validate(
+        valid, reasons = self.validate(
             text,
             basic=basic,
             direction=direction,
-            levels=levels
+            levels=levels,
         )
-
-
+        components = {
+            "completeness": self._completeness(valid, reasons),
+            "readability": self._readability(text),
+            "structure": self._structure(text),
+            "engagement": self._engagement(text),
+            "credibility": self._credibility(text),
+            "spam_control": self._spam_control(text),
+            "length": self._length_score(text),
+        }
+        weights = {
+            "completeness": 0.28,
+            "readability": 0.15,
+            "structure": 0.18,
+            "engagement": 0.12,
+            "credibility": 0.15,
+            "spam_control": 0.07,
+            "length": 0.05,
+        }
+        score = sum(components[key] * weights[key] for key in components)
         return QualityReport(
-            score=min(max(score,0),100),
-            valid=len(reasons)==0,
+            score=min(max(score, 0.0), 100.0),
+            valid=valid,
             reasons=tuple(reasons),
-            components=components
+            components=components,
         )
-
-
 
     def validate(
         self,
         text: str,
         *,
-        basic=None,
-        direction=None,
-        levels=None,
-    ):
-
-
-        reasons = []
-
+        basic: Optional[str] = None,
+        direction: Optional[str] = None,
+        levels: Optional[Dict[str, float]] = None,
+    ) -> Tuple[bool, List[str]]:
+        reasons: List[str] = []
         lowered = text.lower()
 
-
-
-        # обязательные блоки
-        required_groups = [
-
-            (
-                "entry",
-                [
-                    "вход",
-                    "entry"
-                ]
-            ),
-
-            (
-                "tp1",
-                [
-                    "tp1",
-                    "цель 1",
-                    "target 1"
-                ]
-            ),
-
-            (
-                "tp2",
-                [
-                    "tp2",
-                    "цель 2",
-                    "target 2"
-                ]
-            ),
-
-            (
-                "tp3",
-                [
-                    "tp3",
-                    "цель 3",
-                    "target 3"
-                ]
-            ),
-
-            (
-                "stop",
-                [
-                    "стоп",
-                    "stop"
-                ]
-            ),
-
-            (
-                "risk_reward",
-                [
-                    "r/r",
-                    "rr",
-                    "risk/reward",
-                    "риск/прибыль"
-                ]
-            ),
-        ]
-
-
+        required_groups = (
+            ("entry", ("вход", "entry")),
+            ("tp1", ("tp1", "цель 1", "target 1")),
+            ("tp2", ("tp2", "цель 2", "target 2")),
+            ("tp3", ("tp3", "цель 3", "target 3")),
+            ("stop", ("стоп", "stop")),
+            ("risk_reward", ("r/r", "rr", "risk/reward", "риск/прибыль")),
+        )
         for name, variants in required_groups:
-
-            if not any(
-                item in lowered
-                for item in variants
-            ):
-                reasons.append(
-                    f"missing {name}"
-                )
-
-
-
-        # дисклеймер
+            if not any(item in lowered for item in variants):
+                reasons.append(f"missing {name}")
 
         risk_markers = (
             "не финансовая рекомендация",
             "не является финансовой рекомендацией",
-            "сценарий действует только пока",
-            "ключевой уровень",
             "отмена сценария",
             "размер позиции",
             "допустимого риска",
+            "стоп-уровня",
         )
-
         if not any(marker in lowered for marker in risk_markers):
-            reasons.append(
-                "missing risk note"
-            )
-
-
-
-        # вопрос аудитории
+            reasons.append("missing risk note")
 
         if "?" not in text:
-
-            reasons.append(
-                "missing audience question"
-            )
-
-
-
-        # тикер
+            reasons.append("missing audience question")
 
         if basic:
-
             ticker = "$" + basic.upper()
-
             if ticker not in text.upper():
-
-                reasons.append(
-                    "missing ticker"
-                )
-
-
-
-        # направление
+                reasons.append("missing ticker")
 
         if direction:
-
-
-            variants = []
-
-            if direction.lower()=="long":
-
-                variants = [
-                    "LONG",
-                    "ЛОНГ",
-                    "ПОКУПКА"
-                ]
-
-
-            elif direction.lower()=="short":
-
-                variants = [
-                    "SHORT",
-                    "ШОРТ",
-                    "ПРОДАЖА"
-                ]
-
-
-
-            if not any(
-                x in text.upper()
-                for x in variants
-            ):
-
-                reasons.append(
-                    "missing direction"
-                )
-
-
-
-        # уровни
+            variants = (
+                ("LONG", "ЛОНГ", "ПОКУПКА")
+                if direction.lower() == "long"
+                else ("SHORT", "ШОРТ", "ПРОДАЖА")
+            )
+            if not any(item in text.upper() for item in variants):
+                reasons.append("missing direction")
 
         if levels:
-
             from writer import _fmt_price
 
-
-            for key in (
-                "entry",
-                "tp1",
-                "tp2",
-                "tp3",
-                "stop"
-            ):
-
+            for key in ("entry", "tp1", "tp2", "tp3", "stop"):
                 if key in levels:
-
-                    value = _fmt_price(
-                        levels[key]
-                    )
-
-
+                    value = _fmt_price(levels[key])
                     if value not in text:
-
-                        reasons.append(
-                            f"missing {key} value {value}"
-                        )
-
-
-
-            rr = (
-                f"{levels.get('risk_reward',0):.2f}"
-            )
-
-
-            if (
-                rr not in text
-                and
-                "r/r" not in lowered
-                and
-                "rr" not in lowered
-            ):
-
-                reasons.append(
-                    "missing risk reward value"
-                )
-
-
+                        reasons.append(f"missing {key} value {value}")
+            rr = f"{levels.get('risk_reward', 0):.2f}"
+            if rr not in text:
+                reasons.append(f"missing risk reward value {rr}")
 
         if len(text) < self.MIN_LENGTH:
-
-            reasons.append(
-                f"post too short {len(text)}"
-            )
-
-
+            reasons.append(f"post too short {len(text)}")
         if len(text) > self.MAX_LENGTH:
-
-            reasons.append(
-                "post too long"
-            )
-
-
+            reasons.append("post too long")
 
         for claim in self.UNSUPPORTED_CLAIMS:
-
             if claim in lowered:
+                reasons.append(f"unsupported claim: {claim}")
 
-                reasons.append(
-                    "unsupported claim"
-                )
+        hashtags = re.findall(r"#[A-Za-zА-Яа-я0-9_]+", text)
+        if len(hashtags) > 5:
+            reasons.append("too many hashtags")
 
-
-
-        hashtags = re.findall(
-            r"#[A-Za-zА-Яа-я0-9_]+",
-            text
-        )
-
-
-        if len(hashtags)>5:
-
-            reasons.append(
-                "too many hashtags"
-            )
-
-
-        return (
-            len(reasons)==0,
-            reasons
-        )
-
-
-
-    def _completeness(
-        self,
-        text,
-        basic,
-        direction,
-        levels
-    ):
-
-        valid,_ = self.validate(
-            text,
-            basic=basic,
-            direction=direction,
-            levels=levels
-        )
-
-        return 100 if valid else 75
-
-
+        return not reasons, reasons
 
     @staticmethod
-    def _readability(text):
-
-        return 90
-
-
-
-    @staticmethod
-    def _structure(text):
-
-        score=0
-
-        low=text.lower()
-
-        if "\n" in text:
-            score+=25
-
-        if "сценарий" in low:
-            score+=25
-
-        if "план" in low:
-            score+=25
-
-        if "отмена" in low:
-            score+=25
-
-        return min(score,100)
-
-
+    def _completeness(valid: bool, reasons: List[str]) -> float:
+        if valid:
+            return 100.0
+        severe = sum(
+            reason.startswith("missing entry")
+            or reason.startswith("missing tp")
+            or reason.startswith("missing stop")
+            or reason.startswith("missing risk reward")
+            for reason in reasons
+        )
+        return max(20.0, 82.0 - severe * 12.0 - max(0, len(reasons) - severe) * 6.0)
 
     @staticmethod
-    def _engagement(text):
+    def _readability(text: str) -> float:
+        paragraphs = [part.strip() for part in text.split("\n\n") if part.strip()]
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        score = 100.0
+        if len(paragraphs) < 4:
+            score -= 15.0
+        long_lines = sum(len(line) > 220 for line in lines)
+        score -= min(25.0, long_lines * 7.0)
+        sentences = [part.strip().lower() for part in re.split(r"[.!?]+", text) if len(part.strip()) > 20]
+        duplicate_count = len(sentences) - len(set(sentences))
+        score -= min(20.0, duplicate_count * 8.0)
+        return max(35.0, score)
 
-        score=0
+    @staticmethod
+    def _structure(text: str) -> float:
+        lowered = text.lower()
+        score = 0.0
+        score += 20.0 if len([part for part in text.split("\n\n") if part.strip()]) >= 5 else 8.0
+        score += 25.0 if all(marker in lowered for marker in ("вход", "tp1", "стоп", "r/r")) else 0.0
+        score += 20.0 if "отмена сценария" in lowered else 0.0
+        score += 15.0 if any(marker in lowered for marker in ("подтверждение", "подтвердит", "чек-лист", "аргументы")) else 0.0
+        score += 10.0 if "контекст" in lowered else 0.0
+        score += 10.0 if "$" in text and ("long" in lowered or "short" in lowered) else 0.0
+        return min(score, 100.0)
 
-        if "?" in text:
-            score+=60
+    @staticmethod
+    def _engagement(text: str) -> float:
+        score = 0.0
+        questions = text.count("?")
+        score += 45.0 if questions == 1 else 32.0 if questions > 1 else 0.0
+        score += 20.0 if re.search(r"\b(?:RSI|ADX|VWAP|EMA20|ATR)\b", text, re.IGNORECASE) else 0.0
+        score += 20.0 if re.search(r"\b(?:вход|TP1|стоп)\b", text, re.IGNORECASE) else 0.0
+        score += 15.0 if any(word in text.lower() for word in ("почему", "суть", "тезис", "сценарий", "реакция")) else 0.0
+        return min(score, 100.0)
 
-        if "$" in text:
-            score+=40
-
-        return min(score,100)
-
-
-
-    def _credibility(self,text):
-
-        score=100
-
-        low=text.lower()
-
+    def _credibility(self, text: str) -> float:
+        lowered = text.lower()
+        score = 100.0
         for claim in self.UNSUPPORTED_CLAIMS:
-
-            if claim in low:
-
-                score-=30
-
-
-        return max(score,0)
-
-
+            if claim in lowered:
+                score -= 35.0
+        if not any(marker in lowered for marker in ("отмена сценария", "размер позиции", "допустимого риска")):
+            score -= 20.0
+        if "гарант" in lowered or "точно" in lowered:
+            score -= 20.0
+        return max(score, 0.0)
 
     @staticmethod
-    def _spam_control(text):
+    def _spam_control(text: str) -> float:
+        hashtags = len(re.findall(r"#\w+", text))
+        emojis = len(re.findall(r"[\U0001F300-\U0001FAFF]", text))
+        words = re.findall(r"[A-Za-zА-Яа-я]+", text)
+        uppercase = sum(word.isupper() and len(word) > 3 for word in words)
+        score = 100.0
+        score -= max(0, hashtags - 4) * 15.0
+        score -= max(0, emojis - 3) * 10.0
+        score -= max(0, uppercase - 7) * 3.0
+        return max(score, 35.0)
 
-        hashtags=len(
-            re.findall(
-                r"#\w+",
-                text
-            )
-        )
-
-        return max(
-            100-hashtags*10,
-            40
-        )
-
-
-
-    def _length_score(self,text):
-
-        size=len(text)
-
-        if 500 <= size <= 1400:
-
-            return 100
-
-        return 75
+    def _length_score(self, text: str) -> float:
+        size = len(text)
+        if 500 <= size <= 1300:
+            return 100.0
+        if self.MIN_LENGTH <= size < 500 or 1300 < size <= 1600:
+            return 82.0
+        if 250 <= size <= self.MAX_LENGTH:
+            return 60.0
+        return 25.0

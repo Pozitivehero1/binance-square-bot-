@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import tempfile
 from pathlib import Path
+from difflib import SequenceMatcher
 
 import numpy as np
 import pandas as pd
@@ -20,7 +21,7 @@ from filters import SignalFilter
 from indicators import build_trade_levels, calculate_multi_timeframe
 from memory import PostMemory
 from quality import PostQualityEvaluator
-from writer import generate_post_with_memory
+from writer import generate_post_draft, generate_post_with_memory
 
 
 def _make_frame(rng, frequency: str, slope: float, rows: int = 260) -> pd.DataFrame:
@@ -130,9 +131,54 @@ def _test_side(side: str) -> None:
     )
 
 
+
+def _normalized_similarity(left: str, right: str) -> float:
+    left_norm = PostMemory.normalize_text(left)
+    right_norm = PostMemory.normalize_text(right)
+    return SequenceMatcher(None, left_norm, right_norm).ratio()
+
+
+def _test_content_diversity() -> None:
+    frames = _build_setup("long")
+    mtf = calculate_multi_timeframe("TESTUSDT", frames)
+    score = SignalFilter(min_score=0).evaluate(mtf)
+    assert score is not None
+    levels = build_trade_levels(mtf.tf_15m, "long")
+
+    with tempfile.TemporaryDirectory() as temp_directory:
+        memory = PostMemory(Path(temp_directory) / "post_memory.json")
+        drafts = [
+            generate_post_draft(
+                symbol="TESTUSDT",
+                basic="TEST",
+                mtf=mtf,
+                score=score,
+                memory=memory,
+                levels=levels,
+                variant_index=index,
+            )
+            for index in range(8)
+        ]
+
+    styles = {draft.style_id for draft in drafts}
+    signals = {draft.signal_type for draft in drafts}
+    similarities = [
+        _normalized_similarity(drafts[i].text, drafts[j].text)
+        for i in range(len(drafts))
+        for j in range(i)
+    ]
+    assert len(styles) >= 7, f"Not enough post styles: {styles}"
+    assert len(signals) >= 5, f"Not enough signal angles: {signals}"
+    assert max(similarities) < 0.78, f"Variants are too similar: {max(similarities):.3f}"
+    print(
+        f"DIVERSITY: OK | styles={len(styles)} | signals={len(signals)} | "
+        f"max_similarity={max(similarities):.3f}"
+    )
+
 def main() -> None:
     _test_side("long")
     _test_side("short")
+    _test_content_diversity()
     print("All offline tests passed. No publication was attempted.")
 
 

@@ -14,6 +14,7 @@ import logging
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, Iterable, List, Optional, Tuple
+from difflib import SequenceMatcher
 
 import pandas as pd
 
@@ -28,7 +29,8 @@ from memory import PostMemory
 from publisher import publish
 from quality import PostQualityEvaluator, QualityReport
 from trend import get_base_asset, get_trending_symbols
-from writer import _levels, generate_post_with_memory
+from content_variation import detect_signal_angles
+from writer import GeneratedPost, _levels, generate_post_draft
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO").upper(),
@@ -45,7 +47,7 @@ FINAL_CANDIDATES = int(os.getenv("FINAL_CANDIDATES", "10"))
 DATA_WORKERS = max(1, min(int(os.getenv("DATA_WORKERS", "6")), 12))
 KLINE_LIMIT = max(220, min(int(os.getenv("KLINE_LIMIT", "260")), 500))
 MAX_FUNDING_ABS = float(os.getenv("MAX_FUNDING_ABS", "0.001"))
-POST_VARIANTS = max(1, min(int(os.getenv("POST_VARIANTS", "5")), 10))
+POST_VARIANTS = max(3, min(int(os.getenv("POST_VARIANTS", "8")), 12))
 MIN_POST_QUALITY = float(os.getenv("MIN_POST_QUALITY", "72"))
 PRELIM_MIN_SCORE = float(os.getenv("PRELIM_MIN_SCORE", "38"))
 STRICT_BTC_FILTER = os.getenv("STRICT_BTC_FILTER", "1").lower() in {"1", "true", "yes"}
@@ -119,7 +121,13 @@ def _build_full_candidates(
 def _choose_market_candidate(
     ranked: List[Tuple[MultiTimeframeIndicators, SignalScore]],
     btc,
+    memory: PostMemory,
 ) -> Optional[Tuple[MultiTimeframeIndicators, SignalScore, Optional[float]]]:
+    """Choose a safe candidate while avoiding the same signal archetype every run."""
+    frequencies = memory.signal_type_frequency(24)
+    last_signal_types = memory.get_last_signal_types(5)
+    eligible: List[Tuple[float, MultiTimeframeIndicators, SignalScore, Optional[float], str]] = []
+
     for mtf, score in ranked:
         if STRICT_BTC_FILTER and btc and not is_direction_compatible(score.direction, btc):
             logger.info(
@@ -143,8 +151,45 @@ def _choose_market_candidate(
                     funding * 100.0,
                 )
                 continue
-        return mtf, score, funding
-    return None
+
+        angles = detect_signal_angles(mtf.tf_15m, score.direction, mtf)
+        # The candidate may support several truthful angles. Prefer the least repeated
+        # among its strongest four, rather than always labeling everything continuation.
+        best_angle = min(
+            angles[:4],
+            key=lambda item: (frequencies.get(item.id, 0), -item.weight),
+        )
+        repeat_count = frequencies.get(best_angle.id, 0)
+        immediate_repeat = 1 if best_angle.id in last_signal_types[-2:] else 0
+        diversity_penalty = min(14.0, repeat_count * 2.4 + immediate_repeat * 4.5)
+        adjusted_score = score.total - diversity_penalty
+        eligible.append((adjusted_score, mtf, score, funding, best_angle.id))
+        logger.info(
+            "Candidate %s raw=%.1f adjusted=%.1f angle=%s repeats=%s",
+            mtf.symbol,
+            score.total,
+            adjusted_score,
+            best_angle.id,
+            repeat_count,
+        )
+
+    if not eligible:
+        return None
+    eligible.sort(key=lambda item: item[0], reverse=True)
+    _, mtf, score, funding, _ = eligible[0]
+    return mtf, score, funding
+
+
+def _text_similarity(left: str, right: str) -> float:
+    left_norm = PostMemory.normalize_text(left)
+    right_norm = PostMemory.normalize_text(right)
+    if not left_norm or not right_norm:
+        return 0.0
+    left_tokens = set(left_norm.split())
+    right_tokens = set(right_norm.split())
+    union = left_tokens | right_tokens
+    token_ratio = len(left_tokens & right_tokens) / len(union) if union else 0.0
+    return SequenceMatcher(None, left_norm, right_norm).ratio() * 0.55 + token_ratio * 0.45
 
 
 def _best_post_variant(
@@ -156,13 +201,16 @@ def _best_post_variant(
     levels: Dict[str, float],
     memory: PostMemory,
     btc,
-) -> Optional[Tuple[str, QualityReport]]:
+) -> Optional[Tuple[GeneratedPost, QualityReport]]:
     evaluator = PostQualityEvaluator()
-    variants: List[Tuple[str, QualityReport, float]] = []
+    variants: List[Tuple[GeneratedPost, QualityReport, float]] = []
+    generated_texts: List[str] = []
+    recent_styles = memory.get_last_post_styles(24)
+    recent_signals = memory.get_last_signal_types(24)
 
     for index in range(POST_VARIANTS):
         try:
-            text = generate_post_with_memory(
+            draft = generate_post_draft(
                 symbol=symbol,
                 basic=basic,
                 mtf=mtf,
@@ -170,34 +218,55 @@ def _best_post_variant(
                 memory=memory,
                 levels=levels,
                 btc=btc,
+                variant_index=index,
             )
             report = evaluator.report(
-                text,
+                draft.text,
                 basic=basic,
                 direction=score.direction,
                 levels=levels,
             )
-            similarity_penalty = 8.0 if memory.is_similar(text, threshold=0.74) else 0.0
-            adjusted_score = report.score - similarity_penalty
+            memory_similarity = memory.similarity_score(draft.text)
+            local_similarity = max(
+                (_text_similarity(draft.text, other) for other in generated_texts),
+                default=0.0,
+            )
+            generated_texts.append(draft.text)
+
+            similarity_penalty = max(0.0, memory_similarity - 0.42) * 34.0
+            similarity_penalty += max(0.0, local_similarity - 0.55) * 25.0
+
+            style_repeats = recent_styles.count(draft.style_id)
+            signal_repeats = recent_signals.count(draft.signal_type)
+            novelty_penalty = min(8.0, style_repeats * 1.4)
+            novelty_penalty += min(9.0, signal_repeats * 1.6)
+            if recent_styles[-1:] == [draft.style_id]:
+                novelty_penalty += 3.5
+            if recent_signals[-1:] == [draft.signal_type]:
+                novelty_penalty += 4.0
+
+            adjusted_score = report.score - similarity_penalty - novelty_penalty
             logger.info(
-                "Post variant %s: quality %.1f, valid=%s, adjusted=%.1f",
+                "Post variant %s: style=%s angle=%s quality=%.1f valid=%s "
+                "memory_sim=%.2f local_sim=%.2f novelty_penalty=%.1f adjusted=%.1f",
                 index + 1,
+                draft.style_id,
+                draft.signal_type,
                 report.score,
                 report.valid,
+                memory_similarity,
+                local_similarity,
+                novelty_penalty,
                 adjusted_score,
             )
 
-            if report.valid:
-                variants.append((text, report, adjusted_score))
-            else:
+            if report.valid and memory_similarity < 0.82:
+                variants.append((draft, report, adjusted_score))
+            elif not report.valid:
                 logger.warning(
                     "Variant %s rejected reasons: %s",
                     index + 1,
                     ", ".join(report.reasons),
-                )
-                logger.warning(
-                    "Rejected post preview:\n%s",
-                    text,
                 )
         except Exception as exc:
             logger.warning("Post variant %s failed: %s", index + 1, exc)
@@ -205,7 +274,7 @@ def _best_post_variant(
     if not variants:
         return None
     variants.sort(key=lambda item: item[2], reverse=True)
-    best_text, best_report, _ = variants[0]
+    best_draft, best_report, _ = variants[0]
     if best_report.score < MIN_POST_QUALITY:
         logger.info(
             "Best post quality %.1f is below MIN_POST_QUALITY %.1f",
@@ -213,7 +282,7 @@ def _best_post_variant(
             MIN_POST_QUALITY,
         )
         return None
-    return best_text, best_report
+    return best_draft, best_report
 
 
 def _cleanup_files(paths: Iterable[Optional[str]]) -> None:
@@ -265,7 +334,7 @@ def main() -> int:
         logger.info("No candidate passed the full signal gates")
         return 0
 
-    chosen = _choose_market_candidate(ranked, btc)
+    chosen = _choose_market_candidate(ranked, btc, memory)
     if chosen is None:
         logger.info("All candidates were rejected by BTC/funding safety filters")
         return 0
@@ -304,8 +373,14 @@ def main() -> int:
     if generated is None:
         logger.info("No publication-quality post was generated")
         return 0
-    post_text, quality_report = generated
-    logger.info("Selected post quality: %.1f", quality_report.score)
+    selected_post, quality_report = generated
+    post_text = selected_post.text
+    logger.info(
+        "Selected post quality: %.1f | style=%s | signal=%s",
+        quality_report.score,
+        selected_post.style_id,
+        selected_post.signal_type,
+    )
     logger.debug("Post preview:\n%s", post_text)
 
     card_path: Optional[str] = None
@@ -325,6 +400,8 @@ def main() -> int:
                     rr=levels["risk_reward"],
                     confidence=best_score.total,
                     change_1h=indicator.change_1h,
+                    post_style=selected_post.style_id,
+                    signal_label=selected_post.angle_title,
                 )
             except Exception as exc:
                 logger.warning("Card generation failed: %s", exc)
@@ -364,7 +441,12 @@ def main() -> int:
             return 2
 
         add_published(symbol)
-        memory.add_post(symbol, post_text)
+        memory.add_post(
+            symbol,
+            post_text,
+            post_style=selected_post.style_id,
+            signal_type=selected_post.signal_type,
+        )
         logger.info("Published %s successfully", symbol)
         return 0
     finally:
