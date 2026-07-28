@@ -186,10 +186,19 @@ def _best_post_variant(
                 report.valid,
                 adjusted_score,
             )
+
             if report.valid:
                 variants.append((text, report, adjusted_score))
             else:
-                logger.debug("Variant rejected: %s", "; ".join(report.reasons))
+                logger.warning(
+                    "Variant %s rejected reasons: %s",
+                    index + 1,
+                    ", ".join(report.reasons),
+                )
+                logger.warning(
+                    "Rejected post preview:\n%s",
+                    text,
+                )
         except Exception as exc:
             logger.warning("Post variant %s failed: %s", index + 1, exc)
 
