@@ -85,7 +85,7 @@ class SignalFilter:
     def evaluate(self, mtf: MultiTimeframeIndicators) -> Optional[SignalScore]:
         ind = mtf.tf_15m
         if ind is None:
-            logger.debug("No 15m data for %s", mtf.symbol)
+            logger.info("No 15m data for %s", mtf.symbol)
             return None
 
         tf1h, tf4h, tfd = mtf.tf_1h, mtf.tf_4h, mtf.tf_1d
@@ -328,7 +328,7 @@ def get_top_candidates(
         if score is None or score.total < signal_filter.min_score:
             continue
         if require_gates and not score.passed_gates:
-            logger.debug("Rejected %s: %s", mtf.symbol, "; ".join(score.gate_reasons))
+            logger.info("Rejected %s: %s", mtf.symbol, "; ".join(score.gate_reasons))
             continue
         scored.append((mtf, score))
     scored.sort(key=lambda item: item[1].total, reverse=True)
