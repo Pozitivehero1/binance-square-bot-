@@ -41,7 +41,26 @@ def _levels(ind, direction: str) -> Dict[str, float]:
 
 def _hashtags(basic: str, direction: str) -> str:
     direction_tag = "LONG" if direction == "long" else "SHORT"
-    return f"#{basic.upper()} #{direction_tag} #TechnicalAnalysis"
+    return f"#{basic.upper()} #{direction_tag} #Crypto #Trading"
+
+
+def _format_ticker(basic: str) -> str:
+    """Binance Square ticker formatting.
+
+    Binance recognizes $TICKER better when punctuation is not attached
+    directly after it. Always returns a ticker separated by a space.
+    """
+    clean = re.sub(r"[^A-Za-z0-9]", "", str(basic)).upper()
+    return f"${clean} "
+
+
+def _fix_ticker_spacing(text: str) -> str:
+    """Remove punctuation immediately after tickers.
+
+    Example: $BTC: -> $BTC
+    """
+    text = re.sub(r"(\$[A-Z0-9]+)[,:;.!?]", r"\1", text)
+    return re.sub(r"(\$[A-Z0-9]+)(?=\S)", r"\1 ", text)
 
 
 # ---------------------------------------------------------------------------
@@ -163,7 +182,7 @@ def _select_hook(
     for template in HOOKS:
         candidates.append(
             template.format(
-                ticker=f"${basic.upper()}",
+                ticker=_format_ticker(basic),
                 trigger=trigger,
                 direction=direction_label,
                 volume=f"{ind.volume_relative:.2f}",
@@ -366,12 +385,12 @@ def generate_post_with_memory(
         raise ValueError("Generated post is incomplete")
 
     hashtags = _hashtags(basic, direction)
-    full_post = f"{post}\n\n{hashtags}".strip()
+    full_post = _fix_ticker_spacing(f"{post}\n\n{hashtags}").strip()
     if len(full_post) > POST_MAX_CHARS:
         # Never slice a post in the middle of a level. Remove only optional context.
         shorter_structure = ("hook", "snapshot", "trigger", "plan", "invalidation", "risk_note", "cta")
         post = "\n\n".join(sections[key] for key in shorter_structure)
-        full_post = f"{post}\n\n{hashtags}".strip()
+        full_post = _fix_ticker_spacing(f"{post}\n\n{hashtags}").strip()
     if len(full_post) > POST_MAX_CHARS:
         raise ValueError(f"Post exceeds POST_MAX_CHARS={POST_MAX_CHARS}")
 
