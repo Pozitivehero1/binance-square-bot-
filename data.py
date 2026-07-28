@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import random
 import threading
 import time
@@ -17,6 +18,9 @@ logger = logging.getLogger(__name__)
 
 BINANCE_APIS = ("https://data-api.binance.vision", "https://api.binance.com")
 BYBIT_API = "https://api.bybit.com"
+ENABLE_BYBIT_FALLBACK = os.getenv("ENABLE_BYBIT_FALLBACK", "0").lower() in {
+    "1", "true", "yes"
+}
 
 _BYBIT_INTERVALS = {
     "1m": "1",
@@ -256,11 +260,17 @@ class DataFetcher:
         except Exception as exc:
             logger.warning("Binance data failed for %s %s: %s", symbol, interval, exc)
 
-        if frame is None:
+        if frame is None and ENABLE_BYBIT_FALLBACK:
             try:
                 frame = self.fetch_bybit_klines(symbol, interval, limit)
             except Exception as exc:
                 logger.warning("Bybit fallback failed for %s %s: %s", symbol, interval, exc)
+        elif frame is None:
+            logger.debug(
+                "Bybit fallback disabled for %s %s; Binance data unavailable",
+                symbol,
+                interval,
+            )
 
         if frame is None:
             logger.error("No market data for %s %s", symbol, interval)

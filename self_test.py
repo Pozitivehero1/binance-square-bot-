@@ -17,7 +17,7 @@ import pandas as pd
 
 from card import generate_card
 from chart import generate_chart
-from filters import SignalFilter
+from filters import SignalFilter, get_top_candidates
 from indicators import build_trade_levels, calculate_multi_timeframe
 from memory import PostMemory
 from quality import PostQualityEvaluator
@@ -175,10 +175,33 @@ def _test_content_diversity() -> None:
         f"max_similarity={max(similarities):.3f}"
     )
 
+
+def _test_balanced_fallback() -> None:
+    frames = _build_setup("long")
+    frames["15m"].iloc[-1, frames["15m"].columns.get_loc("volume")] = 550
+    mtf = calculate_multi_timeframe("BALANCEDUSDT", frames)
+
+    strict = SignalFilter(min_score=0, profile="strict").evaluate(mtf)
+    balanced = SignalFilter(min_score=0, profile="balanced").evaluate(mtf)
+    assert strict is not None and balanced is not None
+    assert not strict.passed_gates
+    assert any("relative volume" in reason for reason in strict.gate_reasons)
+    assert balanced.passed_gates, balanced.gate_reasons
+
+    strict_ranked = get_top_candidates([mtf], top_n=1, profile="strict")
+    balanced_ranked = get_top_candidates([mtf], top_n=1, profile="balanced")
+    assert not strict_ranked
+    assert balanced_ranked and balanced_ranked[0][0].symbol == "BALANCEDUSDT"
+    print(
+        "BALANCED FALLBACK: OK | "
+        f"volume={mtf.tf_15m.volume_relative:.2f} | score={balanced.total:.1f}"
+    )
+
 def main() -> None:
     _test_side("long")
     _test_side("short")
     _test_content_diversity()
+    _test_balanced_fallback()
     print("All offline tests passed. No publication was attempted.")
 
 

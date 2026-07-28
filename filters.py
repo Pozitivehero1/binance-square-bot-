@@ -34,16 +34,50 @@ class SignalScore:
 
 
 class SignalFilter:
-    MIN_SCORE = float(os.getenv("MIN_SIGNAL_SCORE", "54"))
-    MIN_ADX = float(os.getenv("MIN_ADX", "18"))
-    MIN_ATR_PCT = float(os.getenv("MIN_ATR_PCT", "0.25"))
-    MAX_ATR_PCT = float(os.getenv("MAX_ATR_PCT", "7.0"))
-    MIN_RR = float(os.getenv("MIN_RR", "1.25"))
-    MIN_MTF_ALIGN = float(os.getenv("MIN_MTF_ALIGN", "0.34"))
-    MIN_VOLUME_REL = float(os.getenv("MIN_VOLUME_REL", "0.65"))
+    """Score a setup and apply either strict or balanced publication gates.
 
-    def __init__(self, min_score: Optional[float] = None):
-        self.min_score = float(min_score) if min_score is not None else self.MIN_SCORE
+    Strict mode remains the default. Balanced mode is intended only as a
+    second pass when an entire scan produced no strict candidate. It still
+    requires trend strength, usable volatility, positive R/R, multi-timeframe
+    confirmation and non-dead volume; it merely accepts near-threshold setups.
+    """
+
+    STRICT_THRESHOLDS = {
+        "min_score": float(os.getenv("MIN_SIGNAL_SCORE", "54")),
+        "min_adx": float(os.getenv("MIN_ADX", "18")),
+        "min_atr_pct": float(os.getenv("MIN_ATR_PCT", "0.25")),
+        "max_atr_pct": float(os.getenv("MAX_ATR_PCT", "7.0")),
+        "min_rr": float(os.getenv("MIN_RR", "1.25")),
+        "min_mtf_align": float(os.getenv("MIN_MTF_ALIGN", "0.34")),
+        "min_volume_rel": float(os.getenv("MIN_VOLUME_REL", "0.65")),
+    }
+    BALANCED_THRESHOLDS = {
+        "min_score": float(os.getenv("BALANCED_MIN_SIGNAL_SCORE", "50")),
+        "min_adx": float(os.getenv("BALANCED_MIN_ADX", "16.5")),
+        "min_atr_pct": float(os.getenv("BALANCED_MIN_ATR_PCT", "0.18")),
+        "max_atr_pct": float(os.getenv("BALANCED_MAX_ATR_PCT", "8.5")),
+        "min_rr": float(os.getenv("BALANCED_MIN_RR", "1.05")),
+        "min_mtf_align": float(os.getenv("BALANCED_MIN_MTF_ALIGN", "0.33")),
+        "min_volume_rel": float(os.getenv("BALANCED_MIN_VOLUME_REL", "0.30")),
+    }
+
+    def __init__(self, min_score: Optional[float] = None, profile: str = "strict"):
+        profile = profile.lower().strip()
+        if profile not in {"strict", "balanced"}:
+            raise ValueError("profile must be 'strict' or 'balanced'")
+        self.profile = profile
+        thresholds = (
+            self.STRICT_THRESHOLDS if profile == "strict" else self.BALANCED_THRESHOLDS
+        )
+        self.min_score = (
+            float(min_score) if min_score is not None else thresholds["min_score"]
+        )
+        self.min_adx = thresholds["min_adx"]
+        self.min_atr_pct = thresholds["min_atr_pct"]
+        self.max_atr_pct = thresholds["max_atr_pct"]
+        self.min_rr = thresholds["min_rr"]
+        self.min_mtf_align = thresholds["min_mtf_align"]
+        self.min_volume_rel = thresholds["min_volume_rel"]
 
     @staticmethod
     def _direction_strength(ind: IndicatorResult, tf1h, tf4h, direction: str) -> float:
@@ -116,20 +150,24 @@ class SignalFilter:
 
         atr_pct = ind.atr / ind.price * 100.0 if ind.price else 0.0
         gate_reasons: List[str] = []
-        if ind.adx < self.MIN_ADX:
-            gate_reasons.append(f"ADX {ind.adx:.1f} < {self.MIN_ADX:.1f}")
-        if not self.MIN_ATR_PCT <= atr_pct <= self.MAX_ATR_PCT:
-            gate_reasons.append(f"ATR {atr_pct:.2f}% outside range")
-        if actual_rr < self.MIN_RR:
-            gate_reasons.append(f"R/R {actual_rr:.2f} < {self.MIN_RR:.2f}")
+        if ind.adx < self.min_adx:
+            gate_reasons.append(f"ADX {ind.adx:.1f} < {self.min_adx:.1f}")
+        if not self.min_atr_pct <= atr_pct <= self.max_atr_pct:
+            gate_reasons.append(
+                f"ATR {atr_pct:.2f}% outside {self.min_atr_pct:.2f}-{self.max_atr_pct:.2f}%"
+            )
+        if actual_rr < self.min_rr:
+            gate_reasons.append(f"R/R {actual_rr:.2f} < {self.min_rr:.2f}")
         available_higher_tfs = sum(item is not None for item in (tf1h, tf4h, tfd))
         if available_higher_tfs < 2:
             gate_reasons.append("fewer than two higher timeframes available")
-        if mtf_ratio < self.MIN_MTF_ALIGN:
-            gate_reasons.append(f"MTF alignment {mtf_ratio:.2f} < {self.MIN_MTF_ALIGN:.2f}")
-        if ind.volume_relative < self.MIN_VOLUME_REL:
+        if mtf_ratio < self.min_mtf_align:
             gate_reasons.append(
-                f"relative volume {ind.volume_relative:.2f} < {self.MIN_VOLUME_REL:.2f}"
+                f"MTF alignment {mtf_ratio:.2f} < {self.min_mtf_align:.2f}"
+            )
+        if ind.volume_relative < self.min_volume_rel:
+            gate_reasons.append(
+                f"relative volume {ind.volume_relative:.2f} < {self.min_volume_rel:.2f}"
             )
         if direction == "long" and ind.false_breakout_up and not ind.liquidity_sweep_down:
             gate_reasons.append("bullish setup invalidated by failed breakout")
@@ -320,15 +358,21 @@ def get_top_candidates(
     mtf_list: List[MultiTimeframeIndicators],
     top_n: int = 5,
     require_gates: bool = True,
+    profile: str = "strict",
 ) -> List[Tuple[MultiTimeframeIndicators, SignalScore]]:
-    signal_filter = SignalFilter()
+    signal_filter = SignalFilter(profile=profile)
     scored: List[Tuple[MultiTimeframeIndicators, SignalScore]] = []
     for mtf in mtf_list:
         score = signal_filter.evaluate(mtf)
         if score is None or score.total < signal_filter.min_score:
             continue
         if require_gates and not score.passed_gates:
-            logger.info("Rejected %s: %s", mtf.symbol, "; ".join(score.gate_reasons))
+            logger.info(
+                "Rejected %s [%s]: %s",
+                mtf.symbol,
+                profile,
+                "; ".join(score.gate_reasons),
+            )
             continue
         scored.append((mtf, score))
     scored.sort(key=lambda item: item[1].total, reverse=True)

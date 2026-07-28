@@ -47,6 +47,9 @@ FINAL_CANDIDATES = int(os.getenv("FINAL_CANDIDATES", "10"))
 DATA_WORKERS = max(1, min(int(os.getenv("DATA_WORKERS", "6")), 12))
 KLINE_LIMIT = max(220, min(int(os.getenv("KLINE_LIMIT", "260")), 500))
 MAX_FUNDING_ABS = float(os.getenv("MAX_FUNDING_ABS", "0.001"))
+ENABLE_BALANCED_FALLBACK = os.getenv("ENABLE_BALANCED_FALLBACK", "1").lower() in {
+    "1", "true", "yes"
+}
 POST_VARIANTS = max(3, min(int(os.getenv("POST_VARIANTS", "8")), 12))
 MIN_POST_QUALITY = float(os.getenv("MIN_POST_QUALITY", "72"))
 PRELIM_MIN_SCORE = float(os.getenv("PRELIM_MIN_SCORE", "38"))
@@ -329,11 +332,33 @@ def main() -> int:
 
     confirmation_data = _fetch_many(shortlist, CONFIRMATION_TIMEFRAMES)
     candidates = _build_full_candidates(shortlist, primary_data, confirmation_data)
-    ranked = get_top_candidates(candidates, top_n=FINAL_CANDIDATES, require_gates=True)
+    selection_profile = "strict"
+    ranked = get_top_candidates(
+        candidates,
+        top_n=FINAL_CANDIDATES,
+        require_gates=True,
+        profile="strict",
+    )
+    if not ranked and ENABLE_BALANCED_FALLBACK:
+        logger.info(
+            "No candidate passed strict gates; trying balanced gates for near-threshold setups"
+        )
+        selection_profile = "balanced"
+        ranked = get_top_candidates(
+            candidates,
+            top_n=FINAL_CANDIDATES,
+            require_gates=True,
+            profile="balanced",
+        )
     if not ranked:
-        logger.info("No candidate passed the full signal gates")
+        logger.info("No candidate passed strict or balanced signal gates")
         return 0
 
+    logger.info(
+        "Signal selection profile: %s (%s candidates)",
+        selection_profile,
+        len(ranked),
+    )
     chosen = _choose_market_candidate(ranked, btc, memory)
     if chosen is None:
         logger.info("All candidates were rejected by BTC/funding safety filters")
@@ -348,11 +373,12 @@ def main() -> int:
 
     levels = _levels(indicator, best_score.direction)
     logger.info(
-        "BEST %s score=%.1f direction=%s trend=%.0f momentum=%.0f volume=%.0f "
+        "BEST %s score=%.1f direction=%s profile=%s trend=%.0f momentum=%.0f volume=%.0f "
         "mtf=%.0f R/R=%.2f funding=%s",
         symbol,
         best_score.total,
         best_score.direction,
+        selection_profile,
         best_score.trend,
         best_score.momentum,
         best_score.volume,

@@ -1,4 +1,10 @@
-LONG: OK | score=84.9 | R/R=2.02 | post quality=97.6
-SHORT: OK | score=87.8 | R/R=2.76 | post quality=97.6
-DIVERSITY: OK | styles=8 | signals=6 | max_similarity=0.515
-All offline tests passed. No publication was attempted.
+Offline tests passed on 2026-07-28:
+- LONG strict setup: passed, quality 97.6
+- SHORT strict setup: passed, quality 97.6
+- Content diversity: 8 styles, 6 signal angles
+- Balanced fallback: strict rejection at relative volume 0.44, balanced acceptance
+- Python syntax compilation: passed for all modules
+- No publication attempted
+
+A live DRY_RUN could not reach Binance in the local sandbox because external DNS
+resolution is unavailable there. This is an environment limitation, not a code error.

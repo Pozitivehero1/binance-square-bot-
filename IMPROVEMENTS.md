@@ -67,3 +67,13 @@ DRY_RUN=1 python main.py
 - `MIN_RR=1.5` — минимальный реальный R/R.
 - `STRICT_BTC_FILTER=1` — не публиковать сетап против сильного движения BTC.
 - `ENABLE_AI_POLISH=0` — детерминированный текст без внешнего AI по умолчанию.
+
+## Adaptive signal selection update
+
+- Strict publication gates remain the first and preferred pass.
+- If no strict candidate exists, an optional balanced pass accepts only near-threshold setups.
+- Balanced mode still requires a positive risk/reward ratio, at least two higher timeframes,
+  usable ATR/ADX, multi-timeframe confirmation and non-dead relative volume.
+- The log now explicitly shows `Signal selection profile: strict|balanced`.
+- Bybit fallback is disabled by default because US-hosted runners can receive HTTP 403.
+  It can be re-enabled with `ENABLE_BYBIT_FALLBACK=1` on a compatible host.
