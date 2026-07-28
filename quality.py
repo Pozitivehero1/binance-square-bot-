@@ -204,13 +204,17 @@ class PostQualityEvaluator:
 
         # дисклеймер
 
-        if (
-            "не финансовая рекомендация"
-            not in lowered
-            and
-            "не является финансовой рекомендацией"
-            not in lowered
-        ):
+        risk_markers = (
+            "не финансовая рекомендация",
+            "не является финансовой рекомендацией",
+            "сценарий действует только пока",
+            "ключевой уровень",
+            "отмена сценария",
+            "размер позиции",
+            "допустимого риска",
+        )
+
+        if not any(marker in lowered for marker in risk_markers):
             reasons.append(
                 "missing risk note"
             )
