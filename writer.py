@@ -11,6 +11,7 @@ import requests
 
 from indicators import build_trade_levels
 from memory import PostMemory
+from content_variation import hashtags as varied_hashtags, choose, PLAN_TITLES
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +42,7 @@ def _levels(ind, direction: str) -> Dict[str, float]:
 
 def _hashtags(basic: str, direction: str) -> str:
     direction_tag = "LONG" if direction == "long" else "SHORT"
-    return f"#{basic.upper()} #{direction_tag} #Crypto #Trading"
+    return varied_hashtags(basic, direction)
 
 
 def _format_ticker(basic: str) -> str:
@@ -337,7 +338,7 @@ def generate_post_with_memory(
             f"{_btc_context_text(btc, direction)}"
         ),
         "plan": (
-            "🎯 План по уровням:\n"
+            f"{choose(PLAN_TITLES)}\n"
             f"Вход: {_fmt_price(levels['entry'])} USDT\n"
             f"TP1: {_fmt_price(levels['tp1'])} USDT\n"
             f"TP2: {_fmt_price(levels['tp2'])} USDT\n"
@@ -367,19 +368,20 @@ def generate_post_with_memory(
         except Exception as exc:
             logger.warning("AI polish rejected; using deterministic text: %s", exc)
 
-    if memory and memory.is_similar(post, threshold=0.78):
-        # Replace only engagement elements; all analytical facts remain intact.
-        alternatives = [item for item in CTA_LIST if item != cta]
-        post = post.replace(cta, random.choice(alternatives), 1)
-        alternative_hook = _select_hook(
-            basic=basic,
-            direction=direction,
-            trigger=trigger,
-            ind=ind,
-            level=key_level,
-            memory=memory,
-        )
-        post = post.replace(hook, alternative_hook, 1)
+    if memory and memory.is_similar(post, threshold=0.60):
+        for _ in range(3):
+            alternative_hook = _select_hook(
+                basic=basic,
+                direction=direction,
+                trigger=trigger,
+                ind=ind,
+                level=key_level,
+                memory=memory,
+            )
+            post = post.replace(hook, alternative_hook, 1)
+            post = post.replace(cta, _pick_unused(CTA_LIST, memory.get_last_ctas(20)), 1)
+            if not memory.is_similar(post, threshold=0.60):
+                break
 
     if not _contains_required_content(post, levels):
         raise ValueError("Generated post is incomplete")
