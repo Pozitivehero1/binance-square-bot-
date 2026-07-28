@@ -142,13 +142,13 @@ class PostMemory:
                 return True
         return False
 
-    def is_similar(self, text: str, threshold: float = 0.78) -> bool:
+    def similarity_score(self, text: str) -> float:
         candidate = self.normalize_text(text)
         if not candidate:
-            return False
+            return 0.0
         candidate_tokens = set(candidate.split())
-
-        for item in self.items[-20:]:
+        best = 0.0
+        for item in self.items[-30:]:
             existing = item.get("text_signature") or self.normalize_text(item.get("text", ""))
             if not existing:
                 continue
@@ -156,7 +156,8 @@ class PostMemory:
             existing_tokens = set(existing.split())
             union = candidate_tokens | existing_tokens
             token_ratio = len(candidate_tokens & existing_tokens) / len(union) if union else 0.0
-            similarity = sequence_ratio * 0.65 + token_ratio * 0.35
-            if similarity >= threshold:
-                return True
-        return False
+            best = max(best, sequence_ratio * 0.55 + token_ratio * 0.45)
+        return best
+
+    def is_similar(self, text: str, threshold: float = 0.60) -> bool:
+        return self.similarity_score(text) >= threshold
