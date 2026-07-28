@@ -55,26 +55,42 @@ def _format_ticker(basic: str) -> str:
 
 
 def _fix_ticker_spacing(text: str) -> str:
-    """Remove punctuation immediately after tickers.
+    """Normalize Binance Square tickers.
 
-    Example: $BTC: -> $BTC
+    Keeps full tickers intact:
+    $BTC
+    $ETH
+    $FIL
+
+    Removes punctuation attached directly after a ticker.
     """
-    text = re.sub(r"(\$[A-Z0-9]+)[,:;.!?]", r"\1", text)
-    return re.sub(r"(\$[A-Z0-9]+)(?=\S)", r"\1 ", text)
+    text = re.sub(
+        r"(\$[A-Z0-9]{2,15})[,:;.!?]",
+        r"\1",
+        text,
+    )
+
+    text = re.sub(
+        r"(\$[A-Z0-9]{2,15})([^\sA-Z0-9]|$)",
+        r"\1 \2",
+        text,
+    )
+
+    return text
 
 
 # ---------------------------------------------------------------------------
 # Truthful engagement templates
 # ---------------------------------------------------------------------------
 HOOKS = [
-    "{ticker}: {trigger} — разбираю уровни без лишнего шума",
-    "{ticker} у ключевой зоны: что подтверждает сценарий {direction}?",
-    "{ticker}: объём x{volume} и важный уровень {level}",
-    "{ticker}: сетап {direction} с понятной точкой отмены",
-    "{ticker} за час {change}%: движение есть, но решают уровни",
-    "{ticker}: цена проверяет {level} — вот мой рабочий сценарий",
-    "{ticker}: тренд и импульс совпали не на всех таймфреймах",
-    "{ticker}: где заканчивается идея и начинается риск",
+    "{ticker}{trigger} — разбираю уровни без лишнего шума",
+    "{ticker}у ключевой зоны: что подтверждает сценарий {direction}?",
+    "{ticker}объём x{volume} и важный уровень {level}",
+    "{ticker}сетап {direction} с понятной точкой отмены",
+    "{ticker}за час {change}%: движение есть, но решают уровни",
+    "{ticker}цена проверяет {level} — вот мой рабочий сценарий",
+    "{ticker}тренд и импульс совпали не на всех таймфреймах",
+    "{ticker}где заканчивается идея и начинается риск",
 ]
 
 CTA_LIST = [
