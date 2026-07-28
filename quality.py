@@ -212,7 +212,7 @@ class PostQualityEvaluator:
             not in lowered
         ):
             reasons.append(
-                "missing disclaimer"
+                "missing risk note"
             )
 
 
