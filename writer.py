@@ -13,6 +13,7 @@ import requests
 from content_variation import (
     CTA_VARIANTS,
     PLAN_TITLES,
+    POST_STYLES,
     PostStyle,
     SignalAngle,
     choose,
@@ -21,6 +22,8 @@ from content_variation import (
     hashtags as varied_hashtags,
     HUMAN_HOOKS,
     PERSONAL_PHRASES,
+    RISK_SENTENCES,
+    CONTEXT_OPENERS,
 )
 from indicators import build_trade_levels
 from memory import PostMemory
@@ -295,26 +298,157 @@ def _angle_content(angle: SignalAngle, ind, direction: str, mtf) -> Dict[str, st
 
     return default
 
+# ---------------------------------------------------------------------------
+# Layout primitives
+# ---------------------------------------------------------------------------
+def _level_block(
+    levels: Dict[str, float],
+    title: str,
+    style: PostStyle,
+    variant_index: int,
+) -> str:
+    entry = _fmt_price(levels["entry"])
+    tp1 = _fmt_price(levels["tp1"])
+    tp2 = _fmt_price(levels["tp2"])
+    tp3 = _fmt_price(levels["tp3"])
+    stop = _fmt_price(levels["stop"])
+    rr = f"{levels['risk_reward']:.2f}"
+    fmt = style.level_format
 
-def _level_block(levels: Dict[str, float], title: str) -> str:
+    if fmt == "compact_grid":
+        return (
+            f"{title}\n"
+            f"Вход {entry} USDT  |  Стоп {stop} USDT  |  R/R {rr}\n"
+            f"TP1 {tp1}  ·  TP2 {tp2}  ·  TP3 {tp3} USDT"
+        )
+    if fmt == "inline":
+        return (
+            f"{title}: Вход {entry} USDT → TP1 {tp1} → TP2 {tp2} → "
+            f"TP3 {tp3}; Стоп {stop} USDT; R/R {rr}."
+        )
+    if fmt == "numbered":
+        return (
+            f"{title}\n"
+            f"0. Вход: {entry} USDT\n"
+            f"1. TP1: {tp1} USDT\n"
+            f"2. TP2: {tp2} USDT\n"
+            f"3. TP3: {tp3} USDT\n"
+            f"Защита — Стоп: {stop} USDT · R/R: {rr}"
+        )
+    if fmt == "route":
+        return (
+            f"{title}\n"
+            f"Старт — Вход: {entry} USDT\n"
+            f"Маршрут — TP1: {tp1} → TP2: {tp2} → TP3: {tp3} USDT\n"
+            f"Выход при ошибке — Стоп: {stop} USDT\n"
+            f"Соотношение — R/R: {rr}"
+        )
+    if fmt == "risk_reward":
+        return (
+            f"{title}\n"
+            f"Риск: Вход {entry} → Стоп {stop} USDT\n"
+            f"Потенциал: TP1 {tp1} / TP2 {tp2} / TP3 {tp3} USDT\n"
+            f"R/R: {rr}"
+        )
+    if fmt == "notebook":
+        return (
+            f"{title}\n"
+            f"— Вход: {entry} USDT\n"
+            f"— TP1: {tp1} USDT\n"
+            f"— TP2: {tp2} USDT\n"
+            f"— TP3: {tp3} USDT\n"
+            f"— Стоп: {stop} USDT\n"
+            f"— R/R: {rr}"
+        )
+    if fmt == "card":
+        return (
+            f"┌ {title}\n"
+            f"│ Вход: {entry} USDT\n"
+            f"│ TP1: {tp1}  │ TP2: {tp2}  │ TP3: {tp3} USDT\n"
+            f"│ Стоп: {stop} USDT\n"
+            f"└ R/R: {rr}"
+        )
+    if fmt == "terminal":
+        return (
+            f"[{title.upper()}]\n"
+            f"ENTRY/Вход={entry} USDT\n"
+            f"TP1={tp1} | TP2={tp2} | TP3={tp3} USDT\n"
+            f"STOP/Стоп={stop} USDT | R/R={rr}"
+        )
+
+    # vertical
+    separator = "•" if variant_index % 2 else ":"
     return (
         f"{title}\n"
-        f"Вход: {_fmt_price(levels['entry'])} USDT\n"
-        f"TP1: {_fmt_price(levels['tp1'])} USDT\n"
-        f"TP2: {_fmt_price(levels['tp2'])} USDT\n"
-        f"TP3: {_fmt_price(levels['tp3'])} USDT\n"
-        f"Стоп: {_fmt_price(levels['stop'])} USDT\n"
-        f"R/R: {levels['risk_reward']:.2f}"
+        f"Вход{separator} {entry} USDT\n"
+        f"TP1{separator} {tp1} USDT\n"
+        f"TP2{separator} {tp2} USDT\n"
+        f"TP3{separator} {tp3} USDT\n"
+        f"Стоп{separator} {stop} USDT\n"
+        f"R/R{separator} {rr}"
     )
 
 
-def _risk_block(ind, direction: str, levels: Dict[str, float]) -> str:
+def _risk_block(
+    ind,
+    direction: str,
+    levels: Dict[str, float],
+    style: PostStyle,
+    variant_index: int,
+) -> str:
     failure_side = "ниже" if direction == "long" else "выше"
-    return (
-        f"Отмена сценария: закрепление {failure_side} стоп-уровня {_fmt_price(levels['stop'])}. "
-        f"Диапазон наблюдения: {_fmt_price(ind.support)}–{_fmt_price(ind.resistance)}. "
-        "Размер позиции рассчитывается от допустимого риска, а не от силы формулировки сигнала."
+    stop = _fmt_price(levels["stop"])
+    support = _fmt_price(ind.support)
+    resistance = _fmt_price(ind.resistance)
+    sentence = RISK_SENTENCES[variant_index % len(RISK_SENTENCES)]
+
+    variants = (
+        f"Отмена сценария: закрепление {failure_side} {stop}. Рабочий диапазон {support}–{resistance}. {sentence}",
+        f"Граница ошибки — {stop} USDT. Если рынок закрепится {failure_side}, идея закрыта. Размер позиции рассчитывается до входа.",
+        f"Риск-контроль: Стоп уже находится на {stop}; диапазон контроля {support}–{resistance}. {sentence}",
+        f"Когда план перестаёт работать: цена принимает область {failure_side} {stop}. После этого сценарий не усредняется. {sentence}",
+        f"Условие отмены сценария — закрепление {failure_side} стоп-уровня {stop}. {sentence}",
+        f"Защита капитала: допустимый риск задаётся заранее, а техническая ошибка признаётся {failure_side} {stop}. Диапазон: {support}–{resistance}.",
+        f"Красная линия: {stop} USDT. Её потеря означает отмену сценария, а не приглашение увеличить позицию. {sentence}",
+        f"До входа фиксирую две вещи: Стоп {stop} и допустимый риск. Если цена закрепится {failure_side}, торговая гипотеза больше не действует.",
+        f"Отмена сценария наступает не по эмоциям, а после закрепления {failure_side} {stop}. {sentence}",
+        f"Риск ограничен уровнем {stop}. Внутри диапазона {support}–{resistance} наблюдаем реакцию; за стопом идею не защищаем словами.",
     )
+    selected = variants[(variant_index + len(style.id)) % len(variants)]
+    lowered = selected.lower()
+    markers = ("отмена сценария", "размер позиции", "допустимого риска", "стоп-уровня")
+    if not any(marker in lowered for marker in markers):
+        selected += " Размер позиции определяется от допустимого риска до входа."
+    return selected
+
+
+def _context_block(mtf, btc, direction: str, variant_index: int) -> str:
+    higher_tf, aligned, total = _higher_tf_context(mtf, direction)
+    btc_text = _btc_context_text(btc, direction)
+    label = CONTEXT_OPENERS[variant_index % len(CONTEXT_OPENERS)]
+    aligned_text = f"{aligned}/{total} доступных старших ТФ совпадают с направлением" if total else "старшие ТФ недоступны"
+    variants = (
+        f"{label}: {higher_tf}. {btc_text}",
+        f"{label} — {aligned_text}. {btc_text}",
+        f"Перед исполнением сверяю рынок шире 15M: {higher_tf}. {btc_text}",
+        f"Общий фильтр: {btc_text} По таймфреймам получаем {higher_tf}.",
+        f"Не изолирую монету от рынка. {btc_text} Структура ТФ: {higher_tf}.",
+        f"Сверка контекста: {higher_tf}; отдельно по BTC — {btc_text.removeprefix('BTC: ')}",
+        f"На старших периодах: {higher_tf}. Внешний фон: {btc_text}",
+        f"{label}. Совпадение направления — {aligned_text}; {btc_text}",
+    )
+    return variants[variant_index % len(variants)]
+
+
+def _clause(text: str) -> str:
+    return str(text).strip().rstrip(" .!?;:")
+
+
+def _inline_clause(text: str) -> str:
+    value = _clause(text)
+    if len(value) > 1 and value[0].isupper() and value[1].islower():
+        return value[0].lower() + value[1:]
+    return value
 
 
 def _render_style(
@@ -329,127 +463,387 @@ def _render_style(
     level_block: str,
     risk_block: str,
     cta: str,
+    personal_note: str,
+    human_prefix: str,
 ) -> str:
-    header = f"{ticker} | {direction_label} | {angle.title}"
+    h = angle_copy["hook"]
+    thesis = angle_copy["thesis"]
+    evidence = angle_copy["evidence"]
+    confirm = angle_copy["confirmation"]
+    failure = angle_copy["failure"]
+    header = f"{ticker} · {direction_label} · {angle.title}"
+
+    if style.id == "market_note":
+        return "\n\n".join((header, human_prefix, h + ".", thesis, evidence, context, level_block, f"Триггер: {confirm}", risk_block, cta))
 
     if style.id == "numbers_first":
-        return "\n\n".join(
-            (
-                header,
-                f"Цена {metrics['price']} USDT · 1H {metrics['change_1h']} · объём {metrics['volume']} · RSI {metrics['rsi']}",
-                level_block,
-                f"Что стоит за цифрами: {angle_copy['thesis']}",
-                angle_copy["confirmation"],
-                context,
-                risk_block,
-                cta,
-            )
-        )
-
-    if style.id == "scenario_tree":
-        return "\n\n".join(
-            (
-                header,
-                angle_copy["hook"],
-                f"Базовый сценарий: {angle_copy['confirmation']}",
-                f"Альтернативный сценарий: {angle_copy['failure']}",
-                angle_copy["evidence"],
-                level_block,
-                context,
-                risk_block,
-                cta,
-            )
-        )
-
-    if style.id == "checklist":
-        return "\n\n".join(
-            (
-                header,
-                angle_copy["hook"],
-                "Чек-лист сетапа:\n"
-                f"✓ направление: {direction_label}\n"
-                f"✓ главный фактор: {angle.title.lower()}\n"
-                f"✓ метрики: {angle_copy['evidence']}\n"
-                f"→ подтверждение: {angle_copy['confirmation']}",
-                level_block,
-                context,
-                risk_block,
-                cta,
-            )
-        )
-
-    if style.id == "level_focus":
-        return "\n\n".join(
-            (
-                f"{ticker} | Уровень решает больше, чем прогноз",
-                angle_copy["hook"],
-                f"Почему уровень важен: {angle_copy['thesis']}",
-                f"Реакция для подтверждения: {angle_copy['confirmation']}",
-                level_block,
-                angle_copy["evidence"],
-                context,
-                risk_block,
-                cta,
-            )
-        )
-
-    if style.id == "thesis":
-        return "\n\n".join(
-            (
-                header,
-                f"Тезис: {angle_copy['thesis']}",
-                "Аргументы:\n"
-                f"1) {angle_copy['evidence']}\n"
-                f"2) {angle_copy['confirmation']}\n"
-                f"3) {context}",
-                level_block,
-                f"Контраргумент: {angle_copy['failure']}",
-                risk_block,
-                cta,
-            )
-        )
-
-    if style.id == "risk_first":
-        return "\n\n".join(
-            (
-                f"{ticker} | {direction_label}: сначала точка отмены",
-                risk_block,
-                angle_copy["hook"],
-                angle_copy["thesis"],
-                angle_copy["evidence"],
-                level_block,
-                context,
-                cta,
-            )
-        )
-
-    if style.id == "compact_brief":
-        return "\n\n".join(
-            (
-                header,
-                f"Суть: {angle_copy['hook']}. {angle_copy['thesis']}",
-                f"Подтверждение: {angle_copy['confirmation']}",
-                f"Факты: {angle_copy['evidence']}",
-                level_block,
-                risk_block,
-                cta,
-            )
-        )
-
-    # market_note
-    return "\n\n".join(
-        (
-            header,
-            angle_copy["hook"],
-            angle_copy["thesis"],
-            angle_copy["evidence"],
-            context,
+        return "\n\n".join((
+            f"{ticker}: цифры перед решением ({direction_label})",
+            f"Цена {metrics['price']} USDT | 1H {metrics['change_1h']} | 4H {metrics['change_4h']} | объём {metrics['volume']} | RSI {metrics['rsi']} | ADX {metrics['adx']}",
             level_block,
-            f"Что подтвердит идею: {angle_copy['confirmation']}",
+            f"Интерпретация данных: {thesis}",
+            f"Проверка движения: {confirm}",
+            context,
             risk_block,
             cta,
-        )
-    )
+        ))
+
+    if style.id == "scenario_tree":
+        return "\n\n".join((
+            f"{ticker} — развилка для {direction_label}",
+            h + ".",
+            f"Ветка A / продолжение\nЕсли {_inline_clause(confirm)}, работаем по указанному маршруту.",
+            f"Ветка B / отказ\nЕсли {_inline_clause(failure)}, вход не исполняется либо сценарий закрывается.",
+            f"Основание развилки: {evidence}",
+            level_block,
+            context,
+            risk_block,
+            cta,
+        ))
+
+    if style.id == "checklist":
+        return "\n\n".join((
+            f"Чек-лист {ticker} перед {direction_label}",
+            f"□ Направление подтверждено структурой\n□ Главный фактор: {angle.title.lower()}\n□ Метрики: {evidence}\n□ Триггер: {confirm}\n□ Контраргумент: {failure}",
+            level_block,
+            context,
+            risk_block,
+            personal_note,
+            cta,
+        ))
+
+    if style.id == "level_focus":
+        return "\n\n".join((
+            f"{ticker}: сделку решает одна зона",
+            h + ".",
+            f"Почему смотрю именно сюда: {thesis}",
+            f"Что должна сделать цена у границы: {confirm}",
+            f"Что будет считаться отказом: {failure}",
+            level_block,
+            context,
+            risk_block,
+            cta,
+        ))
+
+    if style.id == "thesis":
+        return "\n\n".join((
+            f"Торговый тезис по {ticker} — {direction_label}",
+            thesis,
+            f"Аргумент №1: {evidence}\nАргумент №2: {confirm}\nПроверка тезиса: {context}",
+            f"Сильный контраргумент: {failure}",
+            level_block,
+            risk_block,
+            cta,
+        ))
+
+    if style.id == "risk_first":
+        return "\n\n".join((
+            f"{ticker} {direction_label}: сначала понять, где мы неправы",
+            risk_block,
+            f"Только после этого — идея: {_inline_clause(h)}.",
+            thesis,
+            f"Фактическая база: {evidence}",
+            level_block,
+            context,
+            personal_note,
+            cta,
+        ))
+
+    if style.id == "compact_brief":
+        return "\n\n".join((
+            header,
+            f"Суть — {_inline_clause(h)}. {thesis}",
+            f"Контроль — {confirm} Риск — {failure}",
+            level_block,
+            context,
+            risk_block,
+            cta,
+        ))
+
+    if style.id == "trader_diary":
+        return "\n\n".join((
+            f"Запись в журнале: {ticker}, идея {direction_label}",
+            f"Что заметил. {h}. {thesis}",
+            f"Почему не вхожу вслепую. {confirm}",
+            f"Что заставит признать ошибку. {failure}",
+            f"Цифры, которые записываю: {evidence}",
+            level_block,
+            context,
+            risk_block,
+            personal_note,
+            cta,
+        ))
+
+    if style.id == "morning_scan":
+        return "\n\n".join((
+            f"Утренний скан: {ticker} готовит {direction_label}-сценарий",
+            f"Что попало в отбор: {_inline_clause(h)}.",
+            f"На старте дня вижу следующее: {evidence}",
+            f"До сделки не хватает одного действия цены — {_inline_clause(confirm)}",
+            level_block,
+            context,
+            f"Сценарий снимается с наблюдения, если {_inline_clause(failure)}",
+            risk_block,
+            cta,
+        ))
+
+    if style.id == "evening_review":
+        return "\n\n".join((
+            f"К вечерней сессии: {ticker} / {direction_label}",
+            f"За день цена пришла к ситуации: {_inline_clause(h)}.",
+            thesis,
+            f"Что подтверждают показатели к текущему моменту: {evidence}",
+            context,
+            level_block,
+            f"На следующей реакции отслеживаю: {confirm}",
+            risk_block,
+            cta,
+        ))
+
+    if style.id == "community_question":
+        return "\n\n".join((
+            f"Вопрос по {ticker}: вы тоже читаете это как {direction_label}?",
+            f"Моё основание: {_inline_clause(h)}. {thesis}",
+            f"За сценарий говорят: {evidence}",
+            f"Против сценария: {failure}",
+            context,
+            level_block,
+            risk_block,
+            personal_note,
+            cta,
+        ))
+
+    if style.id == "battle_plan":
+        return "\n\n".join((
+            f"План действий по {ticker} ({direction_label})",
+            f"До входа: {confirm}",
+            f"После входа: соблюдаем маршрут целей без расширения риска.",
+            f"Если рынок идёт против: {failure}",
+            f"Почему этот план появился: {h}. {evidence}",
+            level_block,
+            context,
+            risk_block,
+            cta,
+        ))
+
+    if style.id == "price_story":
+        return "\n\n".join((
+            f"История движения {ticker}: от импульса к торговому плану",
+            f"Сначала рынок показал следующее: {_inline_clause(h)}.",
+            f"Затем появились подтверждающие детали: {evidence}",
+            f"Теперь цена должна пройти следующую проверку: {_inline_clause(confirm)}",
+            f"У истории есть и другой финал: {failure}",
+            level_block,
+            context,
+            risk_block,
+            cta,
+        ))
+
+    if style.id == "calm_analysis":
+        return "\n\n".join((
+            f"Спокойный разбор {ticker} без погони за свечой",
+            human_prefix,
+            thesis,
+            f"Наблюдаемые данные: {evidence}",
+            f"Торопиться нет необходимости. Достаточно дождаться условия: {_inline_clause(confirm)}",
+            context,
+            level_block,
+            risk_block,
+            personal_note,
+            cta,
+        ))
+
+    if style.id == "signal_card":
+        return "\n\n".join((
+            f"СИГНАЛ-КАРТА | {ticker} | {direction_label}",
+            f"Основа: {angle.title}\nСостояние: ожидание подтверждения\nЦена: {metrics['price']} USDT\nОбъём: {metrics['volume']}\nRSI / ADX: {metrics['rsi']} / {metrics['adx']}",
+            f"Причина включения в список: {thesis}",
+            f"Триггер активации: {confirm}",
+            level_block,
+            context,
+            risk_block,
+            cta,
+        ))
+
+    if style.id == "decision_matrix":
+        return "\n\n".join((
+            f"Матрица решения: {ticker} {direction_label}",
+            f"ЗА\n+ {h}\n+ {evidence}\n+ {confirm}",
+            f"ПРОТИВ\n− {failure}\n− вход без реакции на уровень\n− расширение риска после открытия",
+            f"Вывод: идея допустима только при перевесе блока «ЗА» после подтверждения.",
+            level_block,
+            context,
+            risk_block,
+            cta,
+        ))
+
+    if style.id == "execution_protocol":
+        return "\n\n".join((
+            f"Протокол исполнения {ticker} / {direction_label}",
+            f"Шаг 1. Зафиксировать наблюдение: {_inline_clause(h)}.\nШаг 2. Проверить: {evidence}\nШаг 3. Дождаться: {confirm}\nШаг 4. Не исполнять либо выйти, если: {failure}",
+            level_block,
+            context,
+            risk_block,
+            personal_note,
+            cta,
+        ))
+
+    if style.id == "conditional_setup":
+        return "\n\n".join((
+            f"{ticker}: не прогноз, а условие для {direction_label}",
+            f"ЕСЛИ цена выполнит условие — {_inline_clause(confirm)}, ТО сценарий получает право на исполнение.",
+            f"ПОТОМ отслеживаем маршрут целей из плана.",
+            f"ЕСЛИ вместо этого произойдёт следующее — {_inline_clause(failure)}, ТО идея закрывается.",
+            f"Почему вообще наблюдаем: {thesis} {evidence}",
+            context,
+            level_block,
+            risk_block,
+            cta,
+        ))
+
+    if style.id == "indicator_microscope":
+        return "\n\n".join((
+            f"Под микроскопом: {ticker} и {angle.short_label}",
+            f"RSI {metrics['rsi']} | ADX {metrics['adx']} | объём {metrics['volume']} | ATR {metrics['atr_pct']} | VWAP {metrics['vwap']}",
+            f"Что означает связка, а не отдельный индикатор: {thesis}",
+            f"Практическая проверка: {confirm}",
+            f"Слабое место показаний: {failure}",
+            level_block,
+            context,
+            risk_block,
+            cta,
+        ))
+
+    if style.id == "market_letter":
+        return "\n\n".join((
+            f"Письмо с рынка: сегодня в фокусе {ticker}",
+            f"Картина выглядит так. {h}. {thesis}",
+            f"Но отправлять ордер раньше времени не стоит: {confirm}",
+            f"Рынок имеет право доказать обратное — {failure}",
+            f"Под письмом оставляю сухие данные: {evidence}",
+            level_block,
+            context,
+            risk_block,
+            personal_note,
+            cta,
+        ))
+
+    if style.id == "voice_note":
+        return "\n\n".join((
+            f"Коротко голосом про {ticker}",
+            f"Смотрите, что здесь происходит: {_inline_clause(h)}. Не сама свеча важна — важна реакция после неё.",
+            f"По цифрам имеем {evidence}",
+            f"Я бы рассматривал {direction_label} только после следующего: {_inline_clause(confirm)}",
+            level_block,
+            f"А вот здесь уже без вариантов: {failure}",
+            risk_block,
+            context,
+            cta,
+        ))
+
+    if style.id == "red_team":
+        return "\n\n".join((
+            f"Пытаюсь сломать идею по {ticker}, прежде чем открыть {direction_label}",
+            f"Главный аргумент против: {failure}",
+            f"Почему идея всё же остаётся на столе: {thesis}",
+            f"Факты в её пользу: {evidence}",
+            f"Что должно пережить проверку контраргументом: {confirm}",
+            context,
+            level_block,
+            risk_block,
+            cta,
+        ))
+
+    if style.id == "three_gates":
+        return "\n\n".join((
+            f"Три допуска к сделке: {ticker} {direction_label}",
+            f"Ворота 1 — структура\n{thesis}\n\nВорота 2 — подтверждение\n{confirm}\n\nВорота 3 — рынок вокруг\n{context}",
+            f"Если хотя бы одни ворота закрыты, сделка не исполняется. Техническая причина отказа: {failure}",
+            f"Контрольные показатели: {evidence}",
+            level_block,
+            risk_block,
+            cta,
+        ))
+
+    if style.id == "trigger_watch":
+        return "\n\n".join((
+            f"{ticker} в листе ожидания — триггер для {direction_label} ещё впереди",
+            f"Почему монета попала в наблюдение: {_inline_clause(h)}. {evidence}",
+            f"Что активирует идею: {confirm}",
+            f"Что удалит её из списка: {failure}",
+            level_block,
+            context,
+            risk_block,
+            personal_note,
+            cta,
+        ))
+
+    if style.id == "range_map":
+        return "\n\n".join((
+            f"Карта диапазона {ticker}",
+            f"Нижняя граница: {metrics['support']} USDT\nТекущая цена: {metrics['price']} USDT\nВерхняя граница: {metrics['resistance']} USDT\nРабочее направление: {direction_label}",
+            f"Что происходит у края карты: {_inline_clause(h)}.",
+            f"Переход в рабочий сценарий: {confirm}\nВозврат в нейтральную зону: {failure}",
+            level_block,
+            context,
+            risk_block,
+            cta,
+        ))
+
+    if style.id == "momentum_audit":
+        return "\n\n".join((
+            f"Аудит импульса {ticker} — можно ли доверять {direction_label}?",
+            f"Скорость: 1H {metrics['change_1h']}, 4H {metrics['change_4h']}\nСила: ADX {metrics['adx']}\nУчастие объёма: {metrics['volume']}\nПоложение RSI: {metrics['rsi']}",
+            f"Итог аудита: {thesis}",
+            f"Контрольная проверка: {confirm}",
+            f"Причина признать импульс поглощённым: {failure}",
+            level_block,
+            context,
+            risk_block,
+            cta,
+        ))
+
+    if style.id == "btc_lens":
+        return "\n\n".join((
+            f"{ticker} через призму общего рынка",
+            context,
+            f"На самой монете: {_inline_clause(h)}.",
+            f"Локальная логика {direction_label}: {thesis}",
+            f"Совпадение с фоном нужно подтвердить действием цены: {confirm}",
+            f"Если фон и монета разойдутся: {failure}",
+            level_block,
+            risk_block,
+            cta,
+        ))
+
+    if style.id == "risk_memo":
+        return "\n\n".join((
+            f"Риск-мемо по позиции {ticker} / {direction_label}",
+            f"Зачем сделка рассматривается: {thesis}",
+            f"Наблюдаемая опора: {evidence}",
+            f"Условие допуска: {confirm}",
+            f"Основной технический риск: {failure}",
+            level_block,
+            risk_block,
+            context,
+            f"Решение по размеру позиции принимается отдельно от привлекательности TP3. {personal_note}",
+            cta,
+        ))
+
+    if style.id == "terminal_feed":
+        return "\n\n".join((
+            f"[{ticker}] SIGNAL={direction_label} | MODEL={angle.short_label.upper()}",
+            f"PRICE={metrics['price']} | RSI={metrics['rsi']} | ADX={metrics['adx']} | VOL={metrics['volume']} | 1H={metrics['change_1h']}",
+            f"WHY: {thesis}",
+            f"TRIGGER: {confirm}",
+            f"FAIL: {failure}",
+            level_block,
+            context,
+            risk_block,
+            cta,
+        ))
+
+    raise ValueError(f"Unknown post style: {style.id}")
 
 
 # ---------------------------------------------------------------------------
@@ -478,12 +872,13 @@ def _polish_with_ai(text: str, basic: str, levels: Dict[str, float], style: Post
     )
     prompt = f"""
 Отредактируй пост для Binance Square на русском языке.
-Сохрани формат «{style.title}» и главную тему «{angle.title}» — не превращай текст в стандартный шаблон.
+Сохрани композицию «{style.title}» и тему «{angle.title}». Не перестраивай текст в стандартную схему
+«тезис — уровни — риск — вопрос» и не повторяй одинаковые вводные из типичных криптопостов.
 Не добавляй новости, китов, инсайды, гарантии и вероятность прибыли.
 Сохрани тикер ${basic.upper()}, направление, вопрос аудитории и все числа ТОЧНО.
 Максимум 2 эмодзи. Не добавляй хэштеги.
 
-Обязательные строки:
+Обязательные значения должны остаться в тексте:
 {required}
 
 Пост:
@@ -495,8 +890,8 @@ def _polish_with_ai(text: str, basic: str, levels: Dict[str, float], style: Post
         json={
             "model": os.getenv("MISTRAL_MODEL", "mistral-small-latest"),
             "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.72,
-            "max_tokens": 750,
+            "temperature": 0.82,
+            "max_tokens": 850,
         },
         timeout=45,
     )
@@ -533,25 +928,23 @@ def generate_post_draft(
     levels = dict(levels or _levels(ind, direction))
     levels.setdefault("risk_reward", score.risk_reward)
 
-    recent_signal_types = memory.get_last_signal_types(16) if memory else []
-    recent_styles = memory.get_last_post_styles(12) if memory else []
+    recent_signal_types = memory.get_last_signal_types(24) if memory else []
+    recent_styles = memory.get_last_post_styles(40) if memory else []
     angle = choose_signal_angle(ind, direction, mtf, recent_signal_types, variant_index)
     style = choose_post_style(recent_styles, variant_index)
 
-    used_ctas = memory.get_last_ctas(24) if memory else []
+    used_ctas = memory.get_last_ctas(40) if memory else []
     cta = _pick_unused(CTA_VARIANTS, used_ctas)
-    plan_title = choose(PLAN_TITLES)
+    plan_title = PLAN_TITLES[(variant_index * 7 + len(style.id)) % len(PLAN_TITLES)]
+    human_prefix = HUMAN_HOOKS[(variant_index * 5 + len(angle.id)) % len(HUMAN_HOOKS)]
+    personal_note = PERSONAL_PHRASES[(variant_index * 3 + len(style.id)) % len(PERSONAL_PHRASES)]
 
     angle_copy = _angle_content(angle, ind, direction, mtf)
     metrics = _market_metrics(ind)
-    higher_tf, _, _ = _higher_tf_context(mtf, direction)
-    context = f"Контекст: {higher_tf}. {_btc_context_text(btc, direction)}"
-    level_block = _level_block(levels, plan_title)
-    risk_block = _risk_block(ind, direction, levels)
+    context = _context_block(mtf, btc, direction, variant_index)
+    level_block = _level_block(levels, plan_title, style, variant_index)
+    risk_block = _risk_block(ind, direction, levels, style, variant_index)
 
-    # Добавляем естественные вариации речи, чтобы посты не выглядели как один шаблон.
-    human_prefix = random.choice(HUMAN_HOOKS)
-    personal_note = random.choice(PERSONAL_PHRASES)
     post = _render_style(
         style=style,
         angle=angle,
@@ -562,10 +955,10 @@ def generate_post_draft(
         context=context,
         level_block=level_block,
         risk_block=risk_block,
-        cta=f"{cta}\n\n{personal_note}",
+        cta=cta,
+        personal_note=personal_note,
+        human_prefix=human_prefix,
     )
-    if random.random() > 0.35:
-        post = human_prefix + "\n\n" + post
     post = re.sub(r"[ \t]+\n", "\n", post).strip()
 
     if ENABLE_AI_POLISH and MISTRAL_API:
@@ -576,11 +969,12 @@ def generate_post_draft(
         except Exception as exc:
             logger.warning("AI polish rejected; using deterministic text: %s", exc)
 
-    hashtags = varied_hashtags(basic, direction)
+    hashtags = varied_hashtags(basic, direction, variant_index)
     full_post = _fix_ticker_spacing(f"{post}\n\n{hashtags}").strip()
 
     if len(full_post) > POST_MAX_CHARS:
-        compact_style = PostStyle("compact_brief", "Короткий бриф")
+        compact_style = next(item for item in POST_STYLES if item.id == "compact_brief")
+        level_block = _level_block(levels, plan_title, compact_style, variant_index)
         post = _render_style(
             style=compact_style,
             angle=angle,
@@ -592,6 +986,8 @@ def generate_post_draft(
             level_block=level_block,
             risk_block=risk_block,
             cta=cta,
+            personal_note=personal_note,
+            human_prefix=human_prefix,
         )
         full_post = _fix_ticker_spacing(f"{post}\n\n{hashtags}").strip()
         style = compact_style

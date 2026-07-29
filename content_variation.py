@@ -1,11 +1,12 @@
-"""Content strategy and variation engine for Binance Square posts.
+"""Content strategy and anti-repetition assets for Binance Square posts.
 
-The module separates two kinds of diversity:
-1. signal angle — what market fact the post is primarily about;
-2. post style — how that fact is presented to the reader.
+Variation is built on three independent axes:
+1. truthful signal angle — what the market setup is about;
+2. editorial layout — how the post is structured;
+3. language palette — how facts, risk and execution are phrased.
 
-Every angle is derived from calculated indicators. No narrative is invented merely
-for variety.
+The generator deliberately avoids relying on synonym swapping alone. The first
+30 candidates use 30 different layouts before a layout may repeat.
 """
 from __future__ import annotations
 
@@ -26,63 +27,110 @@ class SignalAngle:
 class PostStyle:
     id: str
     title: str
+    family: str
+    level_format: str
+    length: str = "medium"
 
 
+# Every entry has a materially different composition, not just a new heading.
 POST_STYLES: Tuple[PostStyle, ...] = (
-    PostStyle("market_note", "Живая рыночная заметка"),
-    PostStyle("numbers_first", "Разбор через цифры"),
-    PostStyle("scenario_tree", "Два пути рынка"),
-    PostStyle("checklist", "Проверка перед сделкой"),
-    PostStyle("level_focus", "Охота за уровнем"),
-    PostStyle("thesis", "Логика движения"),
-    PostStyle("risk_first", "Сначала защита капитала"),
-    PostStyle("compact_brief", "Быстрый трейдерский бриф"),
-    PostStyle("trader_diary", "Запись трейдера"),
-    PostStyle("morning_scan", "Утренний скан рынка"),
-    PostStyle("evening_review", "Вечерний обзор"),
-    PostStyle("community_question", "Обсуждение с комьюнити"),
-    PostStyle("battle_plan", "План действий"),
-    PostStyle("price_story", "История цены"),
-    PostStyle("calm_analysis", "Спокойный анализ"),
+    PostStyle("market_note", "Живая рыночная заметка", "note", "vertical"),
+    PostStyle("numbers_first", "Разбор через цифры", "data", "compact_grid"),
+    PostStyle("scenario_tree", "Два пути рынка", "branches", "inline"),
+    PostStyle("checklist", "Проверка перед сделкой", "checklist", "numbered"),
+    PostStyle("level_focus", "Охота за уровнем", "level", "route"),
+    PostStyle("thesis", "Логика движения", "thesis", "vertical"),
+    PostStyle("risk_first", "Сначала защита капитала", "risk", "risk_reward"),
+    PostStyle("compact_brief", "Быстрый трейдерский бриф", "brief", "compact_grid", "short"),
+    PostStyle("trader_diary", "Запись трейдера", "diary", "notebook"),
+    PostStyle("morning_scan", "Утренний скан рынка", "scan", "route"),
+    PostStyle("evening_review", "Вечерний обзор", "review", "vertical"),
+    PostStyle("community_question", "Обсуждение с комьюнити", "community", "inline"),
+    PostStyle("battle_plan", "План действий", "action", "numbered"),
+    PostStyle("price_story", "История цены", "story", "notebook"),
+    PostStyle("calm_analysis", "Спокойный анализ", "calm", "vertical"),
+    PostStyle("signal_card", "Карточка сигнала", "card", "card"),
+    PostStyle("decision_matrix", "Матрица решения", "matrix", "risk_reward"),
+    PostStyle("execution_protocol", "Протокол исполнения", "protocol", "numbered"),
+    PostStyle("conditional_setup", "Условный сценарий", "conditional", "route"),
+    PostStyle("indicator_microscope", "Под микроскопом", "microscope", "compact_grid"),
+    PostStyle("market_letter", "Письмо с рынка", "letter", "notebook"),
+    PostStyle("voice_note", "Голосовая заметка", "voice", "inline"),
+    PostStyle("red_team", "Проверка контраргументом", "red_team", "risk_reward"),
+    PostStyle("three_gates", "Три допуска к сделке", "gates", "numbered"),
+    PostStyle("trigger_watch", "Ждём триггер", "trigger", "route"),
+    PostStyle("range_map", "Карта диапазона", "map", "card"),
+    PostStyle("momentum_audit", "Аудит импульса", "audit", "compact_grid"),
+    PostStyle("btc_lens", "Сигнал через контекст BTC", "btc", "inline"),
+    PostStyle("risk_memo", "Риск-мемо", "memo", "risk_reward"),
+    PostStyle("terminal_feed", "Терминальная лента", "terminal", "terminal", "short"),
 )
+
 
 PLAN_TITLES = (
-    "🎯 План по уровням:",
-    "📍 Карта сделки:",
-    "План исполнения:",
-    "Ключевые цены:",
-    "Уровни сценария:",
+    "🎯 План по уровням",
+    "📍 Карта сделки",
+    "План исполнения",
+    "Ключевые цены",
+    "Маршрут сценария",
+    "Рабочие отметки",
+    "Параметры идеи",
+    "Ценовой план",
+    "Торговая схема",
+    "Границы сделки",
+    "Что ставим на карту",
+    "Навигация по позиции",
 )
 
-
-
 HUMAN_HOOKS = (
-    "Посмотрел структуру движения — здесь интересен не сам импульс, а реакция цены на ключевую зону.",
-    "Разбираем без лишнего шума: только то, что реально видно на графике сейчас.",
-    "Рынок снова подошёл к моменту, где одно решение может изменить ближайший сценарий.",
-    "Не пытаемся угадать вершину или дно — смотрим, где появляется подтверждение.",
-    "Интересная точка наблюдения: цена показывает, кто сейчас контролирует движение.",
-    "Оставлю этот сетап здесь для обсуждения — посмотрим, как рынок отработает уровни.",
-    "Главный вопрос сейчас не куда пойдёт цена, а что должно произойти для подтверждения.",
-    "Сетап выглядит аккуратно, но рынок всё равно требует дисциплины и контроля риска.",
+    "Посмотрел структуру движения: здесь интересна реакция, а не сама яркая свеча.",
+    "Без попытки угадать рынок — фиксирую только условия, при которых идея остаётся рабочей.",
+    "Цена подошла к точке, где ближайший сценарий станет намного понятнее.",
+    "Сейчас важнее не направление на глаз, а то, удержится ли ключевая зона.",
+    "В этом сетапе нет магии: есть уровень, подтверждение и заранее известная точка ошибки.",
+    "Оставлю наблюдение до того, как рынок сам покажет, кто контролирует участок графика.",
+    "Не спешу за импульсом: сначала проверяю, есть ли у движения опора.",
+    "На графике сложилась понятная развилка, поэтому разложу её без лишнего шума.",
+    "Сигнал интересный, но вход имеет смысл только при выполнении конкретного условия.",
+    "Рынок дал повод открыть график, но ещё не дал повод забыть о риске.",
+    "Смотрю не на красивую свечу, а на то, что цена делает после неё.",
+    "Здесь можно построить план без прогнозов в стиле «точно пойдёт».",
 )
 
 PERSONAL_PHRASES = (
-    "Лично я бы следил именно за реакцией возле отмеченной зоны.",
-    "Для меня главный момент в этом сценарии — удержание структуры.",
-    "Самое важное здесь — не спешить раньше подтверждения.",
-    "Интересно посмотреть, как рынок поведёт себя после теста уровня.",
+    "Я бы не торопился до реакции на отмеченной границе.",
+    "Для меня решающий момент — сохранение структуры после первого теста.",
+    "Лично я предпочту пропустить вход, если подтверждение окажется слабым.",
+    "Главное здесь — не увеличивать риск только потому, что картинка выглядит убедительно.",
+    "Буду считать идею живой, пока рынок не нарушил условие отмены.",
+    "Мне важнее качество реакции, чем скорость достижения первой цели.",
+    "В таком движении лучше опоздать на подтверждение, чем рано попасть в ложный импульс.",
+    "Сам по себе сигнал не повод входить без заранее рассчитанного размера позиции.",
+    "Пока наблюдение выглядит чище, чем попытка входить на эмоциях.",
+    "Я бы оценивал сделку по исполнению плана, а не по тому, дошла ли цена до TP3.",
 )
 
 CTA_VARIANTS = (
-    "Вы бы ждали подтверждение или работали от реакции у уровня?",
-    "Какой уровень для вас здесь является решающим?",
-    "Что выглядит сильнее: продолжение импульса или возврат в диапазон?",
-    "Вы рассматриваете этот сетап или пропускаете без дополнительного подтверждения?",
-    "Какой сигнал подтверждения вы бы добавили перед входом?",
-    "Где, по-вашему, рынок окончательно сломает этот сценарий?",
-    "Какой вариант движения считаете базовым на ближайшие часы?",
-    "Согласны с направлением или видите контраргумент?",
+    "Вы бы заходили после подтверждения или ждали повторный тест?",
+    "Какая отметка для вас окончательно подтверждает этот сценарий?",
+    "Что здесь сильнее: продолжение импульса или риск возврата в диапазон?",
+    "Этот сетап уже готов к работе или ему не хватает ещё одного сигнала?",
+    "Какое подтверждение вы считаете обязательным перед входом?",
+    "Где для вас проходит точка, после которой идею нужно без споров закрывать?",
+    "Какой из двух сценариев вы бы сделали базовым на ближайшие часы?",
+    "Видите аргумент против выбранного направления?",
+    "Вы бы сократили позицию на TP1 или держали план без изменений?",
+    "Что важнее в этой ситуации: объём, уровень или согласование таймфреймов?",
+    "На каком этапе вы бы перевели сделку в безубыток?",
+    "Такой вход вы бы исполняли лимитным ордером или только после реакции?",
+    "Насколько для вас критичен текущий фон BTC?",
+    "Вы бы пропустили сигнал при слабом ретесте?",
+    "Какой риск на сделку считаете разумным для такой волатильности?",
+    "Есть ли на графике условие, которое я недооценил?",
+    "Как вы читаете эту структуру: накопление или подготовка к продолжению?",
+    "Где бы вы искали повторный вход, если первая точка уйдёт без нас?",
+    "Считаете ли вы текущий R/R достаточным для исполнения?",
+    "Какой из уровней здесь важнее самой точки входа?",
 )
 
 TAG_GROUPS = (
@@ -91,6 +139,36 @@ TAG_GROUPS = (
     ("#Altcoins", "#PriceAction"),
     ("#Crypto", "#TradingPlan"),
     ("#MarketAnalysis", "#RiskManagement"),
+    ("#TradingSetup", "#CryptoMarket"),
+    ("#ChartAnalysis", "#TradeIdea"),
+    ("#RiskControl", "#MarketStructure"),
+    ("#TradingStrategy", "#CryptoAnalysis"),
+    ("#PriceLevels", "#TradeManagement"),
+)
+
+
+RISK_SENTENCES = (
+    "Размер позиции считаю от допустимого убытка, а не от уверенности в картинке.",
+    "Даже хороший сетап не оправдывает увеличение заранее установленного риска.",
+    "Стоп здесь является частью идеи, а не запасным решением после входа.",
+    "Если условие отмены выполнено, сценарий закрывается без усреднения.",
+    "Риск фиксируется до открытия позиции; переносить границу ошибки дальше нельзя.",
+    "План теряет смысл, если после входа менять стоп под эмоции рынка.",
+    "Объём позиции должен переживать стоп без ущерба для торгового плана.",
+    "Сделка допускается только с заранее понятным денежным риском.",
+    "Ни один индикатор не отменяет необходимости ограничить убыток.",
+    "Лучше пропустить движение, чем входить с неприемлемым размером стопа.",
+)
+
+CONTEXT_OPENERS = (
+    "Фон рынка",
+    "Что происходит вокруг сигнала",
+    "Старший контекст",
+    "Фильтр общего рынка",
+    "Картина за пределами 15M",
+    "Проверка фона",
+    "Внешняя среда сделки",
+    "Контекст перед исполнением",
 )
 
 
@@ -103,10 +181,14 @@ def choose(items: Sequence[str], used: Iterable[str] | None = None) -> str:
     return random.choice(available or values)
 
 
-def hashtags(symbol: str, direction: str) -> str:
+def hashtags(symbol: str, direction: str, variant_index: int = 0) -> str:
     direction_tag = "LONG" if direction == "long" else "SHORT"
-    group = random.choice(TAG_GROUPS)
-    return " ".join((f"#{symbol.upper()}", f"#{direction_tag}", *group))
+    group = TAG_GROUPS[variant_index % len(TAG_GROUPS)]
+    tags = [f"#{symbol.upper()}", f"#{direction_tag}", *group]
+    # Rotate the order to prevent an identical footer fingerprint.
+    shift = variant_index % len(tags)
+    tags = tags[shift:] + tags[:shift]
+    return " ".join(tags)
 
 
 def _higher_tf_alignment_count(mtf, direction: str) -> Tuple[int, int]:
@@ -172,7 +254,6 @@ def detect_signal_angles(ind, direction: str, mtf=None) -> List[SignalAngle]:
     if not angles:
         angles.append(SignalAngle("trend_structure", "Структура тренда", "структура", 5.0))
 
-    # Deduplicate while preserving the strongest occurrence.
     best: Dict[str, SignalAngle] = {}
     for angle in angles:
         previous = best.get(angle.id)
@@ -185,28 +266,31 @@ def choose_signal_angle(ind, direction: str, mtf=None, recent_ids: Iterable[str]
     candidates = detect_signal_angles(ind, direction, mtf)
     recent = list(recent_ids or [])
     recent_penalty: Dict[str, float] = {}
-    for offset, angle_id in enumerate(reversed(recent[-12:])):
-        recent_penalty[angle_id] = max(recent_penalty.get(angle_id, 0.0), 4.0 - min(offset, 6) * 0.45)
+    for offset, angle_id in enumerate(reversed(recent[-18:])):
+        recent_penalty[angle_id] = max(recent_penalty.get(angle_id, 0.0), 4.5 - min(offset, 8) * 0.4)
 
     scored = []
-    for position, angle in enumerate(candidates):
-        novelty = -recent_penalty.get(angle.id, 0.0)
-        scored.append((angle.weight + novelty, angle))
+    for angle in candidates:
+        scored.append((angle.weight - recent_penalty.get(angle.id, 0.0), angle))
     scored.sort(key=lambda item: item[0], reverse=True)
-
-    # Different variant_index values explore several truthful angles, not merely
-    # paraphrases of the strongest one. Weak tail angles are capped at six.
-    exploration_pool = [item[1] for item in scored[: min(6, len(scored))]]
+    exploration_pool = [item[1] for item in scored[: min(8, len(scored))]]
     return exploration_pool[variant_index % len(exploration_pool)]
 
 
 def choose_post_style(recent_ids: Iterable[str] | None = None, variant_index: int = 0) -> PostStyle:
     recent = list(recent_ids or [])
-    # Keep all layouts in every batch, but put recently published ones at the end.
-    # This guarantees eight unique candidates while still favouring novelty.
-    last_position = {style_id: position for position, style_id in enumerate(recent)}
+    frequency: Dict[str, int] = {}
+    last_seen: Dict[str, int] = {}
+    for position, style_id in enumerate(recent):
+        frequency[style_id] = frequency.get(style_id, 0) + 1
+        last_seen[style_id] = position
+
     ordered = sorted(
         POST_STYLES,
-        key=lambda style: (style.id in last_position, last_position.get(style.id, -1)),
+        key=lambda style: (
+            frequency.get(style.id, 0),
+            last_seen.get(style.id, -1),
+            POST_STYLES.index(style),
+        ),
     )
     return ordered[variant_index % len(ordered)]

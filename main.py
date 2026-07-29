@@ -14,7 +14,6 @@ import logging
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, Iterable, List, Optional, Tuple
-from difflib import SequenceMatcher
 
 import pandas as pd
 
@@ -50,7 +49,8 @@ MAX_FUNDING_ABS = float(os.getenv("MAX_FUNDING_ABS", "0.001"))
 ENABLE_BALANCED_FALLBACK = os.getenv("ENABLE_BALANCED_FALLBACK", "1").lower() in {
     "1", "true", "yes"
 }
-POST_VARIANTS = max(3, min(int(os.getenv("POST_VARIANTS", "8")), 12))
+POST_VARIANTS = max(12, min(int(os.getenv("POST_VARIANTS", "30")), 40))
+MAX_POST_SIMILARITY = float(os.getenv("MAX_POST_SIMILARITY", "0.56"))
 MIN_POST_QUALITY = float(os.getenv("MIN_POST_QUALITY", "72"))
 PRELIM_MIN_SCORE = float(os.getenv("PRELIM_MIN_SCORE", "38"))
 STRICT_BTC_FILTER = os.getenv("STRICT_BTC_FILTER", "1").lower() in {"1", "true", "yes"}
@@ -184,15 +184,7 @@ def _choose_market_candidate(
 
 
 def _text_similarity(left: str, right: str) -> float:
-    left_norm = PostMemory.normalize_text(left)
-    right_norm = PostMemory.normalize_text(right)
-    if not left_norm or not right_norm:
-        return 0.0
-    left_tokens = set(left_norm.split())
-    right_tokens = set(right_norm.split())
-    union = left_tokens | right_tokens
-    token_ratio = len(left_tokens & right_tokens) / len(union) if union else 0.0
-    return SequenceMatcher(None, left_norm, right_norm).ratio() * 0.55 + token_ratio * 0.45
+    return PostMemory.compare_texts(left, right)
 
 
 def _best_post_variant(
@@ -236,8 +228,8 @@ def _best_post_variant(
             )
             generated_texts.append(draft.text)
 
-            similarity_penalty = max(0.0, memory_similarity - 0.42) * 34.0
-            similarity_penalty += max(0.0, local_similarity - 0.55) * 25.0
+            similarity_penalty = max(0.0, memory_similarity - 0.30) * 70.0
+            similarity_penalty += max(0.0, local_similarity - 0.48) * 35.0
 
             style_repeats = recent_styles.count(draft.style_id)
             signal_repeats = recent_signals.count(draft.signal_type)
@@ -263,8 +255,15 @@ def _best_post_variant(
                 adjusted_score,
             )
 
-            if report.valid and memory_similarity < 0.82:
+            if report.valid and memory_similarity < MAX_POST_SIMILARITY:
                 variants.append((draft, report, adjusted_score))
+            elif report.valid:
+                logger.info(
+                    "Variant %s rejected as too similar: %.3f >= %.3f",
+                    index + 1,
+                    memory_similarity,
+                    MAX_POST_SIMILARITY,
+                )
             elif not report.valid:
                 logger.warning(
                     "Variant %s rejected reasons: %s",

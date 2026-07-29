@@ -10,7 +10,6 @@ from __future__ import annotations
 import os
 import tempfile
 from pathlib import Path
-from difflib import SequenceMatcher
 
 import numpy as np
 import pandas as pd
@@ -133,9 +132,7 @@ def _test_side(side: str) -> None:
 
 
 def _normalized_similarity(left: str, right: str) -> float:
-    left_norm = PostMemory.normalize_text(left)
-    right_norm = PostMemory.normalize_text(right)
-    return SequenceMatcher(None, left_norm, right_norm).ratio()
+    return PostMemory.compare_texts(left, right)
 
 
 def _test_content_diversity() -> None:
@@ -157,7 +154,7 @@ def _test_content_diversity() -> None:
                 levels=levels,
                 variant_index=index,
             )
-            for index in range(8)
+            for index in range(30)
         ]
 
     styles = {draft.style_id for draft in drafts}
@@ -167,9 +164,9 @@ def _test_content_diversity() -> None:
         for i in range(len(drafts))
         for j in range(i)
     ]
-    assert len(styles) >= 7, f"Not enough post styles: {styles}"
+    assert len(styles) == 30, f"Not enough post styles: {styles}"
     assert len(signals) >= 5, f"Not enough signal angles: {signals}"
-    assert max(similarities) < 0.78, f"Variants are too similar: {max(similarities):.3f}"
+    assert max(similarities) < 0.56, f"Variants are too similar: {max(similarities):.3f}"
     print(
         f"DIVERSITY: OK | styles={len(styles)} | signals={len(signals)} | "
         f"max_similarity={max(similarities):.3f}"
