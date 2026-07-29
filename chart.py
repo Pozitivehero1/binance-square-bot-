@@ -161,6 +161,22 @@ def generate_chart(
         price_axis.plot(frame.index, frame["BB_L"], color="#58616d", linewidth=0.7, linestyle=":")
         price_axis.plot(frame.index, frame["VWAP"], color="#ff8c69", linewidth=1.0, linestyle="-.", label="VWAP")
 
+        # Дополнительная визуальная аналитика: зона текущего интереса и мини-статистика.
+        try:
+            change = ((float(frame["close"].iloc[-1]) / float(frame["close"].iloc[-20]) - 1) * 100)
+            volume_now = float(frame["volume"].iloc[-1])
+            volume_avg = float(frame["volume"].tail(20).mean())
+            info = f"20 свечей: {change:+.2f}% | Объём x{(volume_now/volume_avg if volume_avg else 0):.2f}"
+            price_axis.text(
+                0.015, 0.035, info,
+                transform=price_axis.transAxes,
+                fontsize=8,
+                color="white",
+                bbox={"boxstyle": "round,pad=0.35", "facecolor": "#111820", "alpha": 0.8, "edgecolor": "none"},
+            )
+        except Exception:
+            pass
+
         if entry is not None and stop is not None:
             price_axis.axhspan(min(entry, stop), max(entry, stop), color="#ff4757", alpha=0.07)
         if entry is not None and tp3 is not None:

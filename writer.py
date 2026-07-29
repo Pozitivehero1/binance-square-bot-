@@ -19,6 +19,8 @@ from content_variation import (
     choose_post_style,
     choose_signal_angle,
     hashtags as varied_hashtags,
+    HUMAN_HOOKS,
+    PERSONAL_PHRASES,
 )
 from indicators import build_trade_levels
 from memory import PostMemory
@@ -547,6 +549,9 @@ def generate_post_draft(
     level_block = _level_block(levels, plan_title)
     risk_block = _risk_block(ind, direction, levels)
 
+    # Добавляем естественные вариации речи, чтобы посты не выглядели как один шаблон.
+    human_prefix = random.choice(HUMAN_HOOKS)
+    personal_note = random.choice(PERSONAL_PHRASES)
     post = _render_style(
         style=style,
         angle=angle,
@@ -557,8 +562,10 @@ def generate_post_draft(
         context=context,
         level_block=level_block,
         risk_block=risk_block,
-        cta=cta,
+        cta=f"{cta}\n\n{personal_note}",
     )
+    if random.random() > 0.35:
+        post = human_prefix + "\n\n" + post
     post = re.sub(r"[ \t]+\n", "\n", post).strip()
 
     if ENABLE_AI_POLISH and MISTRAL_API:
