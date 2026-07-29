@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 
 logger = logging.getLogger(__name__)
+CHART_STYLE = 'Binance Premium Dark'
 WATERMARK = os.getenv("CHART_WATERMARK", "PozitiveHero")
 
 
