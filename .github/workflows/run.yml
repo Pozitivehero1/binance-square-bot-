@@ -27,9 +27,45 @@ jobs:
       # Путь, куда устанавливается Binance Square Skill
       SQUARE_SKILL_DIR: ${{ github.workspace }}/.agents/skills/square-post
 
-      # Cron управляет частотой публикаций
+      # Cron управляет частотой проверок; слабые темы можно пропускать
       ENABLE_PACING_LIMITS: "0"
-      ENABLE_REACH_GATE: "0"
+      ENABLE_REACH_GATE: "1"
+      MIN_REACH_SCORE: "67"
+      COOLDOWN_MIN: "240"
+
+      # Human Feed Edition
+      AUTHOR_VOICE: "direct"
+      ALLOW_TECHNICAL_FORMATS: "0"
+      ALLOW_FOLLOW_UP_FORMATS: "0"
+      USE_HASHTAGS: "0"
+      EMOJI_RATE: "0.24"
+      QUESTION_EVERY: "7"
+      POST_VARIANTS: "16"
+      POST_MIN_CHARS: "150"
+      POST_MAX_CHARS: "540"
+      MIN_POST_QUALITY: "82"
+      MIN_FEED_APPEAL: "74"
+      MAX_POST_SIMILARITY: "0.50"
+      MIN_W2E_MARKET_SCORE: "56"
+      W2E_SOFT_FLOOR: "40"
+      HOT_W2E_FLOOR: "34"
+      HOT_TECH_MIN: "65"
+      HOT_ATTENTION_MIN: "82"
+      HOT_VOLUME_SPIKE_MIN: "3"
+      HOT_MOVE_15M_MIN: "1.2"
+      MIN_CONVERSION_INTENT: "70"
+      MIN_OPPORTUNITY_SCORE: "59"
+      MIN_AUDIENCE_DEMAND: "18"
+      CONTENT_MODE: "ai_first"
+      PUBLISH_MEDIA_MODE: "chart"
+
+      # Market Attention v7: scan broadly, confirm only the best live events
+      TOP_SYMBOLS: "100"
+      SHORTLIST_SIZE: "28"
+      FINAL_CANDIDATES: "16"
+      DATA_WORKERS: "8"
+      MIN_QUOTE_VOLUME: "5000000"
+      STRICT_BTC_FILTER: "0"
 
     steps:
       - name: Checkout repository
@@ -96,7 +132,7 @@ jobs:
 
       - name: Run bot
         run: |
-          python main.py
+          python run_bot.py
 
       - name: Save bot state
         if: always()
