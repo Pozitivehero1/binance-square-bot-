@@ -1,4 +1,4 @@
-"""Offline checks for the Market Attention v7 ranking."""
+"""Offline checks for the Market Attention v8 ranking."""
 from attention import AttentionSnapshot
 from opportunity import score_market_opportunity
 from trend import TrendingMarket

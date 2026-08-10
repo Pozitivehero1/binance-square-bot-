@@ -126,6 +126,7 @@ def generate_chart(
     support: Optional[float] = None,
     resistance: Optional[float] = None,
     decision_level: Optional[float] = None,
+    decision_mode: str = "at_level",
     vol_rel: Optional[float] = None,
     indicator=None,
     visual_style: str = "clean_chart",
@@ -201,8 +202,9 @@ def generate_chart(
 
         if entry is not None and stop is not None:
             price_axis.axhspan(min(entry, stop), max(entry, stop), color="#ff4757", alpha=0.07)
-        if entry is not None and tp3 is not None:
-            price_axis.axhspan(min(entry, tp3), max(entry, tp3), color="#26de81", alpha=0.055)
+        reward_level = tp1 if human_visual else tp3
+        if entry is not None and reward_level is not None:
+            price_axis.axhspan(min(entry, reward_level), max(entry, reward_level), color="#26de81", alpha=0.055)
 
         levels = []
 
@@ -217,11 +219,18 @@ def generate_chart(
             shown_decision = decision_level
             if shown_decision is None:
                 shown_decision = resistance if direction == "long" else support
-            add_level(shown_decision, "УРОВЕНЬ", "#f5a623", "-", 1.6)
+            decision_caption = {
+                "at_level": "КОНТРОЛЬ",
+                "retest_hold": "УРОВЕНЬ",
+                "retest_reject": "УРОВЕНЬ",
+                "breakout_confirm": "ПОДТВЕРЖДЕНИЕ",
+                "breakdown_confirm": "ПОДТВЕРЖДЕНИЕ",
+            }.get(str(decision_mode), "УРОВЕНЬ")
+            add_level(shown_decision, decision_caption, "#f5a623", "-", 1.6)
             add_level(tp1, "ЦЕЛЬ", "#26de81", "--", 1.25)
             add_level(stop, "ОТМЕНА", "#ff4757", "--", 1.35)
             plan_labels = [label for _, label, _ in levels]
-            panel_title = "СЦЕНАРИЙ"
+            panel_title = "ПЛАН"
         else:
             add_level(entry, "ENTRY", "#ffffff", "-", 1.6)
             add_level(tp1, "TP1", "#26de81", "--", 1.1)
@@ -282,7 +291,16 @@ def generate_chart(
 
         marker = None
         marker_color = "#f5a623"
-        if indicator is not None:
+        if human_visual and decision_level is not None:
+            if decision_mode == "at_level":
+                marker, marker_color = "ПРОВЕРКА УРОВНЯ", "#f5a623"
+            elif decision_mode in {"retest_hold", "retest_reject"}:
+                marker, marker_color = "РЕТЕСТ", "#4a90e2"
+            elif decision_mode == "breakout_confirm":
+                marker, marker_color = "ЖДУ ЗАКРЕПЛЕНИЕ ВЫШЕ", "#26de81"
+            elif decision_mode == "breakdown_confirm":
+                marker, marker_color = "ЖДУ ЗАКРЕПЛЕНИЕ НИЖЕ", "#ff4757"
+        elif indicator is not None:
             if direction == "long" and indicator.breakout_up:
                 marker, marker_color = ("ПРОБОЙ" if human_visual else "BREAKOUT"), "#26de81"
             elif direction == "short" and indicator.breakout_down:

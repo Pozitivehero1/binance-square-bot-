@@ -38,11 +38,11 @@ jobs:
       ALLOW_TECHNICAL_FORMATS: "0"
       ALLOW_FOLLOW_UP_FORMATS: "0"
       USE_HASHTAGS: "0"
-      EMOJI_RATE: "0.24"
+      EMOJI_RATE: "0.20"
       QUESTION_EVERY: "7"
       POST_VARIANTS: "16"
-      POST_MIN_CHARS: "150"
-      POST_MAX_CHARS: "540"
+      POST_MIN_CHARS: "140"
+      POST_MAX_CHARS: "500"
       MIN_POST_QUALITY: "82"
       MIN_FEED_APPEAL: "74"
       MAX_POST_SIMILARITY: "0.50"
@@ -59,7 +59,16 @@ jobs:
       CONTENT_MODE: "ai_first"
       PUBLISH_MEDIA_MODE: "chart"
 
-      # Market Attention v7: scan broadly, confirm only the best live events
+      # Public trade-plan coherence: no fake retest, no weak 1:1 public setup
+      MIN_PUBLIC_PLAN_RR: "1.30"
+      MAX_PUBLIC_RISK_PCT: "9.0"
+      DECISION_NEAR_ATR: "0.30"
+      DECISION_NEAR_PCT: "0.25"
+      MAX_STRUCTURAL_DISTANCE_ATR: "2.40"
+      MAX_STRUCTURAL_DISTANCE_PCT: "4.0"
+      PUBLIC_STOP_BUFFER_ATR: "0.75"
+
+      # Market Attention v8: scan broadly; publish only coherent, feed-safe trade plans
       TOP_SYMBOLS: "100"
       SHORTLIST_SIZE: "28"
       FINAL_CANDIDATES: "16"

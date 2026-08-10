@@ -1,4 +1,4 @@
-"""Main orchestration for Binance Square Market Attention v7.
+"""Main orchestration for Binance Square Market Attention v8.
 
 Pipeline:
 1. Scan liquid/trending USDT pairs.
@@ -39,6 +39,7 @@ from opportunity import MarketOpportunitySnapshot, preliminary_interest_score, s
 from trend import TrendingMarket, get_base_asset, get_trending_market
 from content_variation import detect_signal_angles
 from writer import GeneratedPost, _levels, generate_post_candidates
+from trade_plan import plan_summary
 
 logger = setup_logging()
 
@@ -126,7 +127,7 @@ def _preliminary_shortlist(
 ) -> List[str]:
     """Rank the cheap 15m/1h pass by market interest, not technical score alone.
 
-    This is the first major v7 change: a hot market must survive long enough to
+    This is the first major v8 change: a hot market must survive long enough to
     receive 4h/1d confirmation even if its preliminary technical score is only
     average.
     """
@@ -217,6 +218,7 @@ def _choose_market_candidate(
     AttentionSnapshot,
     MarketMonetizationSnapshot,
     MarketOpportunitySnapshot,
+    Dict[str, object],
 ]]:
     """Choose the best *market event* among technically defensible setups."""
     frequencies = memory.signal_type_frequency(24)
@@ -255,6 +257,15 @@ def _choose_market_candidate(
 
         raw_15m = primary_data.get(mtf.symbol, {}).get("15m")
         attention = compute_attention(raw_15m, mtf.tf_15m, score.direction)
+
+        # v8 validates the *public* plan before the market event can win the race.
+        # Internal TP3 R/R is not enough if the post would show a 1:1 first target
+        # or a stop wider than we are willing to present to readers.
+        levels = _levels(mtf.tf_15m, score.direction)
+        if not levels.get("plan_valid", False):
+            logger.info("Skip %s: public plan rejected: %s", mtf.symbol, plan_summary(levels))
+            continue
+
         meta = market_meta.get(mtf.symbol)
         universe_size = max(1, len(market_universe))
         if meta is None:
@@ -267,7 +278,7 @@ def _choose_market_candidate(
                 attention_score=attention.score,
                 change_15m=attention.change_15m,
                 volume_spike=attention.volume_spike,
-                risk_reward=score.risk_reward,
+                risk_reward=float(levels.get("public_rr", score.risk_reward)),
                 overextended=attention.overextended,
             )
         else:
@@ -280,7 +291,7 @@ def _choose_market_candidate(
                 attention_score=attention.score,
                 change_15m=attention.change_15m,
                 volume_spike=attention.volume_spike,
-                risk_reward=score.risk_reward,
+                risk_reward=float(levels.get("public_rr", score.risk_reward)),
                 overextended=attention.overextended,
             )
 
@@ -289,23 +300,25 @@ def _choose_market_candidate(
             universe=market_universe,
             attention=attention,
             technical_score=score.total,
-            risk_reward=score.risk_reward,
+            risk_reward=float(levels.get("public_rr", score.risk_reward)),
             strict_setup=mtf.symbol in strict_symbols,
             btc_compatible=btc_compatible,
         )
         gate_allowed, gate_mode = _w2e_candidate_gate(score, attention, monetization, opportunity)
 
-        # The opportunity score already contains demand/freshness/volume/technical
-        # terms.  Diversity is deliberately a small tie-breaker, not the engine.
-        adjusted_score = opportunity.score - diversity_penalty
+        # Public plan quality is a small tie-breaker. Market attention still leads,
+        # but a cleaner actionable plan beats an equally hot 1.3-R/R alternative.
+        plan_rr = float(levels.get("public_rr", 0.0))
+        plan_bonus = min(4.0, max(0.0, (plan_rr - 1.30) * 2.2))
+        adjusted_score = opportunity.score - diversity_penalty + plan_bonus
 
         logger.info(
             "Candidate %s tech=%.1f attention=%.1f w2e=%.1f opportunity=%.1f final=%.1f "
-            "gate=%s profile=%s angle=%s 15m=%+.2f%% 45m=%+.2f%% vol=x%.2f extended=%s [%s]",
+            "gate=%s profile=%s angle=%s 15m=%+.2f%% 45m=%+.2f%% vol=x%.2f extended=%s plan_rr=%.2f mode=%s [%s]",
             mtf.symbol, score.total, attention.score, monetization.score, opportunity.score,
             adjusted_score, gate_mode, "strict" if mtf.symbol in strict_symbols else "balanced",
             best_angle.id, attention.change_15m, attention.change_45m, attention.volume_spike,
-            attention.overextended, opportunity.reason,
+            attention.overextended, float(levels.get("public_rr", 0.0)), levels.get("decision_mode"), opportunity.reason,
         )
 
         if not gate_allowed:
@@ -328,15 +341,15 @@ def _choose_market_candidate(
             continue
 
         eligible.append((
-            adjusted_score, mtf, score, funding, best_angle.id, attention, monetization, opportunity
+            adjusted_score, mtf, score, funding, best_angle.id, attention, monetization, opportunity, levels
         ))
 
     if not eligible:
         return None
 
     eligible.sort(key=lambda item: item[0], reverse=True)
-    _, mtf, score, funding, _, attention, monetization, opportunity = eligible[0]
-    return mtf, score, funding, attention, monetization, opportunity
+    _, mtf, score, funding, _, attention, monetization, opportunity, levels = eligible[0]
+    return mtf, score, funding, attention, monetization, opportunity, levels
 
 def _text_similarity(left: str, right: str) -> float:
     return PostMemory.compare_texts(left, right)
@@ -363,7 +376,7 @@ def _best_post_variant(
     recent_formats = memory.get_last_content_formats(30)
     recent_visuals = memory.get_last_visual_styles(20)
     recent_texts = memory.recent_texts(3)
-    recent_had_emoji = any(any(mark in text for mark in ("⚡", "⚠️", "👀", "📌")) for text in recent_texts)
+    recent_had_emoji = any(any(mark in text for mark in ("⚡", "⚠️", "👀")) for text in recent_texts)
 
     try:
         drafts = generate_post_candidates(
@@ -416,7 +429,7 @@ def _best_post_variant(
             if recent_signals[-1:] == [draft.signal_type]:
                 novelty_penalty += 2.0
 
-            # Market Attention v7: factual validity stays a hard gate, while the
+            # Market Attention v8: factual validity stays a hard gate, while the
             # ranking favours compact, readable posts that fit the *current*
             # market state. A hot/extended move should become a retest/caution
             # story, not a dashboard or a blind entry alert.
@@ -457,7 +470,7 @@ def _best_post_variant(
             if len(draft.text) > 500:
                 length_bonus -= min(10.0, (len(draft.text) - 500) / 6.0)
 
-            has_emoji = any(mark in draft.headline for mark in ("⚡", "⚠️", "👀", "📌"))
+            has_emoji = any(mark in draft.headline for mark in ("⚡", "⚠️", "👀"))
             aesthetic_bonus = 0.0
             if has_emoji and not recent_had_emoji:
                 aesthetic_bonus = 1.6
@@ -641,7 +654,7 @@ def _run_once() -> int:
     strict_symbols = {mtf.symbol for mtf, _ in strict_ranked}
     ranked = list(strict_ranked)
 
-    # v7 always lets near-threshold *balanced* setups enter the attention race.
+    # v8 always lets near-threshold *balanced* setups enter the attention race.
     # They do not automatically publish: opportunity/W2E gates still decide.
     if ENABLE_BALANCED_FALLBACK:
         balanced_ranked = get_top_candidates(
@@ -670,17 +683,20 @@ def _run_once() -> int:
         write_status("skipped", "no candidate passed market-opportunity selection")
         return 0
 
-    best_mtf, best_score, funding, attention, monetization, opportunity = chosen
+    best_mtf, best_score, funding, attention, monetization, opportunity, levels = chosen
     symbol = best_mtf.symbol
     basic = get_base_asset(symbol)
     indicator = best_mtf.tf_15m
     if indicator is None:
         return 1
 
-    levels = _levels(indicator, best_score.direction)
+    logger.info(
+        "PUBLIC PLAN %s",
+        plan_summary(levels),
+    )
     logger.info(
         "BEST %s tech=%.1f attention=%.1f w2e=%.1f opportunity=%.1f direction=%s profile=%s trend=%.0f momentum=%.0f volume=%.0f "
-        "mtf=%.0f R/R=%.2f 15m=%+.2f%% fresh_vol=x%.2f funding=%s",
+        "mtf=%.0f internal_R/R=%.2f public_R/R=%.2f 15m=%+.2f%% fresh_vol=x%.2f funding=%s",
         symbol,
         best_score.total,
         attention.score,
@@ -693,6 +709,7 @@ def _run_once() -> int:
         best_score.volume,
         best_score.multi_tf,
         best_score.risk_reward,
+        float(levels.get("public_rr", 0.0)),
         attention.change_15m,
         attention.volume_spike,
         f"{funding * 100:.4f}%" if funding is not None else "n/a",
@@ -767,12 +784,12 @@ def _run_once() -> int:
                     card_path = generate_card(
                         basic=basic,
                         direction=best_score.direction,
-                        entry=levels["entry"],
-                        tp1=levels["tp1"],
-                        tp2=levels["tp2"],
-                        tp3=levels["tp3"],
+                        entry=levels.get("plan_entry", levels["entry"]),
+                        tp1=levels.get("public_target", levels["tp1"]),
+                        tp2=levels.get("public_target", levels["tp2"]),
+                        tp3=levels.get("public_target", levels["tp3"]),
                         stop=levels["stop"],
-                        rr=levels["risk_reward"],
+                        rr=levels.get("public_rr", levels["risk_reward"]),
                         confidence=best_score.total,
                         change_1h=indicator.change_1h,
                         post_style=selected_post.style_id,
@@ -799,15 +816,16 @@ def _run_once() -> int:
                         symbol,
                         raw_15m,
                         basic,
-                        entry=levels["entry"],
-                        tp1=levels["tp1"],
-                        tp2=levels["tp2"],
-                        tp3=levels["tp3"],
+                        entry=levels.get("plan_entry", levels["entry"]),
+                        tp1=levels.get("public_target", levels["tp1"]),
+                        tp2=levels.get("public_target", levels["tp2"]),
+                        tp3=levels.get("public_target", levels["tp3"]),
                         stop=levels["stop"],
                         direction=best_score.direction,
                         support=indicator.support,
                         resistance=indicator.resistance,
                         decision_level=levels.get("decision"),
+                        decision_mode=str(levels.get("decision_mode", "at_level")),
                         vol_rel=attention.volume_spike,
                         indicator=indicator,
                         visual_style=selected_post.visual_style,
@@ -831,6 +849,8 @@ def _run_once() -> int:
                 quality_score=quality_report.score,
                 w2e_market_score=monetization.score,
                 opportunity_score=opportunity.score,
+                public_rr=levels.get("public_rr"),
+                decision_mode=levels.get("decision_mode"),
             )
             print(post_text)
             return 0
@@ -876,6 +896,8 @@ def _run_once() -> int:
             event_class=opportunity.event_class,
             content_format=selected_post.content_format,
             visual_style=selected_post.visual_style,
+            public_rr=levels.get("public_rr"),
+            decision_mode=levels.get("decision_mode"),
         )
         logger.info("Published %s successfully (post_id=%s)", symbol, published.post_id or "n/a")
         return 0

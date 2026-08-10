@@ -1,4 +1,4 @@
-"""Offline presentation/level-coherence checks for v7."""
+"""Offline presentation/level-coherence checks for v8."""
 import os
 import re
 from unittest.mock import patch
@@ -18,9 +18,9 @@ for side in ("long", "short"):
     levels = _levels(mtf.tf_15m, side)
     decision = levels["decision"]
     if side == "long":
-        assert levels["stop"] < decision < levels["tp1"], levels
+        assert levels["stop"] < decision < levels["public_target"], levels
     else:
-        assert levels["tp1"] < decision < levels["stop"], levels
+        assert levels["public_target"] < decision < levels["stop"], levels
 
     attention = compute_attention(frames["15m"], mtf.tf_15m, side)
     with patch.dict(os.environ, {
@@ -35,7 +35,7 @@ for side in ("long", "short"):
         )
     assert drafts
     for draft in drafts:
-        assert len(draft.text) <= 540
+        assert len(draft.text) <= 500
         assert len(re.findall(r"[\U0001F300-\U0001FAFF\u2600-\u27BF]", draft.text)) <= 1
         assert "#PriceAction" not in draft.text
 

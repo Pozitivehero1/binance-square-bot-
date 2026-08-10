@@ -1,8 +1,8 @@
 # Binance Square Bot — Human Feed Edition
 
-## Market Attention v7
+## Market Attention v8
 
-The current build is the **Market Attention v7** profile. It ranks live market events before writing: relative audience demand + fresh attention + volume anomaly + technical quality + actionability. The bot may intentionally skip an external-cron run when no candidate clears the opportunity/W2E/reach gates. Human-feed copy is compact, chart-first, low-template, and fact-locked. See `CHANGES_V7.md` for the exact defaults and behavior.
+The current build is **Market Attention v8**. It keeps the v7 market-attention ranking and adds a public trade-plan coherence layer: the displayed decision level, target and invalidation must form a sensible plan; copy is generated from the actual current-price/level relationship, so a market already sitting on a level is described as an **удержание/контроль**, never as a future retest. Weak public R/R and excessively wide invalidation are skipped rather than dressed up as a trade. Emoji are sparse and contextual, not decorative. See `CHANGES_V8.md`.
 
 
 > Human Feed v6 (2026-08-07): генератор переписан под короткие живые посты. Убраны терминальные фразы, обязательные CTA и технические простыни; горячие движения превращаются в понятные сценарии с ретестом, первой целью и отменой. Подробности: `HUMAN_FEED_EDITION.md`.
@@ -39,9 +39,9 @@ python run_bot.py
 ENABLE_PACING_LIMITS=0
 MIN_GLOBAL_INTERVAL_MIN=20
 MAX_POSTS_PER_DAY=72
-COOLDOWN_MIN=180
+COOLDOWN_MIN=240
 ENABLE_REACH_GATE=1
-MIN_REACH_SCORE=64
+MIN_REACH_SCORE=67
 ```
 
 Cron запускается каждые 20 минут и задаёт реальную частоту публикаций. `ENABLE_PACING_LIMITS=0` отключает старый лимит 120 минут и дневной бюджет 6 постов. `ENABLE_REACH_GATE=1` разрешает пропустить слабый запуск: внешний cron по-прежнему запускается каждые 20 минут, но публикация происходит только при достаточном рыночном качестве.
@@ -208,19 +208,19 @@ PUBLISH_WINDOWS=07:00-10:00,12:00-15:00,18:00-22:30
 
 ```env
 POST_VARIANTS=16
-POST_MIN_CHARS=160
-POST_MAX_CHARS=620
+POST_MIN_CHARS=140
+POST_MAX_CHARS=500
 MIN_POST_QUALITY=82
 MIN_FEED_APPEAL=74
-MAX_POST_SIMILARITY=0.52
+MAX_POST_SIMILARITY=0.50
 MIN_CONVERSION_INTENT=70
 ALLOW_TECHNICAL_FORMATS=0
 ENABLE_PACING_LIMITS=0
 MIN_GLOBAL_INTERVAL_MIN=20
 MAX_POSTS_PER_DAY=72
 ENABLE_REACH_GATE=1
-MIN_REACH_SCORE=64
-COOLDOWN_MIN=180
+MIN_REACH_SCORE=67
+COOLDOWN_MIN=240
 ```
 
 При `ENABLE_PACING_LIMITS=0` внешний cron задаёт частоту проверок. Внутренние W2E/reach/quality gates всё равно могут пропустить слабый цикл. `FORCE_PUBLISH=1` оставлен только для разовой диагностики.

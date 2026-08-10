@@ -1,29 +1,64 @@
-Market Attention v7 — offline validation
-========================================
+Market Attention v8 — offline verification
+==========================================
 
-Final validation profile:
-- Python compilation: PASS
-- Configuration check: PASS (0 warnings in dry-run environment)
-- Market Opportunity synthetic ranking: PASS
-  - TAO-like fresh volume event: 74.6
-  - already-saturated extreme pump: 37.6
-  - quiet technical setup: 37.6
-- Presentation/decision-level coherence: PASS
-- LONG synthetic setup: PASS
-- SHORT synthetic setup: PASS
-- Content diversity: PASS
-- Mistral fact lock: PASS (mocked request; no network call)
-- Balanced technical fallback: PASS
-- Publisher command construction: PASS (no publication)
-- Attention test: PASS
-- W2E scoring test: PASS
-- Human copy test: PASS
-- 150-post repetition stress: PASS
-  - max pairwise similarity: 0.496
-  - configured gate: 0.50
-- Direction-aware copy matrix: PASS
-- Cron/state/overlap safety: PASS
-- GitHub Actions YAML parse: PASS
-- Offline chart preview generation: PASS
+All checks below passed on the packaged build. No Binance publication was attempted.
 
-No live Binance publication was attempted by these tests.
+attention_test.py
+  ATTENTION: OK
+
+opportunity_test.py
+  OPPORTUNITY: OK
+
+w2e_test.py
+  W2E: OK
+
+trade_plan_test.py
+  TRADE PLAN: OK
+  - current price ~= decision level => at_level
+  - no fake retest wording
+  - public R/R >= 1.30
+  - public risk <= 9%
+  - wide-risk plan rejected
+
+emoji_test.py
+  EMOJI: OK
+  - sparse contextual accents
+  - no push-pin emoji
+  - max one supported emoji
+
+presentation_test.py
+  PRESENTATION: OK
+  - coherent decision/target/invalidation geometry
+  - compact copy
+  - emoji/hashtag guard
+
+human_copy_test.py
+  HUMAN COPY: OK
+  - hot BICO-like scenario
+  - human-first output
+  - fact-locked target/invalidation
+
+copy_matrix_test.py
+  COPY MATRIX: OK
+  - aligned and counter-trend headlines are direction-aware
+
+self_test.py
+  LONG: OK
+  SHORT: OK
+  DIVERSITY: OK
+    max candidate similarity = 0.450
+  MISTRAL FACT LOCK: OK
+  BALANCED FALLBACK: OK
+  PUBLISHER COMMAND: OK
+
+cron_test.py
+  CRON SAFETY: OK
+
+repetition_test.py
+  REPETITION STRESS: OK
+  posts = 150
+  max_similarity = 0.489
+  gate = 0.50
+
+config_check.py
+  CONFIG CHECK: OK

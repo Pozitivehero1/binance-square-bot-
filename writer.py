@@ -1,4 +1,4 @@
-"""Fact-locked, human-first Binance Square post generator — Market Attention v7.
+"""Fact-locked, human-first Binance Square post generator — Market Attention v8.
 
 Market selection lives outside this module. The writer's job is to turn a valid
 setup into something a real person would stop and read in a feed:
@@ -38,22 +38,22 @@ from content_strategy import (
     visual_style_for,
 )
 from content_variation import SignalAngle, detect_signal_angles
-from indicators import build_trade_levels
+from trade_plan import build_public_trade_plan
 from memory import PostMemory
 
 load_dotenv()
 logger = logging.getLogger(__name__)
 
-POST_MAX_CHARS = int(os.getenv("POST_MAX_CHARS", "540"))
-POST_MIN_CHARS = int(os.getenv("POST_MIN_CHARS", "150"))
-EMOJI_RATE = max(0.0, min(float(os.getenv("EMOJI_RATE", "0.24")), 0.50))
+POST_MAX_CHARS = int(os.getenv("POST_MAX_CHARS", "500"))
+POST_MIN_CHARS = int(os.getenv("POST_MIN_CHARS", "140"))
+EMOJI_RATE = max(0.0, min(float(os.getenv("EMOJI_RATE", "0.20")), 0.40))
 QUESTION_EVERY = max(4, int(os.getenv("QUESTION_EVERY", "7")))
 USE_HASHTAGS = os.getenv("USE_HASHTAGS", "0").strip().lower() in {"1", "true", "yes", "on"}
 AI_VARIANTS = max(2, min(int(os.getenv("AI_VARIANTS", "4")), 8))
 AI_TIMEOUT = max(10, min(int(os.getenv("AI_TIMEOUT", "50")), 120))
 AI_TEMPERATURE = max(0.0, min(float(os.getenv("AI_TEMPERATURE", "0.52")), 0.72))
 
-# Kept for compatibility with tests/imports. Market Attention v7 intentionally does
+# Kept for compatibility with tests/imports. Market Attention v8 intentionally does
 # not force terminal-like full trade-plan blocks into normal feed posts.
 FULL_PLAN_FORMATS: set[str] = set()
 
@@ -111,23 +111,9 @@ def _fmt_x_human(value: float) -> str:
     return _fmt_x(value).replace(".", ",")
 
 
-def _levels(ind, direction: str) -> Dict[str, float]:
-    levels = dict(build_trade_levels(ind, direction))
-    entry = float(levels["entry"])
-    stop = float(levels["stop"])
-    tp1 = float(levels["tp1"])
-    structural = float(ind.resistance if direction == "long" else ind.support)
-
-    # A structural level can sit beyond the calculated stop/target after a very
-    # extended candle.  Writing "wait for 0.210, stop 0.214" is contradictory.
-    # Only use the structural level when it lies inside the actual trade corridor;
-    # otherwise the current/entry price becomes the decision level.
-    if direction == "long":
-        corridor_ok = stop < structural < tp1
-    else:
-        corridor_ok = tp1 < structural < stop
-    levels["decision"] = structural if corridor_ok else entry
-    return levels
+def _levels(ind, direction: str) -> Dict[str, Any]:
+    """Return the public, copy-aware trade plan for this setup."""
+    return build_public_trade_plan(ind, direction)
 
 
 def _ticker(basic: str) -> str:
@@ -157,11 +143,33 @@ def _higher_tf_alignment(mtf, direction: str) -> Tuple[int, int, str]:
     return aligned, total, ", ".join(labels) if labels else "старшие ТФ недоступны"
 
 
-def _risk_reward_percentages(levels: Dict[str, float]) -> Tuple[float, float]:
-    entry = max(abs(float(levels["entry"])), 1e-12)
-    risk = abs(float(levels["entry"]) - float(levels["stop"])) / entry * 100.0
-    reward = abs(float(levels["tp1"]) - float(levels["entry"])) / entry * 100.0
+def _risk_reward_percentages(levels: Dict[str, Any]) -> Tuple[float, float]:
+    entry = max(abs(float(levels.get("plan_entry", levels["entry"]))), 1e-12)
+    stop = float(levels["stop"])
+    target = float(levels.get("public_target", levels["tp1"]))
+    risk = abs(entry - stop) / entry * 100.0
+    reward = abs(target - entry) / entry * 100.0
     return risk, reward
+
+
+def _event_strength(attention: Optional[AttentionSnapshot]) -> str:
+    if attention is None:
+        return "quiet"
+    move = abs(float(attention.change_15m))
+    volume = float(attention.volume_spike)
+    if move >= 3.0 or (move >= 1.2 and volume >= 4.0) or volume >= 8.0 or attention.score >= 88:
+        return "strong"
+    if move >= 0.5 or volume >= 2.0 or attention.score >= 62:
+        return "active"
+    return "quiet"
+
+
+def _decision_mode(levels: Dict[str, Any]) -> str:
+    return str(levels.get("decision_mode", "at_level"))
+
+
+def _retest_allowed(levels: Dict[str, Any]) -> bool:
+    return _decision_mode(levels) in {"retest_hold", "retest_reject"}
 
 
 def _angle_copy(angle: SignalAngle, ind, direction: str, levels: Dict[str, float]) -> Dict[str, str]:
@@ -182,6 +190,7 @@ def _angle_copy(angle: SignalAngle, ind, direction: str, levels: Dict[str, float
     return {
         "thesis": hooks.get(angle.id, hooks["trend_structure"]),
         "key_level": _fmt_price(key_level),
+        "decision_mode": _decision_mode(levels),
     }
 
 
@@ -207,8 +216,8 @@ def _fact_catalog(
         "changes": f"За 1H {ind.change_1h:+.2f}%, за 4H {ind.change_4h:+.2f}%.",
         "range": f"Поддержка {_fmt_price(ind.support)}, сопротивление {_fmt_price(ind.resistance)}.",
         "mtf": f"Старшие ТФ: {aligned}/{total} за направление ({tf_detail})." if total else "Старшие ТФ недоступны.",
-        "risk_math": f"До стопа {risk_pct:.2f}%, до первой цели {reward_pct:.2f}%.",
-        "target": f"Первая цель {_fmt_price(levels['tp1'])}, стоп {_fmt_price(levels['stop'])}.",
+        "risk_math": f"Риск до отмены {risk_pct:.2f}%, потенциал до рабочей цели {reward_pct:.2f}%.",
+        "target": f"Рабочая цель {_fmt_price(levels.get('public_target', levels['tp1']))}, отмена {_fmt_price(levels['stop'])}.",
     }
     if attention is not None:
         facts["fresh_move"] = f"За 15 минут {_fmt_pct(attention.change_15m)}, за 45 минут {_fmt_pct(attention.change_45m)}."
@@ -224,10 +233,10 @@ def _fact_catalog(
 
 
 _QUESTIONS = (
-    "Вы бы здесь ждали ретест или просто пропустили движение?",
-    "После такой свечи вы бы ждали откат или уже не трогали монету?",
+    "Вы бы здесь ждали подтверждение или просто пропустили движение?",
     "Для вас здесь уже есть вход или подтверждения пока мало?",
-    "Вы бы открывали сделку только после реакции на уровне?",
+    "Что для вас важнее в такой ситуации: удержание уровня или новая свеча?",
+    "Вы бы открывали сделку только после реакции цены?",
 )
 
 
@@ -259,21 +268,28 @@ def _maybe_decorate_headline(
     attention: Optional[AttentionSnapshot],
     variant_index: int,
 ) -> str:
-    """Use at most one contextual emoji and only on a minority of posts."""
+    """Use at most one meaningful emoji; no decorative push-pin spam."""
     if EMOJI_RATE <= 0:
         return headline
-    bucket = (variant_index % 100) / 100.0
+    # Stable pseudo-random bucket. Using variant_index/100 made every one of
+    # the first 16 candidates pass a 20% emoji rate. Hashing spreads accents
+    # across candidates instead of turning every post into an emoji post.
+    token = f"{headline}|{format_id}|{variant_index}".encode("utf-8")
+    bucket = int(hashlib.sha1(token).hexdigest()[:8], 16) / 0xFFFFFFFF
     if bucket >= EMOJI_RATE:
         return headline
+
+    strength = _event_strength(attention)
     if attention and attention.volume_spike >= 6.0:
         emoji = "⚡"
-    elif format_id in {"one_problem", "crowd_trap", "mistake_to_avoid"}:
+    elif format_id in {"one_problem", "crowd_trap", "mistake_to_avoid"} and strength == "strong":
         emoji = "⚠️"
-    elif format_id in {"level_story", "chart_story", "liquidity_map"}:
+    elif format_id in {"level_story", "chart_story", "liquidity_map", "hot_reaction"}:
         emoji = "👀"
     else:
-        emoji = "📌"
+        return headline
     return f"{emoji} {headline}"
+
 
 def _default_fact_ids(format_id: str, facts: Dict[str, str], variant_index: int = 0) -> List[str]:
     mapping = {
@@ -339,27 +355,38 @@ def _movement_sentence(attention: Optional[AttentionSnapshot], variant_index: in
 def _trade_sentences(
     direction: str,
     key_level: str,
-    levels: Dict[str, float],
+    levels: Dict[str, Any],
     attention: Optional[AttentionSnapshot],
     variant_index: int,
+    format_id: str = "",
 ) -> Tuple[str, str]:
-    side = "LONG" if direction == "long" else "SHORT"
-    target = _fmt_price(levels["tp1"])
+    del attention
+    # Different editorial formats should not collapse into the same final two
+    # sentences merely because their numeric variant index has the same modulo.
+    format_offset = sum(ord(ch) for ch in format_id) % 7 if format_id else 0
+    pick = variant_index + format_offset
+    target = _fmt_price(levels.get("public_target", levels["tp1"]))
     stop = _fmt_price(levels["stop"])
-    hot = bool(attention and (attention.overextended or abs(attention.change_15m) >= 1.0))
+    mode = _decision_mode(levels)
 
     if direction == "long":
-        if hot:
+        if mode == "retest_hold":
             entries = (
-                f"После отката удержат {key_level} — тогда смотрю LONG к {target}.",
-                f"Ретест {key_level} выдержат — интерес к LONG сохраняется. Первая цель — {target}.",
-                f"Хочу увидеть возврат к {key_level} и покупателей на ретесте. Тогда LONG к {target} имеет смысл.",
+                f"Если на откате удержат {key_level} — тогда смотрю LONG к {target}.",
+                f"Вернутся к {key_level} и покупателей там хватит — LONG остаётся интересным, цель {target}.",
+                f"Для LONG хочу увидеть нормальное удержание {key_level} после отката; рабочая цель — {target}.",
             )
-        else:
+        elif mode == "breakout_confirm":
             entries = (
-                f"Удержат {key_level} — тогда смотрю LONG к {target}.",
-                f"Закрепятся выше {key_level} — первая цель для LONG у {target}.",
-                f"Для LONG мне нужна нормальная реакция на {key_level}; дальше смотрю на {target}.",
+                f"Закрепятся выше {key_level} — тогда смотрю LONG к {target}.",
+                f"Покупатели заберут {key_level} и удержатся выше — LONG остаётся рабочим, цель {target}.",
+                f"До подтверждения выше {key_level} LONG не открываю. Если его получу — смотрю на {target}.",
+            )
+        else:  # at_level
+            entries = (
+                f"Удержатся выше {key_level} — тогда смотрю LONG к {target}.",
+                f"Покупатели удержат {key_level} — LONG остаётся рабочим, цель {target}.",
+                f"Мне нужна устойчивость выше {key_level}; при подтверждении смотрю LONG к {target}.",
             )
         invalidations = (
             f"Ниже {stop} сценарий отменяется.",
@@ -367,17 +394,23 @@ def _trade_sentences(
             f"Потеря {stop} ломает идею LONG.",
         )
     else:
-        if hot:
+        if mode == "retest_reject":
             entries = (
-                f"После отскока останутся ниже {key_level} — тогда смотрю SHORT к {target}.",
-                f"Возврат к {key_level} продавцы удержат — интерес к SHORT сохраняется. Первая цель — {target}.",
-                f"Хочу увидеть отскок к {key_level} и отказ идти выше. Тогда SHORT к {target} имеет смысл.",
+                f"Если на отскоке останутся ниже {key_level} — тогда смотрю SHORT к {target}.",
+                f"Вернутся к {key_level}, но продавцы не пустят выше — SHORT остаётся интересным, цель {target}.",
+                f"Для SHORT хочу увидеть отказ от роста у {key_level}; рабочая цель — {target}.",
             )
-        else:
+        elif mode == "breakdown_confirm":
+            entries = (
+                f"Закрепятся ниже {key_level} — тогда смотрю SHORT к {target}.",
+                f"Продавцы продавят {key_level} и удержат цену ниже — SHORT остаётся рабочим, цель {target}.",
+                f"До подтверждения ниже {key_level} SHORT не открываю. Если его получу — смотрю на {target}.",
+            )
+        else:  # at_level
             entries = (
                 f"Останутся ниже {key_level} — тогда смотрю SHORT к {target}.",
-                f"Удержат цену под {key_level} — первая цель для SHORT у {target}.",
-                f"Для SHORT мне нужна нормальная реакция под {key_level}; дальше смотрю на {target}.",
+                f"Продавцы удержат цену под {key_level} — SHORT остаётся рабочим, цель {target}.",
+                f"Мне нужна устойчивость ниже {key_level}; при подтверждении смотрю SHORT к {target}.",
             )
         invalidations = (
             f"Выше {stop} сценарий отменяется.",
@@ -385,7 +418,7 @@ def _trade_sentences(
             f"Возврат выше {stop} ломает идею SHORT.",
         )
 
-    return entries[variant_index % len(entries)], invalidations[variant_index % len(invalidations)]
+    return entries[pick % len(entries)], invalidations[(pick // 2 + pick) % len(invalidations)]
 
 
 def _natural_observation(
@@ -395,10 +428,13 @@ def _natural_observation(
     attention: Optional[AttentionSnapshot],
     direction: str,
     variant_index: int,
+    levels: Dict[str, Any],
 ) -> str:
     del variant_index
-    hot = bool(attention and (attention.overextended or abs(attention.change_15m) >= 1.0))
+    strength = _event_strength(attention)
+    hot = strength == "strong"
     key = angle_copy["key_level"]
+    mode = _decision_mode(levels)
     relation = "quiet"
     if attention is not None and abs(attention.change_15m) >= 0.35:
         aligned = (direction == "long" and attention.change_15m > 0) or (
@@ -406,91 +442,80 @@ def _natural_observation(
         )
         relation = "aligned" if aligned else "counter"
 
+    if mode == "at_level":
+        level_clause = f"Цена уже у {key}, поэтому сейчас важнее увидеть, кто удержит уровень."
+    elif mode == "breakout_confirm":
+        level_clause = f"Цена ещё ниже {key}; для LONG сначала нужно закрепление выше."
+    elif mode == "breakdown_confirm":
+        level_clause = f"Цена ещё выше {key}; для SHORT сначала нужно закрепление ниже."
+    elif mode == "retest_hold":
+        level_clause = f"Цена уже выше {key}; теперь интересна реакция на нормальном откате к уровню."
+    else:
+        level_clause = f"Цена уже ниже {key}; теперь интересна реакция на возврате к уровню."
+
     if format_id == "hot_reaction":
         if hot and relation == "counter" and direction == "long":
-            return f"После такого снижения я не ловлю дно. Сначала хочу увидеть, как покупатели вернутся у {key}."
+            return f"После такого снижения я не ловлю дно. {level_clause}"
         if hot and relation == "counter" and direction == "short":
-            return f"После такого роста я не шорчу только из-за большой свечи. Сначала хочу увидеть слабость у {key}."
+            return f"После такого роста я не шорчу одну большую свечу. {level_clause}"
         if hot:
-            return f"После такой свечи мне важнее первый ретест и реакция у {key}, чем попытка успеть по рынку."
-        return f"Движение есть, но пока реакция у {key} для меня важнее скорости свечи."
+            return f"Импульс заметный, но входить вслед за свечой не хочу. {level_clause}"
+        return level_clause
 
     if format_id == "one_problem":
         if hot and relation == "counter":
-            return (
-                f"Проблема одна: сильное движение против сценария ещё не означает разворот. "
-                f"Без реакции у {key} я ничего не угадываю."
-            )
-        if hot:
-            return (
-                f"Проблема одна: после сильного импульса хороший сценарий легко испортить поздним входом. "
-                f"Поэтому смотрю на {key}, а не на цвет свечи."
-            )
-        return f"Проблема одна: без нормальной реакции у {key} направление может быть верным, а вход — всё равно плохим."
+            return f"Проблема одна: сильное движение против сценария ещё не означает разворот. {level_clause}"
+        return f"Проблема одна: направление может быть верным, а вход — плохим. {level_clause}"
 
     if format_id == "crowd_trap":
-        if relation == "counter":
-            return (
-                "Большая свеча сама по себе не доказывает разворот. "
-                f"Я лучше дождусь, пока цена подтвердит это у {key}."
-            )
-        return (
-            "Самая простая ловушка здесь — решить, что сильная свеча обязана продолжиться сразу. "
-            f"Я лучше дождусь проверки {key}."
-        )
+        if hot:
+            return f"Большая свеча легко провоцирует поздний вход. {level_clause}"
+        return f"Главная ловушка здесь — торопиться до ответа цены. {level_clause}"
 
     if format_id == "chart_story":
-        return f"Сейчас вся история графика для меня сводится к {key}. {angle_copy['thesis']}"
+        return f"Сейчас вся история графика для меня сводится к {key}. {level_clause}"
 
     if format_id == "why_wait":
         if hot and relation == "counter" and direction == "long":
-            return f"Падение заметное, но ловить дно без возврата {key} я не собираюсь."
+            return f"Падение заметное, но ловить дно без подтверждения не собираюсь. {level_clause}"
         if hot and relation == "counter" and direction == "short":
-            return f"Рост заметный, но шортить его без слома структуры у {key} я не собираюсь."
-        return personal
+            return f"Рост заметный, но шортить его без подтверждения не собираюсь. {level_clause}"
+        return level_clause
 
     if format_id == "level_story":
-        return f"Пока цена рядом с {key}, мне не нужен прогноз следующей свечи — нужен ответ рынка на этот уровень."
+        return f"Мне не нужен прогноз следующей свечи. {level_clause}"
 
     if format_id == "contrarian_take":
         if hot and relation == "counter":
-            return (
-                f"Идти против такого импульса без подтверждения — плохая сделка, даже если направление потом окажется верным. "
-                f"Поэтому сначала {key}."
-            )
-        return (
-            "Чем убедительнее выглядит движение, тем строже я отношусь к цене входа. "
-            f"Сейчас проверка начинается у {key}."
-        )
+            return f"Идти против такого импульса без подтверждения — плохая сделка. {level_clause}"
+        return f"Чем убедительнее выглядит движение, тем строже я отношусь к входу. {level_clause}"
 
     if format_id == "mistake_to_avoid":
-        if relation == "counter" and hot:
-            return "Ошибка здесь — пытаться поймать вершину или дно только потому, что свеча уже стала большой."
-        return "Ошибка здесь банальная: увидеть сильный сигнал и решить, что хорошая цена входа уже не важна."
+        return f"Самая дорогая ошибка здесь — решить, что движение обязано продолжиться сразу. {level_clause}"
 
     if format_id == "signal_vs_trade":
-        return f"Сигнал уже есть, но для меня это пока наблюдение. Сделкой он станет только после реакции у {key}."
+        return f"Сигнал уже есть, но для меня это пока наблюдение. {level_clause}"
     if format_id == "trader_journal":
-        return personal
+        return f"{personal} {level_clause}"
     if format_id == "two_scenarios":
-        return f"Я не хочу угадывать исход у {key}: либо уровень подтвердит идею, либо рынок сам её отменит."
+        return f"Я не хочу угадывать исход. {level_clause}"
     if format_id == "liquidity_map":
-        return f"Вместо прогноза отмечаю {key}: рядом с этой границей станет видно, кто реально контролирует движение."
+        return f"Вместо прогноза отмечаю {key}. {level_clause}"
     if format_id == "market_context":
-        return "Локальная картинка может быть сильной, но я не хочу торговать её в отрыве от общего фона."
+        return f"Локальная картинка интересна, но торговать её в отрыве от общего фона не хочу. {level_clause}"
     if format_id == "follow_up":
-        return "После нового движения старую идею не защищаю — уровни пересчитываю по тому, что рынок показывает сейчас."
+        return f"Старую идею не защищаю — смотрю только на новую структуру. {level_clause}"
     if format_id == "risk_memo":
-        return "Цель выглядит интересно только пока цена ошибки остаётся заранее понятной."
+        return f"Цель интересна только пока цена ошибки остаётся заранее понятной. {level_clause}"
     if format_id == "indicator_lesson":
-        return "Индикаторы помогают увидеть состояние рынка, но точку сделки мне всё равно даёт цена."
+        return f"Индикаторы дают контекст, но сделку мне всё равно подтверждает цена. {level_clause}"
     if format_id == "data_brief":
-        return f"Для решения мне сейчас достаточно движения цены, реакции у {key} и заранее понятной отмены."
+        return f"Для решения мне достаточно движения, уровня и понятной отмены. {level_clause}"
     if format_id == "setup_plan":
-        return f"План простой: не угадывать свечу, а дождаться реакции у {key}."
+        return f"План простой: не угадывать свечу, а дождаться подтверждения. {level_clause}"
     if format_id == "execution_protocol":
-        return "Перед ордером проверяю только то, что реально меняет решение: уровень, подтверждение и цену ошибки."
-    return personal
+        return f"Перед ордером проверяю только уровень, подтверждение и цену ошибки. {level_clause}"
+    return f"{personal} {level_clause}"
 
 
 def _render_post(
@@ -516,10 +541,10 @@ def _render_post(
     key_level = angle_copy["key_level"]
     movement = _movement_sentence(attention, variant_index)
     entry_sentence, invalidation = _trade_sentences(
-        direction, key_level, levels, attention, variant_index
+        direction, key_level, levels, attention, variant_index, format_id
     )
     observation = _natural_observation(
-        format_id, angle_copy, personal, attention, direction, variant_index
+        format_id, angle_copy, personal, attention, direction, variant_index, levels
     )
     selected_fact = _fact_line(facts, fact_ids)
 
@@ -552,10 +577,9 @@ def _render_post(
     # invalidation, preserving the factual contract.
     mode = variant_index % 4
     if format_id == "two_scenarios":
-        if direction == "long":
-            observation = f"Два сценария: удержат {key_level} — интерес к LONG остаётся; не удержат — я не вхожу."
-        else:
-            observation = f"Два сценария: останутся ниже {key_level} — интерес к SHORT остаётся; вернутся выше — я не вхожу."
+        # The plan line already contains the actionable condition and invalidation.
+        # Keep this block conceptual so it does not repeat the same level twice.
+        observation = "Здесь мне важнее дождаться подтверждения, чем заранее выбрать исход."
         blocks = [headline, context_line, observation, plan]
     elif format_id == "follow_up" and previous:
         old_title = str(previous.get("title", "")).strip()
@@ -641,6 +665,8 @@ def _request_ai_candidates(
     formats: Sequence[str],
     fact_catalog: Dict[str, str],
     recent_titles: Sequence[str],
+    decision_mode: str,
+    event_strength: str,
 ) -> List[dict]:
     key = _api_key()
     if not key:
@@ -649,6 +675,10 @@ def _request_ai_candidates(
         "task": f"Дай {len(formats)} коротких человеческих редакторских вариантов для технического сетапа {direction.upper()} по {basic.upper()}.",
         "requested_formats_in_order": list(formats),
         "facts": fact_catalog,
+        "market_copy_state": {
+            "decision_mode": decision_mode,
+            "event_strength": event_strength,
+        },
         "recent_openings_to_avoid": list(recent_titles[-10:]),
         "rules": {
             "one_candidate_per_requested_format": True,
@@ -658,6 +688,10 @@ def _request_ai_candidates(
             "insight": "одно короткое человеческое объяснение без цифр, терминального языка и новых фактов",
             "question": "необязательный естественный вопрос без цифр; пустая строка предпочтительнее натянутого CTA",
             "style": "русский язык, как живой трейдер в соцсети; коротко; без слов 'направление идеи', 'граница ошибки', 'параметры сценария'",
+            "level_language": (
+                "если decision_mode=at_level/breakout_confirm/breakdown_confirm — НЕ используй слова ретест/откат/возврат; "
+                "если event_strength не strong — не называй движение сильным/резким"
+            ),
         },
         "json_shape": {
             "candidates": [{
@@ -712,6 +746,8 @@ def _parse_ai_candidate(
     *,
     allowed_formats: Sequence[str],
     facts: Dict[str, str],
+    decision_mode: str,
+    event_strength: str,
 ) -> Optional[dict]:
     format_id = str(raw.get("format_id", "")).strip()
     if format_id not in allowed_formats or format_id not in FORMAT_BY_ID:
@@ -720,6 +756,13 @@ def _parse_ai_candidate(
     insight = _safe_ai_text(raw.get("insight"), 155)
     question = _safe_ai_text(raw.get("question"), 120, question=True) if raw.get("question") else ""
     if not hook or not insight:
+        return None
+    combined = f"{hook} {insight} {question}".lower().replace("ё", "е")
+    if decision_mode in {"at_level", "breakout_confirm", "breakdown_confirm"} and any(
+        token in combined for token in ("ретест", "после отката", "на откате", "возврат к уровню")
+    ):
+        return None
+    if event_strength != "strong" and any(token in combined for token in ("сильн", "резк", "мощн")):
         return None
     if question_forbidden(format_id):
         question = ""
@@ -768,7 +811,7 @@ def _validate_contract(
     # level, first target and invalidation. TP2/TP3/RSI/ADX are optional context.
     for label, value in (
         ("key level", key_level),
-        ("tp1", _fmt_price(levels["tp1"])),
+        ("target", _fmt_price(levels.get("public_target", levels["tp1"]))),
         ("stop", _fmt_price(levels["stop"])),
     ):
         if value not in text:
@@ -813,6 +856,13 @@ def _validate_contract(
     if any(item in lowered for item in robotic):
         reasons.append("robotic wording")
 
+    mode = _decision_mode(levels)
+    if mode in {"at_level", "breakout_confirm", "breakdown_confirm"}:
+        if "ретест" in lowered or "после отката" in lowered:
+            reasons.append("retest wording conflicts with current level state")
+    if re.search(r"ретест[^.!?]{0,40}состо", lowered):
+        reasons.append("predictive retest wording")
+
     for pattern in _AI_FORBIDDEN:
         if re.search(pattern, lowered, flags=re.IGNORECASE):
             reasons.append("forbidden claim")
@@ -822,7 +872,8 @@ def _validate_contract(
         headline,
         *facts.values(),
         *(_fmt_price(levels[key]) for key in ("entry", "tp1", "tp2", "tp3", "stop")),
-        f"{levels.get('risk_reward', 0):.2f}",
+        _fmt_price(levels.get("public_target", levels["tp1"])),
+        f"{levels.get('public_rr', levels.get('risk_reward', 0)):.2f}",
         key_level,
         "15M 45M 1H 4H 1D EMA20 EMA50 RSI ADX TP1 TP2 TP3",
     ])
@@ -863,6 +914,8 @@ def _headline_for(
         change_15m=(attention.change_15m if attention else 0.0),
         volume_spike=(attention.volume_spike if attention else 1.0),
         attention_label=(attention.label if attention else ""),
+        decision_mode=_decision_mode(levels),
+        event_strength=_event_strength(attention),
     )
     chosen = choose_headline(candidates, recent_titles, index)
     return _maybe_decorate_headline(
@@ -979,7 +1032,10 @@ def generate_post_candidates(
     ind = mtf.tf_15m
     if ind is None:
         raise ValueError("15m indicators are required")
-    levels = dict(levels or _levels(ind, score.direction))
+    if levels is None or "public_target" not in levels or "decision_mode" not in levels:
+        levels = _levels(ind, score.direction)
+    else:
+        levels = dict(levels)
     levels.setdefault("risk_reward", score.risk_reward)
     requested = max(4, min(int(variant_count), 16))
 
@@ -1011,10 +1067,18 @@ def generate_post_candidates(
                 formats=ai_formats,
                 fact_catalog=facts,
                 recent_titles=memory.get_last_titles(10) if memory else [],
+                decision_mode=_decision_mode(levels),
+                event_strength=_event_strength(attention),
             )
             allowed = [item.id for item in formats]
             for index, raw in enumerate(raw_items):
-                parsed = _parse_ai_candidate(raw, allowed_formats=allowed, facts=facts)
+                parsed = _parse_ai_candidate(
+                    raw,
+                    allowed_formats=allowed,
+                    facts=facts,
+                    decision_mode=_decision_mode(levels),
+                    event_strength=_event_strength(attention),
+                )
                 if parsed is None:
                     continue
                 angle = angles[index % len(angles)]
@@ -1055,7 +1119,7 @@ def generate_post_candidates(
             continue
         angle = angles[(attempt + history_seed) % len(angles)]
         digest = hashlib.sha256(
-            f"market-attention-v7|{history_seed}|{attempt}|{basic}|{score.direction}".encode()
+            f"market-attention-v8|{history_seed}|{attempt}|{basic}|{score.direction}".encode()
         ).digest()
         index = int.from_bytes(digest[:4], "big") % 10000
         draft = _build_generated(

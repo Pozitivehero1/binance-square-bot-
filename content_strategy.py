@@ -1,4 +1,4 @@
-"""Human-first editorial strategy for Binance Square.
+"""Human-first editorial strategy for Binance Square — v8.
 
 The market engine decides whether a setup is worth publishing. This module only
 controls presentation: a short live reaction, a level story, a contrarian note,
@@ -67,7 +67,7 @@ AUTHOR_VOICES = {
             "Сначала хочу увидеть реакцию цены. Без неё хорошая картинка для меня ничего не значит.",
             "Мне не нужна идеальная точка — нужна точка, где заранее понятно, что делать при ошибке.",
             "Если рынок не даёт чистого подтверждения, я спокойно остаюсь без сделки.",
-            "После сильной свечи мне важнее качество ретеста, чем желание успеть в движение.",
+            "После заметной свечи мне важнее качество подтверждения, чем желание успеть в движение.",
         ),
     },
     "direct": {
@@ -78,7 +78,7 @@ AUTHOR_VOICES = {
             "Здесь всё просто: уровень держат — смотрю дальше, не держат — прохожу мимо.",
             "Верное направление не спасает плохой вход, поэтому спешить здесь не хочу.",
             "Если цена не подтверждает идею, я не пытаюсь уговорить график.",
-            "После такого импульса мне нужен ретест, а не ещё одна зелёная свеча.",
+            "После такого импульса мне нужно подтверждение, а не ещё одна зелёная свеча.",
             "Пусть движение уйдёт без меня — покупать чужую спешку я не собираюсь.",
         ),
     },
@@ -99,7 +99,7 @@ AUTHOR_VOICES = {
         "notes": (
             "Когда свеча выглядит слишком убедительно, я первым делом проверяю, не опоздал ли вход.",
             "Толпа может угадать направление и всё равно купить по плохой цене.",
-            "Сильный импульс привлекает внимание, но мне интереснее то, что произойдёт на первом ретесте.",
+            "Сильный импульс привлекает внимание, но мне интереснее то, как цена подтвердит уровень.",
             "Я не спорю с движением — просто не готов платить за него любую цену.",
             "Самый опасный момент часто начинается тогда, когда сделка кажется очевидной.",
         ),
@@ -261,71 +261,128 @@ def headline_candidates(
     change_15m: float = 0.0,
     volume_spike: float = 1.0,
     attention_label: str = "",
+    decision_mode: str = "at_level",
+    event_strength: str = "active",
 ) -> List[str]:
-    """Build human, consequence-led openings from code-controlled facts."""
+    """Build openings that match both the market event and the level geometry.
+
+    ``decision_mode`` is the key v8 input. It prevents headlines from promising a
+    future retest when price is already sitting on the decision level.
+    """
     del risk_pct, reward_pct, angle_title, attention_label
     side = "LONG" if direction == "long" else "SHORT"
     movement = _move(change_15m)
     candidates: List[str] = []
+    strong = event_strength == "strong"
+    active = event_strength in {"strong", "active"}
 
-    # Live-event openings come first, but direction and tape must agree. A +7%
-    # impulse with a SHORT setup is not "chasing SHORT"; it is a possible
-    # exhaustion/rejection story. Likewise a sharp sell-off with a LONG setup.
+    if decision_mode == "at_level":
+        if direction == "long":
+            candidates.extend((
+                f"{ticker} уже у {key_level} — теперь важнее удержание, чем новая свеча",
+                f"В {ticker} сейчас всё решает {key_level}: покупатели уже проверяют уровень",
+                f"{ticker} подошёл к {key_level}. Для LONG мне нужно увидеть, что уровень удержат",
+            ))
+        else:
+            candidates.extend((
+                f"{ticker} уже у {key_level} — теперь важнее контроль продавцов, чем новая свеча",
+                f"В {ticker} сейчас всё решает {key_level}: продавцы уже проверяют уровень",
+                f"{ticker} подошёл к {key_level}. Для SHORT мне нужно увидеть, что цена останется ниже",
+            ))
+    elif decision_mode == "retest_hold":
+        candidates.extend((
+            f"{ticker} уже выше {key_level} — теперь смотрю на качество отката",
+            f"По {ticker} движение есть. Следующая проверка для меня — удержание {key_level}",
+        ))
+    elif decision_mode == "retest_reject":
+        candidates.extend((
+            f"{ticker} уже ниже {key_level} — теперь смотрю, пустят ли цену обратно",
+            f"По {ticker} движение есть. Следующая проверка для меня — реакция у {key_level}",
+        ))
+    elif decision_mode == "breakout_confirm":
+        candidates.extend((
+            f"{ticker} упёрся в {key_level} — LONG интересен только после закрепления выше",
+            f"Для {ticker} сейчас важнее пробить {key_level}, чем просто показать ещё одну зелёную свечу",
+        ))
+    elif decision_mode == "breakdown_confirm":
+        candidates.extend((
+            f"{ticker} держится над {key_level} — SHORT интересен только после закрепления ниже",
+            f"Для {ticker} сейчас важнее потерять {key_level}, чем просто показать ещё одну красную свечу",
+        ))
+
+    # Live-event openings. Strong adjectives are reserved for events that actually
+    # deserve them; +1-2% on ordinary volume is not automatically a "strong move".
     move_aligned = (direction == "long" and change_15m > 0) or (direction == "short" and change_15m < 0)
     if abs(change_15m) >= 1.0:
         if move_aligned:
-            candidates.extend((
-                f"{ticker} уже {movement} за 15 минут. Я бы здесь не догонял {side}",
-                f"{ticker}: {movement} за 15 минут — движение сильное, но вход уже спорный",
-                f"После {movement} за 15 минут в {ticker} мне важнее ретест, чем новая свеча",
-            ))
+            candidates.append(f"{ticker} уже {movement} за 15 минут. Я бы здесь не догонял {side}")
+            if strong:
+                candidates.append(f"{ticker}: {movement} за 15 минут — импульс заметный, но вход уже спорный")
+            else:
+                candidates.append(f"{ticker}: {movement} за 15 минут — движение есть, но спешить со входом не хочу")
         elif direction == "short":
             candidates.extend((
-                f"{ticker} уже {movement} за 15 минут. SHORT мне интересен только если импульс начнёт ломаться",
-                f"После {movement} за 15 минут в {ticker} я не шорчу свечу — сначала нужен слом импульса",
-                f"{ticker} резко вырос, но сам по себе рост ещё не повод открывать SHORT",
+                f"{ticker} уже {movement} за 15 минут. SHORT мне интересен только если рост начнёт ломаться",
+                f"{ticker} вырос, но сама свеча ещё не повод открывать SHORT",
             ))
         else:
             candidates.extend((
                 f"{ticker} уже {movement} за 15 минут. LONG мне интересен только если продавцы начнут терять контроль",
-                f"После {movement} за 15 минут в {ticker} я не ловлю дно — сначала нужен возврат уровня",
-                f"{ticker} резко снизился, но сам по себе слив ещё не повод открывать LONG",
+                f"{ticker} снизился, но сам слив ещё не повод открывать LONG",
             ))
     elif abs(change_15m) >= 0.35:
         candidates.extend((
-            f"{ticker} начал двигаться, но я бы сначала посмотрел на {key_level}",
-            f"В {ticker} появилось движение. Для меня сейчас всё упирается в {key_level}",
+            f"{ticker} начал двигаться, но для меня сейчас важнее {key_level}",
+            f"В {ticker} появилось движение. Дальше всё упирается в {key_level}",
         ))
 
     if volume_spike >= 3.0:
         volume_human = f"x{volume_spike:.1f}".replace(".", ",")
         candidates.extend((
-            f"Объём в {ticker} резко вырос. Теперь для меня всё решает {key_level}",
-            f"{ticker}: объём около {volume_human} нормы — но я всё равно не спешу со входом",
-            f"В {ticker} проснулся объём. Смотрю, переживёт ли движение первый ретест",
+            f"Объём в {ticker} вырос примерно до {volume_human} нормы — теперь смотрю на {key_level}",
+            f"{ticker}: объём около {volume_human} нормы, но вход всё равно должен подтвердиться ценой",
         ))
+        if volume_spike >= 6.0:
+            candidates.append(f"В {ticker} резкий всплеск объёма. Для меня теперь всё решает {key_level}")
+
+    if strong:
+        hot_reaction = (
+            f"{ticker} ожил. Но большая свеча сама по себе для меня ещё не сделка",
+            f"В {ticker} импульс заметный — я бы сначала дождался подтверждения ценой",
+        )
+        one_problem = (
+            f"{ticker} выглядит убедительно, но один момент делает вход для меня спорным",
+            f"Есть одна причина, почему я не тороплюсь вслед за движением {ticker}",
+        )
+        crowd = (
+            f"Когда {ticker} выглядит слишком очевидно, я первым делом проверяю цену входа",
+            f"Сильная свеча в {ticker} легко превращает верную идею в позднюю сделку",
+        )
+    else:
+        hot_reaction = (
+            f"{ticker} оживился. Но для сделки мне всё ещё нужно подтверждение",
+            f"В {ticker} появилось движение — теперь важнее реакция цены, а не размер свечи",
+        )
+        one_problem = (
+            f"Есть одна причина, почему я пока не тороплюсь с {ticker}",
+            f"{ticker} двигается, но точка входа для меня пока неочевидна",
+        )
+        crowd = (
+            f"В {ticker} легко поторопиться раньше подтверждения",
+            f"По {ticker} сейчас опаснее спешка, чем пропущенная свеча",
+        )
 
     by_format = {
-        "hot_reaction": (
-            f"{ticker} ожил. Но сильная свеча сама по себе для меня ещё не сделка",
-            f"Сейчас в {ticker} есть движение — я бы сначала проверил его на ретесте",
-            f"{ticker} наконец двигается. Вопрос для меня один: выдержит ли движение проверку",
-        ),
-        "one_problem": (
-            f"Есть одна причина, почему я не тороплюсь с {ticker}",
-            f"{ticker} выглядит сильно, но один момент делает вход для меня спорным",
-        ),
-        "crowd_trap": (
-            f"Когда {ticker} выглядит слишком очевидно, я первым делом ищу плохой вход",
-            f"Толпа может угадать направление {ticker} и всё равно купить слишком поздно",
-        ),
+        "hot_reaction": hot_reaction,
+        "one_problem": one_problem,
+        "crowd_trap": crowd,
         "chart_story": (
             f"У {ticker} сейчас не нужен прогноз — нужен ответ цены на {key_level}",
             f"Одна реакция у {key_level} скажет по {ticker} больше, чем пять индикаторов",
         ),
         "why_wait": (
             f"Не догоняю {ticker}: направление есть, нормальной точки входа пока нет",
-            f"Движение {ticker} уже началось. Я лучше подожду цену, чем куплю спешку",
+            f"Движение {ticker} уже началось. Я лучше подожду подтверждение, чем куплю спешку",
             f"{ticker} может уйти без меня — покупать FOMO я здесь не хочу",
         ),
         "level_story": (
@@ -334,12 +391,12 @@ def headline_candidates(
             f"В {ticker} сейчас смотрю почти на одну цену — {key_level}",
         ),
         "contrarian_take": (
-            f"Чем сильнее выглядит {ticker}, тем меньше мне хочется догонять эту свечу",
-            f"Главный риск по {ticker} сейчас — не направление, а цена входа",
+            f"Чем убедительнее выглядит {ticker}, тем строже я отношусь к цене входа",
+            f"Главный риск по {ticker} сейчас — не направление, а плохое исполнение",
         ),
         "mistake_to_avoid": (
-            f"Верный прогноз по {ticker} легко испортить одним поздним входом",
-            f"Самая дорогая ошибка по {ticker} начинается после убедительной свечи",
+            f"Верную идею по {ticker} легко испортить одним поздним входом",
+            f"Самая дорогая ошибка по {ticker} — торопиться до подтверждения",
         ),
         "signal_vs_trade": (
             f"Сигнал по {ticker} уже есть. Для сделки мне всё ещё не хватает подтверждения",
@@ -354,7 +411,7 @@ def headline_candidates(
             f"По {ticker} важнее план на оба исхода, чем уверенность в одном направлении",
         ),
         "liquidity_map": (
-            f"По {ticker} сейчас важнее две ценовые границы, чем следующая свеча",
+            f"По {ticker} сейчас важнее ценовая граница, чем следующая свеча",
             f"Не угадываю движение {ticker} — смотрю, что цена сделает у {key_level}",
         ),
         "market_context": (
@@ -371,7 +428,7 @@ def headline_candidates(
         ),
         "indicator_lesson": (
             f"RSI {rsi:.0f} по {ticker} выглядит убедительно, но точку входа решает не он",
-            f"ADX {adx:.0f} показывает силу {ticker}, а сделку всё равно решает цена",
+            f"ADX {adx:.0f} показывает силу движения, а сделку всё равно решает цена",
         ),
         "data_brief": (
             f"Коротко по {ticker}: что в данных действительно важно для сделки",
@@ -382,19 +439,28 @@ def headline_candidates(
             f"Ордер по {ticker} для меня появится только после реакции у {key_level}",
         ),
         "execution_protocol": (
-            f"Перед ордером по {ticker} я бы проверил одну вещь: цена всё ещё даёт нормальный риск?",
+            f"Перед ордером по {ticker} я бы сначала проверил качество риска",
             f"Сделка по {ticker} либо проходит проверку уровнем, либо её просто нет",
         ),
     }
     candidates.extend(by_format.get(format_id, by_format["hot_reaction"]))
 
-    # Indicator-led openings are reserved for slower analytical formats. Human
-    # reaction posts should not randomly fall back to a terminal-like VWAP title.
     if format_id in {"market_context", "indicator_lesson", "data_brief", "setup_plan", "execution_protocol"}:
         candidates.append(
             f"{ticker} сейчас {price_vs_vwap} VWAP, но для меня сделку всё равно решает {key_level}"
         )
-    return candidates
+
+    # Preserve order but drop exact duplicates that can appear when state-specific
+    # and format-specific hooks converge on the same sentence.
+    deduped: List[str] = []
+    seen = set()
+    for item in candidates:
+        key = item.strip().lower().replace("ё", "е")
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(item)
+    return deduped
 
 
 def choose_headline(candidates: Sequence[str], recent_titles: Iterable[str], index: int = 0) -> str:

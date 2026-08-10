@@ -19,9 +19,10 @@ from card import generate_card
 from attention import compute_attention
 from chart import generate_chart
 from filters import SignalFilter
-from indicators import build_trade_levels, calculate_multi_timeframe
+from indicators import calculate_multi_timeframe
 from memory import PostMemory
 from self_test import _build_setup
+from trade_plan import build_public_trade_plan
 from writer import generate_post_candidates
 
 
@@ -55,13 +56,7 @@ def _unique_visual_drafts():
     score = SignalFilter(min_score=0).evaluate(mtf)
     if score is None or mtf.tf_15m is None:
         raise RuntimeError("Synthetic setup could not be evaluated")
-    levels = dict(build_trade_levels(mtf.tf_15m, score.direction))
-    structural = float(mtf.tf_15m.resistance if score.direction == "long" else mtf.tf_15m.support)
-    if score.direction == "long":
-        corridor_ok = float(levels["stop"]) < structural < float(levels["tp1"])
-    else:
-        corridor_ok = float(levels["tp1"]) < structural < float(levels["stop"])
-    levels["decision"] = structural if corridor_ok else float(levels["entry"])
+    levels = dict(build_public_trade_plan(mtf.tf_15m, score.direction))
     attention = compute_attention(frames["15m"], mtf.tf_15m, score.direction)
     with tempfile.TemporaryDirectory() as temp_directory:
         memory = PostMemory(Path(temp_directory) / "preview_memory.json")
@@ -131,12 +126,12 @@ def main() -> int:
             temporary = generate_card(
                 basic="TEST",
                 direction=score.direction,
-                entry=levels["entry"],
-                tp1=levels["tp1"],
-                tp2=levels["tp2"],
-                tp3=levels["tp3"],
+                entry=levels["plan_entry"],
+                tp1=levels["public_target"],
+                tp2=levels["public_target"],
+                tp3=levels["public_target"],
                 stop=levels["stop"],
-                rr=levels["risk_reward"],
+                rr=levels["public_rr"],
                 confidence=score.total,
                 change_1h=indicator.change_1h,
                 post_style=draft.style_id,
@@ -156,10 +151,10 @@ def main() -> int:
                 "TESTUSDT",
                 frames["15m"],
                 "TEST",
-                entry=levels["entry"],
-                tp1=levels["tp1"],
-                tp2=levels["tp2"],
-                tp3=levels["tp3"],
+                entry=levels["plan_entry"],
+                tp1=levels["public_target"],
+                tp2=levels["public_target"],
+                tp3=levels["public_target"],
                 stop=levels["stop"],
                 direction=score.direction,
                 support=indicator.support,
@@ -170,6 +165,7 @@ def main() -> int:
                 visual_style=draft.visual_style,
                 headline=draft.headline,
                 signal_label=draft.angle_title,
+                decision_mode=levels.get("decision_mode", "at_level"),
             )
         if not temporary:
             raise RuntimeError(f"Media generation failed for {draft.visual_style}")

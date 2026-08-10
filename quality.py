@@ -23,8 +23,8 @@ FULL_PLAN_FORMATS: set[str] = set()
 
 
 class PostQualityEvaluator:
-    MIN_LENGTH = int(os.getenv("POST_MIN_CHARS", "150"))
-    MAX_LENGTH = int(os.getenv("POST_MAX_CHARS", "540"))
+    MIN_LENGTH = int(os.getenv("POST_MIN_CHARS", "140"))
+    MAX_LENGTH = int(os.getenv("POST_MAX_CHARS", "500"))
 
     UNSUPPORTED_CLAIMS = (
         "90% точности", "100% точности", "гарантирован", "без риска",
@@ -123,9 +123,19 @@ class PostQualityEvaluator:
 
         if levels:
             from writer import _fmt_price
-            for key in ("tp1", "stop"):
-                if key in levels and _fmt_price(levels[key]) not in text:
-                    reasons.append(f"missing {key}")
+            target_value = levels.get("public_target", levels.get("tp1"))
+            if target_value is not None and _fmt_price(target_value) not in text:
+                reasons.append("missing target")
+            if "stop" in levels and _fmt_price(levels["stop"]) not in text:
+                reasons.append("missing stop")
+            if levels.get("plan_valid") is False:
+                reasons.append("invalid public trade plan")
+            mode = str(levels.get("decision_mode", "at_level"))
+            if mode in {"at_level", "breakout_confirm", "breakdown_confirm"}:
+                if "ретест" in lowered or "после отката" in lowered:
+                    reasons.append("retest wording conflicts with current level state")
+            if re.search(r"ретест[^.!?]{0,40}состо", lowered):
+                reasons.append("predictive retest wording")
 
         if not any(marker in lowered for marker in (
             "сценарий отмен",
@@ -198,7 +208,7 @@ class PostQualityEvaluator:
             score -= 60.0
         if any(word in lowered for word in (
             "не ", "но", "после", "уже", "важнее", "спор", "ошиб", "ловуш",
-            "жду", "ретест", "главный риск", "не догон", "одна причина",
+            "жду", "подтверж", "удерж", "главный риск", "не догон", "одна причина",
         )):
             score += 8.0
         if explicit_headline and first != explicit_headline.strip():
@@ -238,7 +248,7 @@ class PostQualityEvaluator:
         score = 35.0
         score += 35.0 if re.search(r"\b(?:я|мне|мой|моя|для меня)\b", lowered) else 0.0
         score += 20.0 if any(marker in lowered for marker in (
-            "не догон", "не хочу", "жду", "смотрю", "пропущ", "ретест", "прохожу",
+            "не догон", "не хочу", "жду", "смотрю", "пропущ", "подтверж", "удерж", "прохожу",
         )) else 0.0
         score += 10.0 if any(marker in lowered for marker in ("ошибка", "ловушка", "поздн", "спеш")) else 0.0
         return min(score, 100.0)

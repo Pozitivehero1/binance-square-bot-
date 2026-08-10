@@ -15,10 +15,11 @@ from unittest.mock import patch
 
 from filters import SignalFilter
 from attention import compute_attention
-from indicators import build_trade_levels, calculate_multi_timeframe
+from indicators import calculate_multi_timeframe
 from main import MAX_POST_SIMILARITY, _best_post_variant
 from memory import PostMemory
 from self_test import _build_setup
+from writer import _levels
 
 
 def main() -> None:
@@ -35,7 +36,7 @@ def main() -> None:
             mtf = calculate_multi_timeframe(f"{basic}USDT", frames)
             score = SignalFilter(min_score=0).evaluate(mtf)
             assert score is not None
-            levels = build_trade_levels(mtf.tf_15m, direction)
+            levels = _levels(mtf.tf_15m, direction)
             attention = compute_attention(frames["15m"], mtf.tf_15m, direction)
 
             with patch.dict(os.environ, {"CONTENT_MODE": "deterministic"}, clear=False):

@@ -184,6 +184,10 @@ def generate_card(
 
     risk_pct = abs(entry - stop) / max(abs(entry), 1e-12) * 100
     reward_pct = abs(tp3 - entry) / max(abs(entry), 1e-12) * 100
+    # v8 can intentionally pass one public target into all TP slots. Render it
+    # as one human-readable target rather than pretending there are three.
+    tolerance = max(abs(float(tp1)), 1.0) * 1e-10
+    single_target = abs(float(tp1) - float(tp2)) <= tolerance and abs(float(tp2) - float(tp3)) <= tolerance
 
     if visual_style == "pulse_card":
         y = current_y + 5
@@ -199,7 +203,7 @@ def generate_card(
         _metric(draw, 722, y, 300, 145, "ВНИМАНИЕ", f"{attention_score:.0f}/100", yellow, panel)
         draw.rounded_rectangle((58, y + 180, width - 58, y + 330), radius=25, fill=panel, outline=(255, 255, 255, 24), width=1)
         draw.text((88, y + 202), "НЕ ПРОГНОЗ — УСЛОВИЕ", font=_get_font(21, True), fill=muted)
-        draw.text((88, y + 247), f"Стоп-сценарий {_fmt_price(stop)}  ·  TP1 {_fmt_price(tp1)}", font=_get_font(32, True), fill=white)
+        draw.text((88, y + 247), f"Отмена {_fmt_price(stop)}  ·  Цель {_fmt_price(tp1)}" if single_target else f"Стоп-сценарий {_fmt_price(stop)}  ·  TP1 {_fmt_price(tp1)}", font=_get_font(32, True), fill=white)
 
     elif visual_style == "split_scenario":
         half = 456
@@ -207,7 +211,7 @@ def generate_card(
         draw.rounded_rectangle((566, current_y, 566 + half, 760), radius=28, fill=(48, 24, 32, 225), outline=red, width=2)
         draw.text((88, current_y + 26), "СЦЕНАРИЙ A", font=_get_font(26, True), fill=green)
         draw.text((596, current_y + 26), "СЦЕНАРИЙ B", font=_get_font(26, True), fill=red)
-        draw.multiline_text((88, current_y + 82), f"Подтверждение\n{side}\n\nВход\n{_fmt_price(entry)}\n\nTP3\n{_fmt_price(tp3)}", font=_get_font(29, True), fill=white, spacing=9)
+        draw.multiline_text((88, current_y + 82), f"Подтверждение\n{side}\n\nВход\n{_fmt_price(entry)}\n\n{'ЦЕЛЬ' if single_target else 'TP3'}\n{_fmt_price(tp3)}", font=_get_font(29, True), fill=white, spacing=9)
         draw.multiline_text((596, current_y + 82), f"Отмена идеи\n\nСтоп\n{_fmt_price(stop)}\n\nБез\nусреднения", font=_get_font(29, True), fill=white, spacing=9)
         _metric(draw, 58, 795, 300, 120, "R/R", f"{rr:.2f}", yellow, panel)
         _metric(draw, 390, 795, 300, 120, "РИСК", f"{risk_pct:.2f}%", red, panel)
@@ -221,7 +225,7 @@ def generate_card(
         y = current_y + 255
         _metric(draw, 58, y, 300, 130, "ВХОД", _fmt_price(entry), white, panel)
         _metric(draw, 390, y, 300, 130, "R/R", f"{rr:.2f}", yellow, panel)
-        _metric(draw, 722, y, 300, 130, "TP3", _fmt_price(tp3), green, panel)
+        _metric(draw, 722, y, 300, 130, "ЦЕЛЬ" if single_target else "TP3", _fmt_price(tp3), green, panel)
         draw.rounded_rectangle((58, y + 160, width - 58, y + 285), radius=24, fill=panel, outline=(255, 255, 255, 20), width=1)
         draw.text((88, y + 184), "Правило", font=_get_font(21, True), fill=muted)
         draw.text((88, y + 224), "Стоп не переносится дальше после входа", font=_get_font(29, True), fill=white)
@@ -235,7 +239,7 @@ def generate_card(
         _metric(draw, 58 + 2 * (third + gap), y, third, 160, "REL VOL", f"x{volume_relative:.2f}", accent, panel)
         draw.rounded_rectangle((58, y + 195, width - 58, y + 435), radius=28, fill=panel, outline=(255, 255, 255, 24), width=1)
         draw.text((88, y + 220), "ИНДИКАТОРЫ ≠ ТОЧКА ВХОДА", font=_get_font(30, True), fill=accent)
-        draw.multiline_text((88, y + 280), f"Вход {_fmt_price(entry)}\nTP1 {_fmt_price(tp1)}  ·  TP2 {_fmt_price(tp2)}  ·  TP3 {_fmt_price(tp3)}\nСтоп {_fmt_price(stop)}", font=_get_font(30, True), fill=white, spacing=13)
+        draw.multiline_text((88, y + 280), (f"Вход {_fmt_price(entry)}\nЦель {_fmt_price(tp1)}\nСтоп {_fmt_price(stop)}" if single_target else f"Вход {_fmt_price(entry)}\nTP1 {_fmt_price(tp1)}  ·  TP2 {_fmt_price(tp2)}  ·  TP3 {_fmt_price(tp3)}\nСтоп {_fmt_price(stop)}"), font=_get_font(30, True), fill=white, spacing=13)
         _metric(draw, 58, y + 470, 465, 120, "SETUP SCORE", f"{confidence:.0f}/100", blue, panel)
         _metric(draw, 555, y + 470, 467, 120, "R/R", f"{rr:.2f}", yellow, panel)
 
@@ -256,7 +260,7 @@ def generate_card(
         y = current_y + 100
         draw.rounded_rectangle((58, y, width - 58, y + 235), radius=28, fill=panel, outline=(255, 255, 255, 24), width=1)
         draw.text((88, y + 25), "НОВЫЙ ПЛАН", font=_get_font(25, True), fill=muted)
-        draw.multiline_text((88, y + 75), f"Вход {_fmt_price(entry)}\nЦели {_fmt_price(tp1)} / {_fmt_price(tp2)} / {_fmt_price(tp3)}\nСтоп {_fmt_price(stop)}", font=_get_font(31, True), fill=white, spacing=13)
+        draw.multiline_text((88, y + 75), (f"Вход {_fmt_price(entry)}\nЦель {_fmt_price(tp1)}\nСтоп {_fmt_price(stop)}" if single_target else f"Вход {_fmt_price(entry)}\nЦели {_fmt_price(tp1)} / {_fmt_price(tp2)} / {_fmt_price(tp3)}\nСтоп {_fmt_price(stop)}"), font=_get_font(31, True), fill=white, spacing=13)
         _metric(draw, 58, y + 270, 300, 125, "R/R", f"{rr:.2f}", yellow, panel)
         _metric(draw, 390, y + 270, 300, 125, "СКОР", f"{confidence:.0f}", blue, panel)
         _metric(draw, 722, y + 270, 300, 125, "1H", f"{change_1h:+.2f}%", green if change_1h >= 0 else red, panel)
@@ -277,8 +281,8 @@ def generate_card(
             row, col = divmod(i, 3)
             _metric(draw, 58 + col * (third + gap), y + row * 170, third, 145, label, value, color, panel)
         draw.rounded_rectangle((58, y + 365, width - 58, y + 520), radius=24, fill=panel, outline=(255, 255, 255, 22), width=1)
-        draw.text((88, y + 390), "ЦЕЛИ", font=_get_font(22, True), fill=muted)
-        draw.text((88, y + 438), f"{_fmt_price(tp1)}  /  {_fmt_price(tp2)}  /  {_fmt_price(tp3)}", font=_get_font(34, True), fill=green)
+        draw.text((88, y + 390), "ЦЕЛЬ" if single_target else "ЦЕЛИ", font=_get_font(22, True), fill=muted)
+        draw.text((88, y + 438), (_fmt_price(tp1) if single_target else f"{_fmt_price(tp1)}  /  {_fmt_price(tp2)}  /  {_fmt_price(tp3)}"), font=_get_font(34, True), fill=green)
 
     else:  # headline_card and default
         y = current_y
@@ -289,10 +293,10 @@ def generate_card(
         y += 238
         _metric(draw, 58, y, 300, 135, "СТОП", _fmt_price(stop), red, panel)
         _metric(draw, 390, y, 300, 135, "R/R", f"{rr:.2f}", yellow, panel)
-        _metric(draw, 722, y, 300, 135, "TP3", _fmt_price(tp3), green, panel)
+        _metric(draw, 722, y, 300, 135, "ЦЕЛЬ" if single_target else "TP3", _fmt_price(tp3), green, panel)
         draw.rounded_rectangle((58, y + 170, width - 58, y + 315), radius=24, fill=panel, outline=(255, 255, 255, 22), width=1)
         draw.text((88, y + 193), "ПЛАН", font=_get_font(21, True), fill=muted)
-        draw.text((88, y + 238), f"TP1 {_fmt_price(tp1)}   ·   TP2 {_fmt_price(tp2)}   ·   TP3 {_fmt_price(tp3)}", font=_get_font(29, True), fill=white)
+        draw.text((88, y + 238), (f"Цель {_fmt_price(tp1)}" if single_target else f"TP1 {_fmt_price(tp1)}   ·   TP2 {_fmt_price(tp2)}   ·   TP3 {_fmt_price(tp3)}"), font=_get_font(29, True), fill=white)
 
     draw.text((58, 1010), f"{content_format.replace('_', ' ').upper()}  ·  не финансовая рекомендация", font=_get_font(17, False), fill=muted)
     watermark_font = _get_font(17, True)

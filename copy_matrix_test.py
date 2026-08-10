@@ -31,7 +31,7 @@ def main() -> None:
     assert any("не догонял SHORT" in x for x in aligned_short)
     assert not any("не догонял SHORT" in x for x in counter_short)
     assert not any("не догонял LONG" in x for x in counter_long)
-    assert any("импульс" in x.lower() for x in counter_short)
+    assert any("рост" in x.lower() and "SHORT" in x for x in counter_short)
     assert any("продавц" in x.lower() or "дно" in x.lower() for x in counter_long)
     for group in (aligned_long, aligned_short, counter_short, counter_long):
         assert not any("Направление у идеи" in x for x in group)

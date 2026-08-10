@@ -91,10 +91,15 @@ def main() -> int:
     hot_w2e = _number("HOT_W2E_FLOOR", "34", float, 0, 100, errors)
     min_opportunity = _number("MIN_OPPORTUNITY_SCORE", "59", float, 0, 100, errors)
     min_demand = _number("MIN_AUDIENCE_DEMAND", "18", float, 0, 100, errors)
-    emoji_rate = _number("EMOJI_RATE", "0.24", float, 0, 0.5, errors)
+    min_public_rr = _number("MIN_PUBLIC_PLAN_RR", "1.30", float, 1.0, 5.0, errors)
+    max_public_risk = _number("MAX_PUBLIC_RISK_PCT", "9.0", float, 1.0, 25.0, errors)
+    decision_near_atr = _number("DECISION_NEAR_ATR", "0.30", float, 0.05, 1.5, errors)
+    decision_near_pct = _number("DECISION_NEAR_PCT", "0.25", float, 0.05, 2.0, errors)
+    stop_buffer_atr = _number("PUBLIC_STOP_BUFFER_ATR", "0.75", float, 0.25, 2.0, errors)
+    emoji_rate = _number("EMOJI_RATE", "0.20", float, 0, 0.5, errors)
     question_every = _number("QUESTION_EVERY", "7", int, 4, 50, errors)
-    post_min = _number("POST_MIN_CHARS", "150", int, 120, 700, errors)
-    post_max = _number("POST_MAX_CHARS", "540", int, 300, 1500, errors)
+    post_min = _number("POST_MIN_CHARS", "140", int, 120, 700, errors)
+    post_max = _number("POST_MAX_CHARS", "500", int, 300, 1500, errors)
     min_interval = _number("MIN_GLOBAL_INTERVAL_MIN", "20", int, 20, 1440, errors)
     max_daily = _number("MAX_POSTS_PER_DAY", "72", int, 1, 72, errors)
     min_reach = _number("MIN_REACH_SCORE", "67", float, 0, 100, errors)
@@ -150,6 +155,10 @@ def main() -> int:
     print(
         f"  W2E={min_w2e} | soft={soft_w2e} | hot={hot_w2e} | "
         f"opportunity={min_opportunity} | demand={min_demand}"
+    )
+    print(
+        f"  PUBLIC_PLAN_RR={min_public_rr} | MAX_PUBLIC_RISK={max_public_risk}% | "
+        f"near={decision_near_atr}ATR/{decision_near_pct}% | stop_buffer={stop_buffer_atr}ATR"
     )
     print(f"  EMOJI_RATE={emoji_rate} | QUESTION_EVERY={question_every}")
     print(

@@ -14,11 +14,11 @@ from unittest.mock import patch
 
 from attention import AttentionSnapshot
 from filters import SignalFilter
-from indicators import build_trade_levels, calculate_multi_timeframe
+from indicators import calculate_multi_timeframe
 from main import _best_post_variant
 from memory import PostMemory
 from self_test import _build_setup
-from writer import _fmt_price
+from writer import _fmt_price, _levels
 
 
 BANNED = (
@@ -39,7 +39,7 @@ def main() -> None:
     mtf = calculate_multi_timeframe("BICOUSDT", frames)
     score = SignalFilter(min_score=0).evaluate(mtf)
     assert score is not None
-    levels = build_trade_levels(mtf.tf_15m, "long")
+    levels = _levels(mtf.tf_15m, "long")
     attention = AttentionSnapshot(
         score=90.0,
         change_15m=7.47,
@@ -71,10 +71,10 @@ def main() -> None:
     lowered = draft.text.lower().replace("ё", "е")
     assert report.valid, report.reasons
     assert report.score >= 90.0, report.score
-    assert 240 <= len(draft.text) <= 560, len(draft.text)
+    assert 140 <= len(draft.text) <= 500, len(draft.text)
     assert "$BICO" in draft.text
     assert "LONG" in draft.text.upper()
-    assert _fmt_price(levels["tp1"]) in draft.text
+    assert _fmt_price(levels["public_target"]) in draft.text
     assert _fmt_price(levels["stop"]) in draft.text
     assert "+7.5%" in draft.text
     assert "x18,1" in draft.text

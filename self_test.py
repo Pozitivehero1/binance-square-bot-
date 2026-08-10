@@ -19,11 +19,11 @@ import pandas as pd
 from card import generate_card
 from chart import generate_chart
 from filters import SignalFilter, get_top_candidates
-from indicators import build_trade_levels, calculate_multi_timeframe
+from indicators import calculate_multi_timeframe
 from memory import PostMemory
 from quality import PostQualityEvaluator
 from publisher import publish
-from writer import FULL_PLAN_FORMATS, generate_post_candidates, _ticker_count
+from writer import FULL_PLAN_FORMATS, generate_post_candidates, _ticker_count, _levels
 
 
 def _make_frame(rng, frequency: str, slope: float, rows: int = 260) -> pd.DataFrame:
@@ -70,7 +70,7 @@ def _test_side(side: str) -> None:
     assert score.direction == side, f"Expected {side}, got {score.direction}"
     assert score.passed_gates, f"Signal failed gates: {score.gate_reasons}"
 
-    levels = build_trade_levels(mtf.tf_15m, side)
+    levels = _levels(mtf.tf_15m, side)
     with tempfile.TemporaryDirectory() as temp_directory:
         memory = PostMemory(Path(temp_directory) / "post_memory.json")
         with patch.dict(os.environ, {"CONTENT_MODE": "deterministic"}, clear=False):
@@ -96,7 +96,7 @@ def _test_side(side: str) -> None:
         assert report.valid, report.reasons
         assert report.score >= 78, report.score
         assert 1 <= _ticker_count(text, "TEST") <= 3
-        assert __import__("writer")._fmt_price(levels["tp1"]) in text
+        assert __import__("writer")._fmt_price(levels["public_target"]) in text
         assert __import__("writer")._fmt_price(levels["stop"]) in text
         assert ("LONG" if side == "long" else "SHORT") in text.upper()
         lowered = text.lower().replace("ё", "е")
@@ -119,12 +119,12 @@ def _test_side(side: str) -> None:
     card_path = generate_card(
         "TEST",
         side,
-        levels["entry"],
-        levels["tp1"],
-        levels["tp2"],
-        levels["tp3"],
+        levels["plan_entry"],
+        levels["public_target"],
+        levels["public_target"],
+        levels["public_target"],
         levels["stop"],
-        levels["risk_reward"],
+        levels["public_rr"],
         score.total,
         mtf.tf_15m.change_1h,
         content_format=drafts[0].content_format,
@@ -139,10 +139,10 @@ def _test_side(side: str) -> None:
         "TESTUSDT",
         frames["15m"],
         "TEST",
-        entry=levels["entry"],
-        tp1=levels["tp1"],
-        tp2=levels["tp2"],
-        tp3=levels["tp3"],
+        entry=levels["plan_entry"],
+        tp1=levels["public_target"],
+        tp2=levels["public_target"],
+        tp3=levels["public_target"],
         stop=levels["stop"],
         direction=side,
         support=mtf.tf_15m.support,
@@ -152,6 +152,7 @@ def _test_side(side: str) -> None:
         visual_style=drafts[0].visual_style,
         headline=drafts[0].headline,
         signal_label=drafts[0].angle_title,
+        decision_mode=levels.get("decision_mode", "at_level"),
     )
     try:
         assert card_path and os.path.getsize(card_path) > 10_000
@@ -177,7 +178,7 @@ def _test_content_diversity() -> None:
     mtf = calculate_multi_timeframe("TESTUSDT", frames)
     score = SignalFilter(min_score=0).evaluate(mtf)
     assert score is not None
-    levels = build_trade_levels(mtf.tf_15m, "long")
+    levels = _levels(mtf.tf_15m, "long")
 
     with tempfile.TemporaryDirectory() as temp_directory:
         memory = PostMemory(Path(temp_directory) / "post_memory.json")
@@ -222,7 +223,7 @@ def _test_mistral_fact_lock() -> None:
     mtf = calculate_multi_timeframe("TESTUSDT", frames)
     score = SignalFilter(min_score=0).evaluate(mtf)
     assert score is not None
-    levels = build_trade_levels(mtf.tf_15m, "long")
+    levels = _levels(mtf.tf_15m, "long")
     payload = {
         "candidates": [
             {
@@ -285,7 +286,7 @@ def _test_mistral_fact_lock() -> None:
     for draft in ai_drafts:
         assert draft.content_format in {"hot_reaction", "one_problem", "crowd_trap", "chart_story"}
         assert 1 <= _ticker_count(draft.text, "TEST") <= 3
-        assert __import__("writer")._fmt_price(levels["tp1"]) in draft.text
+        assert __import__("writer")._fmt_price(levels["public_target"]) in draft.text
         assert __import__("writer")._fmt_price(levels["stop"]) in draft.text
         report = PostQualityEvaluator().report(
             draft.text,
