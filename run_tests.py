@@ -1,13 +1,20 @@
-"""Run the complete offline v9 regression suite."""
+"""Run the practical offline v9.1 regression suite.
+
+Set RUN_STRESS_TESTS=1 to append the longer repetition stress tests.
+"""
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 
-TESTS = [
+STANDARD_TESTS = [
     "attention_test.py",
     "micro_attention_test.py",
     "opportunity_test.py",
+    "dual_lane_test.py",
+    "event_author_test.py",
+    "event_visual_test.py",
     "trade_plan_test.py",
     "w2e_test.py",
     "human_copy_test.py",
@@ -16,18 +23,29 @@ TESTS = [
     "visual_test.py",
     "cron_test.py",
     "self_test.py",
+]
+
+STRESS_TESTS = [
     "repetition_test.py",
+    "event_repetition_test.py",
 ]
 
 
 def main() -> int:
-    for test in TESTS:
+    tests = list(STANDARD_TESTS)
+    if os.getenv("RUN_STRESS_TESTS", "0").strip().lower() in {"1", "true", "yes"}:
+        tests.extend(STRESS_TESTS)
+
+    for test in tests:
         print(f"\n=== {test} ===", flush=True)
         result = subprocess.run([sys.executable, test], check=False)
         if result.returncode != 0:
             print(f"FAILED: {test}")
             return result.returncode
-    print("\nALL V9 OFFLINE TESTS PASSED")
+
+    print("\nALL V9.1 STANDARD OFFLINE TESTS PASSED")
+    if tests == STANDARD_TESTS:
+        print("Long repetition stress tests are available with RUN_STRESS_TESTS=1 python run_tests.py")
     return 0
 
 

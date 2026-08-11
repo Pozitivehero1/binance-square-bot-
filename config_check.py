@@ -91,6 +91,13 @@ def main() -> int:
     hot_w2e = _number("HOT_W2E_FLOOR", "34", float, 0, 100, errors)
     min_opportunity = _number("MIN_OPPORTUNITY_SCORE", "62", float, 0, 100, errors)
     min_demand = _number("MIN_AUDIENCE_DEMAND", "24", float, 0, 100, errors)
+    min_event = _number("MIN_EVENT_SCORE", "60", float, 0, 100, errors)
+    event_w2e = _number("EVENT_W2E_FLOOR", "42", float, 0, 100, errors)
+    event_demand = _number("EVENT_MIN_DEMAND", "20", float, 0, 100, errors)
+    event_advantage = _number("EVENT_LANE_ADVANTAGE", "1.5", float, -10, 15, errors)
+    event_min_quality = _number("EVENT_MIN_POST_QUALITY", "80", float, 50, 100, errors)
+    event_min_feed = _number("EVENT_MIN_FEED_APPEAL", "74", float, 40, 100, errors)
+    event_min_conversion = _number("EVENT_MIN_CONVERSION", "72", float, 40, 100, errors)
     min_public_rr = _number("MIN_PUBLIC_PLAN_RR", "1.30", float, 1.0, 5.0, errors)
     min_tp3_rr = _number("MIN_PUBLIC_TP3_RR", "1.55", float, 1.0, 8.0, errors)
     max_public_risk = _number("MAX_PUBLIC_RISK_PCT", "8.0", float, 1.0, 25.0, errors)
@@ -156,6 +163,10 @@ def main() -> int:
     print(
         f"  W2E={min_w2e} | soft={soft_w2e} | hot={hot_w2e} | "
         f"opportunity={min_opportunity} | demand={min_demand}"
+    )
+    print(
+        f"  EVENT score={min_event} | W2E={event_w2e} | demand={event_demand} | "
+        f"lane_advantage={event_advantage} | copy={event_min_quality}/{event_min_feed}/{event_min_conversion}"
     )
     print(
         f"  PUBLIC_PLAN_RR={min_public_rr} | TP3_RR={min_tp3_rr} | MAX_PUBLIC_RISK={max_public_risk}% | "

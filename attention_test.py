@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from attention import compute_attention
+from attention import compute_attention, compute_event_attention
 from indicators import calculate_multi_timeframe
 from self_test import _build_setup
 
@@ -33,6 +33,9 @@ def main() -> None:
     assert hot.volume_spike > quiet.volume_spike
     assert hot.score > quiet.score, (hot, quiet)
     assert 0 <= hot.score <= 100 and 0 <= quiet.score <= 100
+    hot_short = compute_attention(hot_frames["15m"], hot_mtf.tf_15m, "short")
+    event_hot = compute_event_attention(hot_frames["15m"], hot_mtf.tf_15m)
+    assert abs(event_hot.score - (hot.score + hot_short.score) / 2.0) < 0.05
     print(
         f"ATTENTION: OK | hot={hot.score:.1f} vol=x{hot.volume_spike:.2f} "
         f"| quiet={quiet.score:.1f} vol=x{quiet.volume_spike:.2f}"

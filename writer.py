@@ -40,7 +40,7 @@ QUESTION_EVERY = max(5, int(os.getenv("QUESTION_EVERY", "9")))
 AI_VARIANTS = max(3, min(int(os.getenv("AI_VARIANTS", "6")), 10))
 AI_RETRIES = max(1, min(int(os.getenv("AI_RETRIES", "2")), 3))
 AI_TIMEOUT = max(10, min(int(os.getenv("AI_TIMEOUT", "55")), 120))
-AI_TEMPERATURE = max(0.15, min(float(os.getenv("AI_TEMPERATURE", "0.68")), 0.85))
+AI_TEMPERATURE = max(0.15, min(float(os.getenv("AI_TEMPERATURE", "0.72")), 0.85))
 
 # Formats where showing the whole ladder is expected rather than optional.
 FULL_PLAN_FORMATS: set[str] = {"trade_map", "risk_first"}

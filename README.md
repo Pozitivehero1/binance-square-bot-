@@ -1,115 +1,123 @@
-# Binance Square Bot — Audience Author v9
+# Binance Square Bot — Audience Author v9.1 Dual-Lane
 
-Автоматический Binance Square-бот с упором на две задачи: находить **события, на которые у рынка уже есть аудитория**, и превращать их в живые, фактически корректные публикации с полноценным торговым планом.
+Автоматический Binance Square-бот, который разделяет две разные задачи: **найти хорошую сделку** и **найти событие, которое действительно интересно аудитории прямо сейчас**. В v9.1 эти задачи больше не блокируют друг друга.
 
-## Что изменилось в v9
+## Архитектура
 
-### 1. Audience-first отбор монеты
+### TRADE lane
 
-Бот больше не ставит аномальный `volume xN` во главу угла. Предварительный shortlist собирается из двух корзин — **Audience** (ликвидные/торгуемые активы) и **Live Event** (свежие события), после чего финальный отбор учитывает:
+Используется, когда рынок даёт нормальную торговую геометрию. Python рассчитывает и проверяет:
 
-- относительный спрос аудитории: 24h quote volume, число сделок и текущий rank монеты;
-- свежесть события на 5m;
-- 15m attention;
-- техническую состоятельность сетапа;
-- качество движения без автоматического бонуса за уже состоявшийся огромный памп;
-- пригодность торгового плана для публикации.
-
-Большой объём насыщается: `x30` не получает в несколько раз больший вес, чем уже сильный `x4-x8`. Событие, которое произошло несколько свечей назад и затухает, получает `stale_penalty`.
-
-### 2. 5m Micro Attention
-
-`attention.py` отдельно определяет, происходит ли событие прямо сейчас:
-
-- `fresh` — импульс/объём возник на последней или предпоследней 5m-свече;
-- `developing` — событие ещё развивается;
-- `stale` — самый сильный всплеск уже остался в прошлом;
-- `ordinary` — обычная активность.
-
-Это позволяет не путать «в графике когда-то был x20» с «x20 появился только что».
-
-### 3. Полный Python-owned trade plan
-
-Перед написанием текста Python строит и проверяет:
-
-- `entry`;
-- `entry_zone_low / entry_zone_high`;
-- `stop_loss`;
-- `TP1`;
-- `TP2`;
-- `TP3`;
-- `R/R` для каждой цели;
+- направление;
+- entry и entry zone;
+- stop loss;
+- TP1 / TP2 / TP3;
+- R/R каждой цели;
 - процент риска;
-- состояние сделки: `decision_now / waiting_retest / waiting_breakout / waiting_breakdown`.
+- состояние сделки (`decision_now`, `waiting_retest`, `waiting_breakout`, `waiting_breakdown`).
 
-Цифры не придумываются LLM. Если геометрия уровней некорректна, TP3 R/R недостаточен или стоп слишком широк, кандидат отбрасывается **до** генерации поста.
+Только после этого Mistral пишет пост. Все торговые числа принадлежат Python и не могут быть изменены моделью.
 
-### 4. Mistral теперь полноценный автор
+### EVENT lane
 
-Режим по умолчанию: `CONTENT_MODE=ai_author`.
+Весь preliminary shortlist проходит отдельную audience/event-оценку **даже если ADX, R/R или relative volume не прошли technical gates**.
 
-Python передаёт Mistral не готовый шаблон, а semantic package с рыночными фактами и полным торговым планом. Mistral сам выбирает композицию, ритм, хук и то, какие второстепенные факты стоит упомянуть.
+EVENT lane учитывает:
 
-После этого Python проверяет текст:
+- относительный audience demand;
+- 5m micro freshness;
+- 15m attention;
+- скорость/качество свежего движения;
+- насыщение уже состоявшегося пампа/дампа;
+- рыночную пригодность для W2E;
+- технический score только как небольшой контекст, а не как hard gate.
 
-- cashtag должен быть в первой строке;
-- LONG/SHORT нельзя поменять;
-- entry/TP1/stop нельзя изменить;
-- для `trade_map` и `risk_first` обязательны TP1/TP2/TP3;
-- запрещены любые новые числа, которых нет в fact package;
-- запрещены обещания будущего и гарантии;
-- запрещён «будущий ретест», если цена уже находится у уровня;
-- запрещены старые роботизированные обороты;
-- не более одного вопроса и одного редкого контекстного emoji;
-- текст не должен быть слишком похож на недавние публикации.
+Это исправляет ситуацию, когда популярный/интересный тикер даже не доходил до audience engine из-за одного технического порога.
 
-Если Mistral не прошёл проверки, бот пробует другой вариант. Если API недоступен, включается fact-perfect deterministic fallback. Если fallback уже начинает повторяться — бот **лучше пропустит цикл, чем отправит дубликат**.
+## Если события хватает, а сделки нет
 
-### 5. Content Rotation
+Это теперь нормальный режим, а не ошибка.
 
-Доступны разные смысловые форматы:
+Если public trade plan не проходит проверку, EVENT lane выставляет:
 
-- `hot_take`;
-- `trade_map`;
-- `one_level`;
-- `no_chase`;
-- `two_paths`;
-- `risk_first`;
-- `market_story`;
-- `micro_note`;
-- `volume_read`.
+```text
+optional_trade_plan.available=false
+OBSERVATION_ONLY
+```
 
-И шесть реально отличающихся визуальных режимов:
+Mistral в таком посте **не имеет права** придумывать LONG/SHORT, entry, stop или TP. Он пишет наблюдение: что изменилось, почему тикер стоит открыть, какую реальную цену/зону стоит смотреть, почему пока нет чистой сделки.
 
-- `minimal_chart`;
-- `event_chart`;
-- `trade_map`;
-- `scenario_chart`;
-- `context_chart`;
-- `clean_chart`.
+Если public plan валиден, Mistral получает полный пакет:
 
-Соседние посты дополнительно штрафуются за одинаковую композицию, визуал, semantic phrase-family и слишком похожий текст.
+```text
+entry
+entry_zone_low / entry_zone_high
+stop_loss
+TP1
+TP2
+TP3
+R/R TP1 / TP2 / TP3
+risk_pct
+```
+
+Но даже тогда EVENT-пост не обязан превращаться в сухой сигнал.
+
+## Mistral — автор, Python — редактор фактов
+
+По умолчанию `CONTENT_MODE=ai_author`.
+
+Mistral получает semantic package и последние публикации, которые нельзя копировать. Он сам выбирает хук, ритм, структуру и то, какие факты упомянуть. После этого Python проверяет:
+
+- cashtag в первой строке;
+- отсутствие выдуманных чисел;
+- отсутствие выдуманных новостей/причин движения/китов/ликвидаций;
+- корректность LONG/SHORT, если public plan существует;
+- корректность entry/SL/TP;
+- отсутствие торгового призыва в observation-only;
+- отсутствие обещаний будущего;
+- отсутствие роботизированных шаблонов;
+- similarity к недавним постам;
+- feed appeal и W2E conversion score.
+
+Если текст не проходит — берётся другой вариант. Deterministic copy остаётся только safety net.
+
+## Audience-first shortlist
+
+Сканирование идёт по 5m/15m/1h, затем shortlist собирается из трёх корзин:
+
+- **Audience** — ликвидные/активно торгуемые тикеры;
+- **Live Event** — свежие события;
+- **Trade Quality** — технически сильные сетапы, чтобы audience/event логика не вытесняла хорошие сделки.
+
+4h/1d подгружаются только для shortlist. Огромный `volume xN` имеет насыщаемый вес: `x30` не считается автоматически в несколько раз лучше `x4-x8`. Stale-события штрафуются.
+
+## Визуалы
+
+TRADE-пост может показывать полный торговый план. Observation-only EVENT-пост не рисует выдуманные TP/SL: остаётся чистый график, реальная ключевая цена и контекст активности.
+
+Используются разные композиции: `minimal_chart`, `event_chart`, `trade_map`, `scenario_chart`, `context_chart`, `clean_chart`. Повтор одинакового формата/визуала получает penalty.
 
 ## Быстрый запуск
 
-### GitHub Actions
-
 1. Залей содержимое архива в репозиторий.
-2. В `Settings → Secrets and variables → Actions` добавь:
+2. Добавь GitHub Secrets:
    - `SQUARE_API`;
    - `MISTRAL_API`.
-3. Workflow уже лежит в `.github/workflows/run.yml`.
-4. Внешний cron может вызывать `workflow_dispatch` примерно каждые 20 минут. Это **частота сканирования**, а не обязательная частота публикации: слабый цикл бот пропустит.
+3. Workflow уже находится в `.github/workflows/run.yml`.
+4. Внешний cron может запускать `workflow_dispatch` примерно раз в 20 минут. Это **частота сканирования**, а не обязанность публиковать каждые 20 минут.
 
-`OPENAI_API_KEY` в workflow оставлен только для совместимости и этой версии не требуется.
-
-### Локальная проверка без публикации
+Локальная проверка:
 
 ```bash
 python -m pip install -r requirements.txt
 python config_check.py
-python self_test.py
 python run_tests.py
+```
+
+Длинные stress-тесты повторяемости запускаются отдельно:
+
+```bash
+RUN_STRESS_TESTS=1 python run_tests.py
 ```
 
 По умолчанию локально `DRY_RUN=1`.
@@ -120,8 +128,7 @@ python run_tests.py
 CONTENT_MODE=ai_author
 MISTRAL_MODEL=mistral-small-latest
 AI_VARIANTS=6
-AI_RETRIES=2
-AI_TEMPERATURE=0.68
+EVENT_AI_VARIANTS=6
 
 POST_MIN_CHARS=150
 POST_MAX_CHARS=560
@@ -133,9 +140,16 @@ MIN_CONVERSION_INTENT=75
 MIN_OPPORTUNITY_SCORE=62
 MIN_AUDIENCE_DEMAND=24
 MIN_W2E_MARKET_SCORE=56
-W2E_SOFT_FLOOR=40
-HOT_W2E_FLOOR=34
 
+MIN_EVENT_SCORE=60
+EVENT_W2E_FLOOR=42
+EVENT_MIN_DEMAND=20
+EVENT_LANE_ADVANTAGE=1.5
+EVENT_MIN_POST_QUALITY=80
+EVENT_MIN_FEED_APPEAL=74
+EVENT_MIN_CONVERSION=72
+
+MIN_PUBLIC_PLAN_RR=1.30
 MIN_PUBLIC_TP3_RR=1.55
 MAX_PUBLIC_RISK_PCT=8.0
 
@@ -145,54 +159,43 @@ FINAL_CANDIDATES=20
 COOLDOWN_MIN=240
 ```
 
-Полный набор есть в `env.example` и в workflow.
+## Как читать новые логи
 
-## Что означают логи кандидата
-
-Пример:
+TRADE lane:
 
 ```text
-Candidate XRPUSDT tech=74.1 attention=81.3 micro=88.0/fresh demand=79.4
-w2e=72.0 opportunity=77.6 final=84.1 gate=audience breakout ...
+Candidate ... profile=strict/balanced ... plan_R3=... gate=...
 ```
 
-Ключевые поля:
+EVENT lane:
 
-- `tech` — техническое качество;
-- `attention` — 15m текущий интерес;
-- `micro` — 5m свежесть;
-- `demand` — относительный спрос аудитории;
-- `w2e` — пригодность рынка для click-to-market сценария;
-- `opportunity` — общий audience-first score;
-- `gate` — почему кандидат допущен;
-- `plan_R3` — R/R до TP3;
-- `state` — состояние сделки.
+```text
+Event candidate TSTUSDT ... gate=fresh-event override plan=observation_only tech_gates=bypassed ...
+```
 
-## Защита от плохих публикаций
+Победитель:
 
-Бот пропускает публикацию, если:
+```text
+LANE WINNER=EVENT symbol=TSTUSDT ... plan=observation_only
+```
 
-- нет связного public trade plan;
-- событие уже устарело и спрос аудитории недостаточен;
-- opportunity/W2E gate не пройден;
-- текст Mistral изменил или придумал число;
-- текст слишком похож на недавний;
-- feed appeal / conversion intent ниже порога;
-- reach gate не пройден;
-- монета ещё находится в cooldown.
+или:
 
-## Файлы v9
+```text
+LANE WINNER=TRADE symbol=XRPUSDT ... plan=valid
+```
 
-- `main.py` — orchestration и market selection;
-- `attention.py` — 15m + 5m freshness;
-- `opportunity.py` — audience-first ranking;
+## Основные файлы
+
+- `main.py` — dual-lane orchestration и финальный выбор;
+- `opportunity.py` — TRADE opportunity + независимый audience EVENT score;
+- `event_writer.py` — Mistral author/validator для event-контента;
+- `writer.py` — Mistral author/validator для trade-контента;
 - `trade_plan.py` — entry / zone / stop / TP1-3;
-- `writer.py` — Mistral author + fact validator + fallback;
-- `quality.py` — жёсткая проверка фактов и формы;
-- `engagement.py` — feed appeal;
+- `attention.py` — 15m attention + 5m micro freshness;
 - `monetization.py` — W2E-oriented market/copy scoring;
-- `chart.py` — ротация визуальных композиций;
-- `memory.py` — анти-повторы и история форматов;
-- `.github/workflows/run.yml` — готовый GitHub Actions workflow.
+- `chart.py` — визуалы;
+- `memory.py` — анти-повторы;
+- `.github/workflows/run.yml` — готовый workflow.
 
-Никакой тест из архива не публикует посты в Binance.
+`CHANGES_V9_1.md` содержит краткий список изменений. Ни один offline-тест не публикует посты в Binance.

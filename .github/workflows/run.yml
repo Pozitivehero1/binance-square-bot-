@@ -32,13 +32,16 @@ jobs:
       MIN_REACH_SCORE: "68"
       COOLDOWN_MIN: "240"
 
-      # Audience Author v9: Mistral writes the WHOLE post from Python-locked facts.
+      # Audience Author v9.1: dual-lane TRADE + EVENT. Mistral writes from Python-locked facts.
       CONTENT_MODE: "ai_author"
       MISTRAL_MODEL: "mistral-small-latest"
       AI_VARIANTS: "6"
       AI_RETRIES: "2"
-      AI_TEMPERATURE: "0.68"
+      AI_TEMPERATURE: "0.72"
       AI_TIMEOUT: "55"
+      EVENT_AI_VARIANTS: "6"
+      EVENT_AI_RETRIES: "2"
+      EVENT_AI_TEMPERATURE: "0.72"
 
       # Editorial controls
       EMOJI_RATE: "0.16"
@@ -55,6 +58,14 @@ jobs:
       # Audience / freshness selection
       MIN_OPPORTUNITY_SCORE: "62"
       MIN_AUDIENCE_DEMAND: "24"
+      # EVENT lane: evaluated before ADX/R/R trade gates.
+      MIN_EVENT_SCORE: "60"
+      EVENT_W2E_FLOOR: "42"
+      EVENT_MIN_DEMAND: "20"
+      EVENT_LANE_ADVANTAGE: "1.5"
+      EVENT_MIN_POST_QUALITY: "80"
+      EVENT_MIN_FEED_APPEAL: "74"
+      EVENT_MIN_CONVERSION: "72"
       MIN_W2E_MARKET_SCORE: "56"
       W2E_SOFT_FLOOR: "40"
       HOT_W2E_FLOOR: "34"

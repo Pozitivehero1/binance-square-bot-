@@ -1,26 +1,35 @@
-Audience Author v9 — offline verification
+Audience Author v9.1 Dual-Lane — offline verification
+Date: 2026-08-11
 
-Command:
-    python run_tests.py
+STANDARD SUITE
+- attention_test.py: PASS
+- micro_attention_test.py: PASS
+- opportunity_test.py: PASS
+- dual_lane_test.py: PASS
+- event_author_test.py: PASS
+- event_visual_test.py: PASS
+- trade_plan_test.py: PASS
+- w2e_test.py: PASS
+- human_copy_test.py: PASS
+- emoji_test.py: PASS
+- presentation_test.py: PASS
+- visual_test.py: PASS
+- cron_test.py: PASS
+- self_test.py: PASS
 
-Final result:
-    ALL V9 OFFLINE TESTS PASSED
+Key checks
+- Technical-gate bypass for fresh EVENT candidate: PASS
+- Observation-only EVENT cannot invent LONG/SHORT/entry/SL/TP: PASS
+- EVENT with valid plan receives entry zone + stop + TP1/TP2/TP3 + R/R: PASS
+- Fabricated numeric fact (x99) blocked: PASS
+- Observation-only chart renders without fake TP/SL: PASS
+- Sparse contextual emoji test: 18/100 decorated, no push-pin: PASS
+- Trade plan R/R, risk, no-fake-retest guards: PASS
+- Mistral semantic trade plan / fact lock: PASS
+- GitHub cron overlap/state safety: PASS
 
-Key checks:
-- 15m attention: OK
-- 5m micro attention: fresh 95.2 vs stale 0.0, stale penalty 30.0
-- opportunity regression: audience/fresh 70.2 > stale x35 40.3 > extreme-pump 32.7
-- three-target trade plan, at-level/retest state and risk guards: OK
-- W2E scoring: useful copy 84.3 vs spam 51.2
-- human copy regression: OK
-- contextual emoji distribution: 18/100
-- all 6 chart styles: OK
-- cron/state lock: OK
-- mocked Mistral full-author mode: 5 accepted AI drafts; full entry/zone/stop/TP1-TP3 package; fabricated x99 rejected
-- deterministic outage stress: 150 simulated cycles; 20 accepted, 130 deliberately skipped; max accepted similarity 0.410 with 0.46 gate
+Stress tests executed separately on the same v9.1 core
+- TRADE repetition: 150 cycles, 20 accepted, 130 intentionally skipped by similarity gate, max accepted similarity 0.410 (< 0.46): PASS
+- EVENT repetition: 40 cycles, 12 accepted, max accepted similarity 0.243 (< 0.46): PASS
 
-The high skip count in the deterministic stress test is intentional: the test
-repeats static market structures. During an AI outage, v9 prefers skipping a
-cycle over publishing near-duplicate fallback copy.
-
-No test publishes to Binance.
+No real Binance Square publication was attempted during offline tests.

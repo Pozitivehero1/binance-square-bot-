@@ -57,6 +57,7 @@ def score_market_monetization(
     risk_reward: float,
     overextended: bool,
     micro_freshness: float = 50.0,
+    observation_only: bool = False,
 ) -> MarketMonetizationSnapshot:
     size = max(1, int(trend_universe_size))
     rank = max(1, min(int(trend_rank), size))
@@ -81,22 +82,36 @@ def score_market_monetization(
         + volume_bonus
     )
 
-    rr = max(0.0, float(risk_reward))
-    actionability = 42.0 + min(max(rr - 1.0, 0.0) * 22.0, 42.0)
-    if rr < 1.20:
-        actionability -= 18.0
-    if overextended:
-        actionability -= 9.0
-    actionability = _clamp(actionability)
+    if observation_only:
+        # Event posts are allowed to say "there is no clean trade yet".  Do
+        # not punish them for an intentionally absent R/R plan; W2E market
+        # quality here is driven by reader demand, activity and freshness.
+        actionability = 55.0 if not overextended else 48.0
+        score = (
+            rank_score * 0.18
+            + liquidity * 0.24
+            + activity * 0.18
+            + movement * 0.06
+            + freshness * 0.30
+            + actionability * 0.04
+        )
+    else:
+        rr = max(0.0, float(risk_reward))
+        actionability = 42.0 + min(max(rr - 1.0, 0.0) * 22.0, 42.0)
+        if rr < 1.20:
+            actionability -= 18.0
+        if overextended:
+            actionability -= 9.0
+        actionability = _clamp(actionability)
 
-    score = (
-        rank_score * 0.16
-        + liquidity * 0.22
-        + activity * 0.16
-        + movement * 0.06
-        + freshness * 0.28
-        + actionability * 0.12
-    )
+        score = (
+            rank_score * 0.16
+            + liquidity * 0.22
+            + activity * 0.16
+            + movement * 0.06
+            + freshness * 0.28
+            + actionability * 0.12
+        )
     score = _clamp(score)
     reason = (
         f"rank={rank}/{size}, liq={liquidity:.0f}, activity={activity:.0f}, "

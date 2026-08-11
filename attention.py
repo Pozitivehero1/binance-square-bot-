@@ -149,6 +149,32 @@ def compute_attention(frame: Optional[pd.DataFrame], indicator, direction: str) 
     )
 
 
+
+def compute_event_attention(frame: Optional[pd.DataFrame], indicator) -> AttentionSnapshot:
+    """Direction-neutral 15m attention for the EVENT lane.
+
+    ``compute_attention`` intentionally includes a small LONG/SHORT alignment
+    bonus because it was designed for trade selection. Audience events should
+    not disappear just because the technical direction inferred from higher
+    timeframes is weak or opposite to the current impulse. Averaging the two
+    directional views removes that bias while keeping the same motion, volume,
+    turnover and overextension information.
+    """
+    long_view = compute_attention(frame, indicator, "long")
+    short_view = compute_attention(frame, indicator, "short")
+    score = _clamp((float(long_view.score) + float(short_view.score)) / 2.0)
+    return AttentionSnapshot(
+        score=round(score, 2),
+        change_15m=long_view.change_15m,
+        change_45m=long_view.change_45m,
+        volume_spike=long_view.volume_spike,
+        range_expansion=long_view.range_expansion,
+        turnover_1h=long_view.turnover_1h,
+        distance_atr=long_view.distance_atr,
+        label=_label(score, long_view.volume_spike, long_view.change_15m),
+        overextended=bool(long_view.overextended or short_view.overextended),
+    )
+
 def compute_micro_attention(frame_5m: Optional[pd.DataFrame]) -> MicroAttentionSnapshot:
     """Score how fresh the current event is using only closed 5m candles.
 

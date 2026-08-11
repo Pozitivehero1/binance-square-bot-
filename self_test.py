@@ -298,7 +298,7 @@ def main() -> None:
     _test_mistral_full_author_and_fact_lock()
     _test_balanced_fallback()
     _test_publisher_command()
-    print("All Audience Author v9 offline tests passed. No publication was attempted.")
+    print("All Audience Author v9.1 offline tests passed. No publication was attempted.")
 
 
 if __name__ == "__main__":

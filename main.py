@@ -1,4 +1,4 @@
-"""Main orchestration for Binance Square Audience Author v9.
+"""Main orchestration for Binance Square Audience Author v9.1 Dual-Lane.
 
 Pipeline:
 1. Scan a broad liquid USDT universe on 5m/15m/1h.
@@ -22,7 +22,10 @@ from runtime import PROJECT_DIR, ProcessLock, load_project_env, setup_logging, w
 load_project_env()
 
 from btc_context import get_btc_context, get_funding_rate, is_direction_compatible
-from attention import AttentionSnapshot, MicroAttentionSnapshot, compute_attention, compute_micro_attention
+from attention import (
+    AttentionSnapshot, MicroAttentionSnapshot, compute_attention, compute_event_attention,
+    compute_micro_attention,
+)
 from card import generate_card
 from chart import generate_chart
 from data import get_data
@@ -35,11 +38,17 @@ from publication_guard import PublicationGuard
 from quality import PostQualityEvaluator, QualityReport
 from engagement import FeedAppealEvaluator
 from monetization import ConversionIntentEvaluator, MarketMonetizationSnapshot, score_market_monetization
-from opportunity import MarketOpportunitySnapshot, audience_demand_score, preliminary_interest_score, score_market_opportunity
+from opportunity import (
+    MarketOpportunitySnapshot, audience_demand_score, preliminary_interest_score,
+    score_market_opportunity, score_audience_event,
+)
 from trend import TrendingMarket, get_base_asset, get_trending_market
 from content_variation import detect_signal_angles
 from writer import GeneratedPost, _levels, generate_post_candidates, phrase_family_penalty
 from trade_plan import plan_summary
+from event_writer import (
+    event_decision_level, generate_event_candidates, rank_event_candidates,
+)
 
 logger = setup_logging()
 
@@ -65,6 +74,14 @@ HOT_W2E_FLOOR = float(os.getenv("HOT_W2E_FLOOR", "34"))
 MIN_CONVERSION_INTENT = float(os.getenv("MIN_CONVERSION_INTENT", "75"))
 MIN_OPPORTUNITY_SCORE = float(os.getenv("MIN_OPPORTUNITY_SCORE", "62"))
 MIN_AUDIENCE_DEMAND = float(os.getenv("MIN_AUDIENCE_DEMAND", "24"))
+# Event lane is deliberately independent from ADX/R/R hard gates.
+MIN_EVENT_SCORE = float(os.getenv("MIN_EVENT_SCORE", "60"))
+EVENT_W2E_FLOOR = float(os.getenv("EVENT_W2E_FLOOR", "42"))
+EVENT_MIN_DEMAND = float(os.getenv("EVENT_MIN_DEMAND", "20"))
+EVENT_LANE_ADVANTAGE = float(os.getenv("EVENT_LANE_ADVANTAGE", "1.5"))
+EVENT_MIN_POST_QUALITY = float(os.getenv("EVENT_MIN_POST_QUALITY", "80"))
+EVENT_MIN_FEED_APPEAL = float(os.getenv("EVENT_MIN_FEED_APPEAL", "74"))
+EVENT_MIN_CONVERSION = float(os.getenv("EVENT_MIN_CONVERSION", "72"))
 PRELIM_MIN_SCORE = float(os.getenv("PRELIM_MIN_SCORE", "38"))
 STRICT_BTC_FILTER = os.getenv("STRICT_BTC_FILTER", "0").lower() in {"1", "true", "yes"}
 DRY_RUN = os.getenv("DRY_RUN", "1").lower() in {"1", "true", "yes"}
@@ -129,7 +146,7 @@ def _preliminary_shortlist(
     score.
     """
     signal_filter = SignalFilter(min_score=PRELIM_MIN_SCORE)
-    rows: List[Tuple[str, float, float, float]] = []
+    rows: List[Tuple[str, float, float, float, float]] = []
     for symbol, frames in primary_data.items():
         if "15m" not in frames or "1h" not in frames:
             continue
@@ -137,7 +154,7 @@ def _preliminary_shortlist(
         score = signal_filter.evaluate(mtf)
         if score is None:
             continue
-        attention = compute_attention(frames.get("15m"), mtf.tf_15m, score.direction)
+        attention = compute_event_attention(frames.get("15m"), mtf.tf_15m)
         micro = compute_micro_attention(frames.get("5m"))
         meta = market_meta.get(symbol)
         demand = audience_demand_score(meta, market_universe)
@@ -157,7 +174,7 @@ def _preliminary_shortlist(
             or micro.score >= 68
             or (micro.phase == "fresh" and micro.volume_spike_5m >= 2.0)
         ):
-            rows.append((symbol, interest, demand, live_event))
+            rows.append((symbol, interest, demand, live_event, score.total))
             logger.debug(
                 "Prelim %s tech=%.1f attention=%.1f micro=%.1f/%s demand=%.1f vol15=x%.2f vol5=x%.2f interest=%.1f",
                 symbol, score.total, attention.score, micro.score, micro.phase, demand,
@@ -167,14 +184,15 @@ def _preliminary_shortlist(
     if not rows:
         return []
 
-    audience_quota = max(6, int(SHORTLIST_SIZE * 0.42))
-    event_quota = max(6, int(SHORTLIST_SIZE * 0.38))
+    audience_quota = max(6, int(SHORTLIST_SIZE * 0.35))
+    event_quota = max(6, int(SHORTLIST_SIZE * 0.35))
+    trade_quota = max(4, int(SHORTLIST_SIZE * 0.20))
     selected: List[str] = []
     seen: set[str] = set()
 
-    def add_from(items: List[Tuple[str, float, float, float]], limit: int) -> None:
+    def add_from(items: List[Tuple[str, float, float, float, float]], limit: int) -> None:
         added = 0
-        for symbol, _, _, _ in items:
+        for symbol, _, _, _, _ in items:
             if symbol in seen:
                 continue
             selected.append(symbol)
@@ -185,9 +203,11 @@ def _preliminary_shortlist(
 
     audience_rows = sorted(rows, key=lambda row: (row[2], row[1]), reverse=True)
     event_rows = sorted(rows, key=lambda row: (row[3], row[1]), reverse=True)
+    trade_rows = sorted(rows, key=lambda row: (row[4], row[1]), reverse=True)
     overall_rows = sorted(rows, key=lambda row: row[1], reverse=True)
     add_from(audience_rows, audience_quota)
     add_from(event_rows, event_quota)
+    add_from(trade_rows, trade_quota)
     add_from(overall_rows, SHORTLIST_SIZE)
     return selected[:SHORTLIST_SIZE]
 
@@ -273,8 +293,9 @@ def _choose_market_candidate(
     MarketMonetizationSnapshot,
     MarketOpportunitySnapshot,
     Dict[str, object],
+    float,
 ]]:
-    """Choose the best *market event* among technically defensible setups."""
+    """Choose the best TRADE-lane candidate among technically defensible setups."""
     frequencies = memory.signal_type_frequency(24)
     last_signal_types = memory.get_last_signal_types(5)
     eligible = []
@@ -419,8 +440,235 @@ def _choose_market_candidate(
         return None
 
     eligible.sort(key=lambda item: item[0], reverse=True)
-    _, mtf, score, funding, _, attention, micro, monetization, opportunity, levels = eligible[0]
-    return mtf, score, funding, attention, micro, monetization, opportunity, levels
+    selection_score, mtf, score, funding, _, attention, micro, monetization, opportunity, levels = eligible[0]
+    return mtf, score, funding, attention, micro, monetization, opportunity, levels, float(selection_score)
+
+
+def _event_candidate_gate(
+    score: SignalScore,
+    attention: AttentionSnapshot,
+    micro: MicroAttentionSnapshot,
+    monetization: MarketMonetizationSnapshot,
+    opportunity: MarketOpportunitySnapshot,
+) -> Tuple[bool, str]:
+    """Gate the EVENT lane without requiring ADX/R/R/volume trade gates.
+
+    The lane still needs a real audience or a genuinely fresh event. A popular
+    but dead ticker (for example high demand with stale 5m activity) does not
+    pass just because the coin is large.
+    """
+    if micro.phase == "stale" and attention.score < 72.0:
+        return False, "stale event"
+
+    if (
+        opportunity.score >= MIN_EVENT_SCORE
+        and monetization.score >= EVENT_W2E_FLOOR
+        and (
+            opportunity.audience_demand >= 55.0
+            or attention.score >= 70.0
+            or micro.score >= 72.0
+        )
+    ):
+        return True, "event standard"
+
+    if (
+        opportunity.audience_demand >= 72.0
+        and opportunity.score >= MIN_EVENT_SCORE - 3.0
+        and attention.score >= 48.0
+        and micro.score >= 45.0
+        and monetization.score >= 44.0
+    ):
+        return True, "high-demand event"
+
+    if (
+        opportunity.event_class in {"fresh_event", "audience_breakout"}
+        and micro.phase in {"fresh", "developing"}
+        and micro.score >= 72.0
+        and attention.score >= 62.0
+        and opportunity.audience_demand >= EVENT_MIN_DEMAND
+        and opportunity.score >= MIN_EVENT_SCORE - 1.5
+        and monetization.score >= 35.0
+    ):
+        return True, "fresh-event override"
+
+    return False, "below event audience/freshness gates"
+
+
+def _broad_signal_scores(
+    candidates: List[MultiTimeframeIndicators],
+) -> Dict[str, SignalScore]:
+    """Score every shortlist item without using publication hard gates."""
+    broad_filter = SignalFilter(min_score=0.0, profile="balanced")
+    result: Dict[str, SignalScore] = {}
+    for mtf in candidates:
+        score = broad_filter.evaluate(mtf)
+        if score is not None:
+            result[mtf.symbol] = score
+    return result
+
+
+def _choose_event_candidate(
+    candidates: List[MultiTimeframeIndicators],
+    broad_scores: Dict[str, SignalScore],
+    btc,
+    memory: PostMemory,
+    primary_data: Dict[str, Dict[str, pd.DataFrame]],
+    market_meta: Dict[str, TrendingMarket],
+    market_universe: List[TrendingMarket],
+) -> Optional[Tuple[
+    MultiTimeframeIndicators,
+    SignalScore,
+    AttentionSnapshot,
+    MicroAttentionSnapshot,
+    MarketMonetizationSnapshot,
+    MarketOpportunitySnapshot,
+    Dict[str, object],
+    float,
+]]:
+    """Choose an audience/event candidate independently of signal gates."""
+    eligible = []
+    recent_formats = memory.get_last_content_formats(6)
+    recent_event_count = sum(str(fmt).startswith("event_") for fmt in recent_formats[-4:])
+
+    for mtf in candidates:
+        score = broad_scores.get(mtf.symbol)
+        if score is None or mtf.tf_15m is None:
+            continue
+        raw_15m = primary_data.get(mtf.symbol, {}).get("15m")
+        raw_5m = primary_data.get(mtf.symbol, {}).get("5m")
+        attention = compute_event_attention(raw_15m, mtf.tf_15m)
+        micro = compute_micro_attention(raw_5m)
+        meta = market_meta.get(mtf.symbol)
+        universe_size = max(1, len(market_universe))
+
+        # Optional plan: event content can use it if it is clean, but the event
+        # itself is never rejected merely because the plan is not clean.
+        levels = _levels(mtf.tf_15m, score.direction)
+        plan_valid = bool(levels.get("plan_valid", False))
+        rr_for_market = float(levels.get("public_rr", score.risk_reward)) if plan_valid else 0.0
+
+        if meta is None:
+            monetization = score_market_monetization(
+                quote_volume_24h=attention.turnover_1h * 24.0,
+                trade_count_24h=0.0,
+                abs_change_24h=abs(attention.change_45m) * 8.0,
+                trend_rank=universe_size,
+                trend_universe_size=universe_size,
+                attention_score=attention.score,
+                change_15m=attention.change_15m,
+                volume_spike=attention.volume_spike,
+                risk_reward=rr_for_market,
+                overextended=attention.overextended,
+                micro_freshness=micro.score,
+                observation_only=not plan_valid,
+            )
+        else:
+            monetization = score_market_monetization(
+                quote_volume_24h=meta.quote_volume,
+                trade_count_24h=meta.trade_count,
+                abs_change_24h=abs(meta.change_pct),
+                trend_rank=meta.rank,
+                trend_universe_size=universe_size,
+                attention_score=attention.score,
+                change_15m=attention.change_15m,
+                volume_spike=attention.volume_spike,
+                risk_reward=rr_for_market,
+                overextended=attention.overextended,
+                micro_freshness=micro.score,
+                observation_only=not plan_valid,
+            )
+
+        opportunity = score_audience_event(
+            meta=meta,
+            universe=market_universe,
+            attention=attention,
+            technical_score=score.total,
+            micro=micro,
+        )
+        allowed, gate_mode = _event_candidate_gate(score, attention, micro, monetization, opportunity)
+
+        event_bonus = {
+            "audience_breakout": 6.0,
+            "fresh_event": 4.5,
+            "high_demand_active": 3.0,
+            "active_market": 1.0,
+            "stale_event": -8.0,
+        }.get(opportunity.event_class, 0.0)
+        demand_bonus = min(5.0, max(0.0, (opportunity.audience_demand - 65.0) / 7.0))
+        plan_bonus = 1.5 if plan_valid else 0.0
+        rotation_adjustment = 0.0
+        if recent_event_count >= 2:
+            rotation_adjustment -= 7.0
+        elif recent_formats and str(recent_formats[-1]).startswith("event_"):
+            rotation_adjustment -= 3.0
+        elif recent_event_count == 0:
+            rotation_adjustment += 1.5
+        selection_score = opportunity.score + event_bonus + demand_bonus + plan_bonus + rotation_adjustment
+
+        logger.info(
+            "Event candidate %s tech_context=%.1f attention=%.1f micro=%.1f/%s demand=%.1f w2e=%.1f event_score=%.1f final=%.1f "
+            "gate=%s plan=%s tech_gates=%s 5m=%+.2f%% 15m=%+.2f%% vol15=x%.2f vol5=x%.2f [%s]",
+            mtf.symbol, score.total, attention.score, micro.score, micro.phase, opportunity.audience_demand,
+            monetization.score, opportunity.score, selection_score, gate_mode,
+            "valid" if plan_valid else "observation_only",
+            "pass" if score.passed_gates else "bypassed",
+            micro.change_5m, attention.change_15m, attention.volume_spike, micro.volume_spike_5m,
+            opportunity.reason,
+        )
+        if not allowed:
+            continue
+        eligible.append((
+            selection_score, mtf, score, attention, micro, monetization, opportunity, levels
+        ))
+
+    if not eligible:
+        return None
+    eligible.sort(key=lambda item: item[0], reverse=True)
+    selection_score, mtf, score, attention, micro, monetization, opportunity, levels = eligible[0]
+    return mtf, score, attention, micro, monetization, opportunity, levels, float(selection_score)
+
+
+def _best_event_post_variant(
+    *,
+    basic: str,
+    mtf: MultiTimeframeIndicators,
+    score: SignalScore,
+    levels: Dict[str, object],
+    memory: PostMemory,
+    btc,
+    attention: AttentionSnapshot,
+    micro: MicroAttentionSnapshot,
+    opportunity: MarketOpportunitySnapshot,
+    monetization: MarketMonetizationSnapshot,
+) -> Optional[Tuple[GeneratedPost, QualityReport]]:
+    try:
+        drafts = generate_event_candidates(
+            basic=basic,
+            mtf=mtf,
+            direction=score.direction,
+            levels=levels,
+            memory=memory,
+            btc=btc,
+            attention=attention,
+            micro=micro,
+            opportunity=opportunity,
+            monetization=monetization,
+            variant_count=POST_VARIANTS,
+        )
+    except Exception as exc:
+        logger.error("Event post candidate generation failed: %s", exc)
+        return None
+    return rank_event_candidates(
+        drafts=drafts,
+        basic=basic,
+        memory=memory,
+        min_feed_appeal=EVENT_MIN_FEED_APPEAL,
+        min_conversion=EVENT_MIN_CONVERSION,
+        min_quality=EVENT_MIN_POST_QUALITY,
+        max_similarity=MAX_POST_SIMILARITY,
+        plan_available=bool(levels.get("plan_valid", False)),
+    )
+
 
 def _text_similarity(left: str, right: str) -> float:
     return PostMemory.compare_texts(left, right)
@@ -717,6 +965,14 @@ def _run_once() -> int:
 
     confirmation_data = _fetch_many(shortlist, CONFIRMATION_TIMEFRAMES)
     candidates = _build_full_candidates(shortlist, primary_data, confirmation_data)
+    # ---------------------------------------------------------------
+    # v9.1 DUAL LANE
+    # TRADE: strict/balanced technical gates + clean public plan.
+    # EVENT: every shortlist item is evaluated for audience/freshness even
+    #        when ADX/R/R/relative-volume gates rejected it as a trade.
+    # ---------------------------------------------------------------
+    broad_scores = _broad_signal_scores(candidates)
+
     strict_ranked = get_top_candidates(
         candidates,
         top_n=FINAL_CANDIDATES,
@@ -726,8 +982,6 @@ def _run_once() -> int:
     strict_symbols = {mtf.symbol for mtf, _ in strict_ranked}
     ranked = list(strict_ranked)
 
-    # v9 always lets near-threshold *balanced* setups enter the attention race.
-    # They do not automatically publish: opportunity/W2E gates still decide.
     if ENABLE_BALANCED_FALLBACK:
         balanced_ranked = get_top_candidates(
             candidates,
@@ -738,71 +992,131 @@ def _run_once() -> int:
         existing = {mtf.symbol for mtf, _ in ranked}
         ranked.extend((mtf, score) for mtf, score in balanced_ranked if mtf.symbol not in existing)
 
-    if not ranked:
-        logger.info("No candidate passed strict or balanced signal gates")
-        _log_near_misses(candidates)
-        return 0
-
     logger.info(
-        "Signal pool: %s candidates (%s strict, %s balanced-only)",
-        len(ranked), len(strict_symbols), len(ranked) - len(strict_symbols),
+        "Trade pool: %s candidates (%s strict, %s balanced-only); Event pool: %s shortlist candidates",
+        len(ranked), len(strict_symbols), max(0, len(ranked) - len(strict_symbols)), len(broad_scores),
     )
-    chosen = _choose_market_candidate(
-        ranked, strict_symbols, btc, memory, primary_data, market_meta, trending_market
+
+    trade_chosen = (
+        _choose_market_candidate(
+            ranked, strict_symbols, btc, memory, primary_data, market_meta, trending_market
+        )
+        if ranked else None
     )
-    if chosen is None:
-        logger.info("All candidates were rejected by funding/opportunity/W2E gates")
-        write_status("skipped", "no candidate passed market-opportunity selection")
+    event_chosen = _choose_event_candidate(
+        candidates, broad_scores, btc, memory, primary_data, market_meta, trending_market
+    )
+
+    if trade_chosen is None and event_chosen is None:
+        logger.info("No TRADE or EVENT candidate passed publication gates")
+        _log_near_misses(candidates)
+        write_status("skipped", "no candidate passed dual-lane market selection")
         return 0
 
-    best_mtf, best_score, funding, attention, micro, monetization, opportunity, levels = chosen
+    lane = "trade"
+    funding: Optional[float] = None
+    if trade_chosen is not None:
+        (
+            trade_mtf, trade_score, trade_funding, trade_attention, trade_micro,
+            trade_monetization, trade_opportunity, trade_levels, trade_selection_score,
+        ) = trade_chosen
+    else:
+        trade_selection_score = float("-inf")
+
+    if event_chosen is not None:
+        (
+            event_mtf, event_score, event_attention, event_micro, event_monetization,
+            event_opportunity, event_levels, event_selection_score,
+        ) = event_chosen
+    else:
+        event_selection_score = float("-inf")
+
+    if event_chosen is not None and (
+        trade_chosen is None or event_selection_score >= trade_selection_score + EVENT_LANE_ADVANTAGE
+    ):
+        lane = "event"
+        best_mtf = event_mtf
+        best_score = event_score
+        attention = event_attention
+        micro = event_micro
+        monetization = event_monetization
+        opportunity = event_opportunity
+        levels = event_levels
+        selection_score = event_selection_score
+    else:
+        lane = "trade"
+        best_mtf = trade_mtf
+        best_score = trade_score
+        funding = trade_funding
+        attention = trade_attention
+        micro = trade_micro
+        monetization = trade_monetization
+        opportunity = trade_opportunity
+        levels = trade_levels
+        selection_score = trade_selection_score
+
     symbol = best_mtf.symbol
     basic = get_base_asset(symbol)
     indicator = best_mtf.tf_15m
     if indicator is None:
         return 1
+    plan_valid = bool(levels.get("plan_valid", False))
 
     logger.info(
-        "PUBLIC PLAN %s",
-        plan_summary(levels),
+        "LANE WINNER=%s symbol=%s selection=%.1f trade_best=%s event_best=%s plan=%s",
+        lane.upper(), symbol, selection_score,
+        f"{trade_selection_score:.1f}" if trade_chosen is not None else "n/a",
+        f"{event_selection_score:.1f}" if event_chosen is not None else "n/a",
+        "valid" if plan_valid else "observation_only",
     )
+
+    if plan_valid:
+        logger.info("PUBLIC PLAN %s", plan_summary(levels))
+    else:
+        logger.info(
+            "EVENT OBSERVATION %s: no clean public trade plan; writer may not invent entry/SL/TP",
+            symbol,
+        )
+
     logger.info(
-        "BEST %s tech=%.1f attention=%.1f micro=%.1f/%s demand=%.1f w2e=%.1f opportunity=%.1f direction=%s profile=%s "
-        "internal_R/R=%.2f TP3_R/R=%.2f 5m=%+.2f%% 15m=%+.2f%% vol15=x%.2f vol5=x%.2f funding=%s",
-        symbol,
-        best_score.total,
-        attention.score,
-        micro.score,
-        micro.phase,
-        opportunity.audience_demand,
-        monetization.score,
-        opportunity.score,
-        best_score.direction,
-        "strict" if symbol in strict_symbols else "balanced",
-        best_score.risk_reward,
-        float(levels.get("rr_tp3", levels.get("public_rr", 0.0))),
-        micro.change_5m,
-        attention.change_15m,
-        attention.volume_spike,
-        micro.volume_spike_5m,
+        "BEST %s lane=%s tech=%.1f attention=%.1f micro=%.1f/%s demand=%.1f w2e=%.1f opportunity=%.1f "
+        "directional_bias=%s 5m=%+.2f%% 15m=%+.2f%% vol15=x%.2f vol5=x%.2f funding=%s",
+        symbol, lane, best_score.total, attention.score, micro.score, micro.phase,
+        opportunity.audience_demand, monetization.score, opportunity.score, best_score.direction,
+        micro.change_5m, attention.change_15m, attention.volume_spike, micro.volume_spike_5m,
         f"{funding * 100:.4f}%" if funding is not None else "n/a",
     )
 
-    generated = _best_post_variant(
-        symbol=symbol,
-        basic=basic,
-        mtf=best_mtf,
-        score=best_score,
-        levels=levels,
-        memory=memory,
-        btc=btc,
-        attention=attention,
-        micro=micro,
-        opportunity=opportunity,
-        monetization=monetization,
-    )
+    if lane == "event":
+        generated = _best_event_post_variant(
+            basic=basic,
+            mtf=best_mtf,
+            score=best_score,
+            levels=levels,
+            memory=memory,
+            btc=btc,
+            attention=attention,
+            micro=micro,
+            opportunity=opportunity,
+            monetization=monetization,
+        )
+    else:
+        generated = _best_post_variant(
+            symbol=symbol,
+            basic=basic,
+            mtf=best_mtf,
+            score=best_score,
+            levels=levels,
+            memory=memory,
+            btc=btc,
+            attention=attention,
+            micro=micro,
+            opportunity=opportunity,
+            monetization=monetization,
+        )
+
     if generated is None:
-        logger.info("No publication-quality post was generated")
+        logger.info("No publication-quality %s post was generated", lane)
         return 0
     selected_post, quality_report = generated
     post_text = selected_post.text
@@ -828,6 +1142,7 @@ def _run_once() -> int:
             "skipped",
             reach.reason,
             symbol=symbol,
+            lane=lane,
             reach_score=reach.score,
             market_score=opportunity.score,
             quality_score=quality_report.score,
@@ -856,7 +1171,11 @@ def _run_once() -> int:
             else:
                 effective_media = PUBLISH_MEDIA_MODE
 
-            if effective_media in {"card", "both"}:
+            # Observation-only events never show fake TP/SL cards.
+            if lane == "event" and not plan_valid:
+                effective_media = "chart"
+
+            if effective_media in {"card", "both"} and plan_valid:
                 try:
                     card_path = generate_card(
                         basic=basic,
@@ -893,16 +1212,20 @@ def _run_once() -> int:
                         symbol,
                         raw_15m,
                         basic,
-                        entry=levels.get("plan_entry", levels["entry"]),
-                        tp1=levels["tp1"],
-                        tp2=levels["tp2"],
-                        tp3=levels["tp3"],
-                        stop=levels["stop"],
+                        entry=levels.get("plan_entry") if plan_valid else None,
+                        entry_zone_low=levels.get("entry_zone_low") if plan_valid else None,
+                        entry_zone_high=levels.get("entry_zone_high") if plan_valid else None,
+                        tp1=levels.get("tp1") if plan_valid else None,
+                        tp2=levels.get("tp2") if plan_valid else None,
+                        tp3=levels.get("tp3") if plan_valid else None,
+                        stop=levels.get("stop") if plan_valid else None,
                         direction=best_score.direction,
                         support=indicator.support,
                         resistance=indicator.resistance,
-                        decision_level=levels.get("decision"),
-                        decision_mode=str(levels.get("decision_mode", "at_level")),
+                        decision_level=(
+                            levels.get("decision") if plan_valid else event_decision_level(indicator)
+                        ),
+                        decision_mode=str(levels.get("decision_mode", "at_level")) if plan_valid else "at_level",
                         vol_rel=attention.volume_spike,
                         indicator=indicator,
                         visual_style=selected_post.visual_style,
@@ -922,6 +1245,7 @@ def _run_once() -> int:
                 "dry_run",
                 "post generated but not published",
                 symbol=symbol,
+                lane=lane,
                 reach_score=reach.score,
                 quality_score=quality_report.score,
                 w2e_market_score=monetization.score,
@@ -947,13 +1271,13 @@ def _run_once() -> int:
             signal_type=selected_post.signal_type,
             content_format=selected_post.content_format,
             visual_style=selected_post.visual_style,
-            direction=best_score.direction,
-            levels=levels,
+            direction=best_score.direction if plan_valid else "",
+            levels=levels if plan_valid else {},
             market_price=indicator.price,
         )
         guard.record_success(
             symbol=symbol,
-            direction=best_score.direction,
+            direction=best_score.direction if plan_valid else "observation",
             content_format=selected_post.content_format,
             visual_style=selected_post.visual_style,
             market_score=opportunity.score,
@@ -965,7 +1289,8 @@ def _run_once() -> int:
             "published",
             "publication completed",
             symbol=symbol,
-            direction=best_score.direction,
+            lane=lane,
+            direction=best_score.direction if plan_valid else "observation",
             post_id=published.post_id,
             reach_score=reach.score,
             quality_score=quality_report.score,

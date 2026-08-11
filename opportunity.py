@@ -1,4 +1,4 @@
-"""Audience-first market opportunity ranking for Binance Square v9.
+"""Audience-first market opportunity ranking for Binance Square v9.1.
 
 The selector deliberately separates three ideas:
 1) audience demand -- is there a large enough pool of readers/traders around it;
@@ -203,6 +203,68 @@ def score_market_opportunity(
         reason=reason,
     )
 
+
+
+def score_audience_event(
+    *,
+    meta: TrendingMarket | None,
+    universe: Sequence[TrendingMarket],
+    attention: AttentionSnapshot,
+    technical_score: float,
+    micro: MicroAttentionSnapshot | None = None,
+) -> MarketOpportunitySnapshot:
+    """Score a publishable *market event* independently of trade gates.
+
+    This lane answers a different question from ``score_market_opportunity``:
+    "is something worth talking about on Square right now?"  ADX, R/R and
+    relative-volume hard gates are deliberately not publication prerequisites
+    here.  Technical quality is only a small sanity/context component.
+
+    Stale activity and already-saturated moves are still penalized heavily so
+    the event lane cannot turn into a generic trending-coin spam feed.
+    """
+    demand = audience_demand_score(meta, universe)
+    volume = volume_anomaly_score(attention.volume_spike)
+    move_quality = move_quality_score(attention.change_15m, attention.change_45m)
+    micro_score = float(micro.score) if micro else 50.0
+    stale = float(micro.stale_penalty) if micro else 0.0
+    penalty = saturation_penalty(attention)
+
+    # Event content does not need a valid trade.  A neutral actionability value
+    # keeps the shared snapshot schema useful without smuggling fake R/R into
+    # the score.
+    actionability = 50.0
+    score = (
+        demand * 0.36
+        + float(attention.score) * 0.24
+        + micro_score * 0.20
+        + move_quality * 0.10
+        + volume * 0.04
+        + _clamp(technical_score) * 0.06
+    )
+    score -= penalty * 0.85
+    score -= stale * 0.62
+    score = _clamp(score)
+
+    event = _event_class(attention, micro, demand)
+    reason = (
+        f"demand={demand:.0f}, fresh15={attention.score:.0f}, micro={micro_score:.0f}, "
+        f"vol={volume:.0f}, move={move_quality:.0f}, tech_context={_clamp(technical_score):.0f}, "
+        f"saturation=-{penalty:.1f}, stale=-{stale:.1f}, event={event}"
+    )
+    return MarketOpportunitySnapshot(
+        score=round(score, 2),
+        audience_demand=round(demand, 2),
+        fresh_attention=round(float(attention.score), 2),
+        micro_freshness=round(micro_score, 2),
+        volume_anomaly=round(volume, 2),
+        move_quality=round(move_quality, 2),
+        actionability=actionability,
+        saturation_penalty=round(penalty, 2),
+        stale_penalty=round(stale, 2),
+        event_class=event,
+        reason=reason,
+    )
 
 def preliminary_interest_score(
     *,
