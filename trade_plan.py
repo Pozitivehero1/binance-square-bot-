@@ -1,33 +1,40 @@
-"""Public trade-plan coherence for Binance Square posts.
+"""Deterministic public trade plan for Binance Square v9.
 
-The technical engine may calculate several targets and a wide ATR-based stop.
-That is useful internally, but the public post needs a simpler contract:
+Python owns every tradable number.  The language model receives this package but
+is never allowed to invent or alter entry, stop or targets.
 
-* one decision level that matches where price actually is;
-* wording mode derived from the current price/level relationship;
-* one meaningful target with a reasonable reward/risk ratio;
-* one invalidation level;
-* no "wait for a retest" when price is already sitting on the level.
+v9 exposes a complete plan to the author:
+* decision / entry centre;
+* entry zone;
+* stop loss;
+* TP1 / TP2 / TP3;
+* reward/risk for every target;
+* trade state (decision now / wait for break / wait for retest).
 
-This module is intentionally deterministic. It never predicts that a retest or
-breakout *will* happen; it only describes the condition that would make the
-setup actionable.
+The public ladder is rebuilt around the *public* entry and stop so a structural
+entry cannot accidentally produce inverted or absurd target geometry.
 """
 from __future__ import annotations
 
 import math
 import os
-from typing import Any, Dict, Iterable, Tuple
+from typing import Any, Dict, Tuple
 
 from indicators import build_trade_levels
 
-MIN_PUBLIC_PLAN_RR = float(os.getenv("MIN_PUBLIC_PLAN_RR", "1.30"))
-MAX_PUBLIC_RISK_PCT = float(os.getenv("MAX_PUBLIC_RISK_PCT", "9.0"))
+MIN_PUBLIC_TP3_RR = float(os.getenv("MIN_PUBLIC_TP3_RR", "1.55"))
+MAX_PUBLIC_RISK_PCT = float(os.getenv("MAX_PUBLIC_RISK_PCT", "8.0"))
 DECISION_NEAR_ATR = float(os.getenv("DECISION_NEAR_ATR", "0.30"))
 DECISION_NEAR_PCT = float(os.getenv("DECISION_NEAR_PCT", "0.25"))  # percent
 MAX_STRUCTURAL_DISTANCE_ATR = float(os.getenv("MAX_STRUCTURAL_DISTANCE_ATR", "2.40"))
-MAX_STRUCTURAL_DISTANCE_PCT = float(os.getenv("MAX_STRUCTURAL_DISTANCE_PCT", "4.0"))  # percent
+MAX_STRUCTURAL_DISTANCE_PCT = float(os.getenv("MAX_STRUCTURAL_DISTANCE_PCT", "4.0"))
 PUBLIC_STOP_BUFFER_ATR = float(os.getenv("PUBLIC_STOP_BUFFER_ATR", "0.75"))
+ENTRY_ZONE_ATR = float(os.getenv("ENTRY_ZONE_ATR", "0.16"))
+ENTRY_ZONE_MAX_PCT = float(os.getenv("ENTRY_ZONE_MAX_PCT", "0.35"))  # percent
+
+# Backward compatibility with v8 configuration.  It is no longer the only public
+# target threshold, but older env files can still influence the floor.
+LEGACY_MIN_RR = float(os.getenv("MIN_PUBLIC_PLAN_RR", "1.30"))
 
 
 def _finite(value: Any) -> bool:
@@ -49,45 +56,7 @@ def _risk_reward(entry: float, target: float, stop: float, direction: str) -> fl
 
 
 def _risk_pct(entry: float, stop: float) -> float:
-    denominator = max(abs(entry), 1e-12)
-    return abs(entry - stop) / denominator * 100.0
-
-
-def _reward_pct(entry: float, target: float) -> float:
-    denominator = max(abs(entry), 1e-12)
-    return abs(target - entry) / denominator * 100.0
-
-
-def _target_candidates(base: Dict[str, float], entry: float, direction: str) -> Iterable[Tuple[str, float]]:
-    for name in ("tp1", "tp2", "tp3"):
-        value = float(base[name])
-        if direction == "long" and value > entry:
-            yield name, value
-        elif direction == "short" and value < entry:
-            yield name, value
-
-
-def _select_public_target(
-    base: Dict[str, float],
-    entry: float,
-    stop: float,
-    direction: str,
-) -> Tuple[str, float, float]:
-    candidates = list(_target_candidates(base, entry, direction))
-    if not candidates:
-        fallback = float(base["tp3"])
-        return "tp3", fallback, _risk_reward(entry, fallback, stop, direction)
-
-    for name, value in candidates:
-        rr = _risk_reward(entry, value, stop, direction)
-        if rr >= MIN_PUBLIC_PLAN_RR:
-            return name, value, rr
-
-    name, value = max(
-        candidates,
-        key=lambda item: _risk_reward(entry, item[1], stop, direction),
-    )
-    return name, value, _risk_reward(entry, value, stop, direction)
+    return abs(entry - stop) / max(abs(entry), 1e-12) * 100.0
 
 
 def _decision_mode(current: float, decision: float, atr: float, direction: str) -> Tuple[str, float, float]:
@@ -98,79 +67,124 @@ def _decision_mode(current: float, decision: float, atr: float, direction: str) 
 
     if abs(distance) <= tolerance:
         return "at_level", distance_pct, distance_atr
-
     if direction == "long":
-        # Price already above a decision level: a pullback/hold is the natural condition.
-        if current > decision:
-            return "retest_hold", distance_pct, distance_atr
-        # Price still below resistance: first need acceptance above it.
-        return "breakout_confirm", distance_pct, distance_atr
-
-    # SHORT mirrors LONG.
-    if current < decision:
-        return "retest_reject", distance_pct, distance_atr
-    return "breakdown_confirm", distance_pct, distance_atr
+        return ("retest_hold" if current > decision else "breakout_confirm"), distance_pct, distance_atr
+    return ("retest_reject" if current < decision else "breakdown_confirm"), distance_pct, distance_atr
 
 
 def _structural_candidate(ind, direction: str, base: Dict[str, float]) -> float | None:
     current = float(ind.price)
     atr = max(abs(float(ind.atr)), abs(current) * 1e-8)
     structural = float(ind.resistance if direction == "long" else ind.support)
-    stop = float(base["stop"])
-    far_target = float(base["tp3"])
-
+    technical_stop = float(base["stop"])
+    technical_far = float(base["tp3"])
     if not _finite(structural):
         return None
 
-    # The decision level must live inside the full trade corridor. This is more
-    # flexible than the old TP1-only corridor, while still preventing nonsense
-    # such as "wait for 0.210, target 0.200".
-    if direction == "long" and not (stop < structural < far_target):
+    if direction == "long" and not (technical_stop < structural < technical_far):
         return None
-    if direction == "short" and not (far_target < structural < stop):
+    if direction == "short" and not (technical_far < structural < technical_stop):
         return None
 
     distance = abs(structural - current)
     max_distance = max(atr * MAX_STRUCTURAL_DISTANCE_ATR, abs(current) * (MAX_STRUCTURAL_DISTANCE_PCT / 100.0))
-    if distance > max_distance:
-        return None
-    return structural
+    return structural if distance <= max_distance else None
+
+
+def _entry_zone(entry: float, atr: float, stop: float, direction: str) -> Tuple[float, float]:
+    half = min(abs(atr) * ENTRY_ZONE_ATR, abs(entry) * (ENTRY_ZONE_MAX_PCT / 100.0))
+    half = max(half, abs(entry) * 0.00005)
+    if direction == "long":
+        low = max(stop + abs(entry - stop) * 0.06, entry - half)
+        high = entry + half
+    else:
+        low = entry - half
+        high = min(stop - abs(stop - entry) * 0.06, entry + half)
+    return min(low, high), max(low, high)
+
+
+def _target_ladder(
+    *,
+    entry: float,
+    stop: float,
+    technical_far: float,
+    direction: str,
+) -> Tuple[float, float, float, float, float, float]:
+    risk = abs(entry - stop)
+    far_rr = _risk_reward(entry, technical_far, stop, direction)
+    if risk <= 0 or far_rr <= 0:
+        return technical_far, technical_far, technical_far, 0.0, 0.0, 0.0
+
+    # Preserve the technical far target.  TP1/TP2 are partial-exit levels inside
+    # that corridor.  They are not new support/resistance claims; they are a
+    # deterministic risk ladder for position management.
+    tp1_rr = min(max(1.00, far_rr * 0.46), far_rr)
+    tp2_rr = min(max(tp1_rr + 0.20, far_rr * 0.72), far_rr)
+    if far_rr - tp2_rr < 0.12 and far_rr > 1.25:
+        tp2_rr = max(tp1_rr + 0.10, far_rr - 0.12)
+    tp3_rr = far_rr
+
+    sign = 1.0 if direction == "long" else -1.0
+    tp1 = entry + sign * risk * tp1_rr
+    tp2 = entry + sign * risk * tp2_rr
+    tp3 = entry + sign * risk * tp3_rr
+    return tp1, tp2, tp3, tp1_rr, tp2_rr, tp3_rr
+
+
+def _trade_state(mode: str) -> str:
+    return {
+        "at_level": "decision_now",
+        "retest_hold": "waiting_retest",
+        "retest_reject": "waiting_retest",
+        "breakout_confirm": "waiting_breakout",
+        "breakdown_confirm": "waiting_breakdown",
+    }.get(mode, "waiting_confirmation")
 
 
 def _build_for_decision(ind, direction: str, base: Dict[str, float], decision: float, source: str) -> Dict[str, Any]:
     current = float(ind.price)
     technical_stop = float(base["stop"])
+    technical_far = float(base["tp3"])
     atr = max(abs(float(ind.atr)), abs(current) * 1e-8)
     mode, distance_pct, distance_atr = _decision_mode(current, decision, atr, direction)
 
-    # If the public entry is a structural retest level rather than the current
-    # price, the technical stop calculated from the current candle can end up
-    # only a few ticks away from that level (producing absurd public R/R such
-    # as 30:1). Give the public invalidation a minimum ATR buffer while never
-    # making it tighter than the technical stop.
+    # Keep at least an ATR buffer around a structural public entry.  This avoids
+    # fake 10R/30R setups caused by a stop sitting a few ticks from that level.
     min_buffer = atr * PUBLIC_STOP_BUFFER_ATR
     if direction == "long":
         stop = min(technical_stop, float(decision) - min_buffer)
     else:
         stop = max(technical_stop, float(decision) + min_buffer)
 
-    target_name, public_target, public_rr = _select_public_target(base, decision, stop, direction)
-    risk_pct = _risk_pct(decision, stop)
-    reward_pct = _reward_pct(decision, public_target)
+    # The original technical TP3 can become invalid when the public decision
+    # level moves.  In that case use the original reward distance from the current
+    # price, projected from the public entry, while retaining the same cap.
+    technical_reward = abs(float(base["tp3"]) - float(base["entry"]))
+    if direction == "long":
+        far_target = technical_far if technical_far > decision else decision + technical_reward
+    else:
+        far_target = technical_far if technical_far < decision else decision - technical_reward
 
-    geometry_ok = (
-        stop < decision < public_target
-        if direction == "long"
-        else public_target < decision < stop
+    tp1, tp2, tp3, rr1, rr2, rr3 = _target_ladder(
+        entry=decision, stop=stop, technical_far=far_target, direction=direction
     )
-    rr_ok = public_rr >= MIN_PUBLIC_PLAN_RR
+    zone_low, zone_high = _entry_zone(decision, atr, stop, direction)
+    risk_pct = _risk_pct(decision, stop)
+
+    if direction == "long":
+        geometry_ok = stop < zone_low <= decision <= zone_high < tp1 <= tp2 <= tp3
+    else:
+        geometry_ok = tp3 <= tp2 <= tp1 < zone_low <= decision <= zone_high < stop
+
+    rr_floor = max(1.20, min(LEGACY_MIN_RR, MIN_PUBLIC_TP3_RR))
+    rr_ok = rr3 >= max(MIN_PUBLIC_TP3_RR, rr_floor)
     risk_ok = risk_pct <= MAX_PUBLIC_RISK_PCT
 
     reasons = []
     if not geometry_ok:
         reasons.append("invalid level geometry")
     if not rr_ok:
-        reasons.append(f"public R/R {public_rr:.2f} < {MIN_PUBLIC_PLAN_RR:.2f}")
+        reasons.append(f"TP3 R/R {rr3:.2f} < {max(MIN_PUBLIC_TP3_RR, rr_floor):.2f}")
     if not risk_ok:
         reasons.append(f"public risk {risk_pct:.2f}% > {MAX_PUBLIC_RISK_PCT:.2f}%")
 
@@ -182,14 +196,23 @@ def _build_for_decision(ind, direction: str, base: Dict[str, float], decision: f
             "decision": float(decision),
             "decision_source": source,
             "decision_mode": mode,
-            "decision_distance_pct": distance_pct,
-            "decision_distance_atr": distance_atr,
+            "trade_state": _trade_state(mode),
+            "decision_distance_pct": float(distance_pct),
+            "decision_distance_atr": float(distance_atr),
             "plan_entry": float(decision),
-            "public_target": float(public_target),
-            "public_target_name": target_name,
-            "public_rr": float(public_rr),
+            "entry_zone_low": float(zone_low),
+            "entry_zone_high": float(zone_high),
+            "tp1": float(tp1),
+            "tp2": float(tp2),
+            "tp3": float(tp3),
+            "rr_tp1": float(rr1),
+            "rr_tp2": float(rr2),
+            "rr_tp3": float(rr3),
+            # Compatibility: the first target is what compact posts must contain.
+            "public_target": float(tp1),
+            "public_target_name": "tp1",
+            "public_rr": float(rr3),
             "public_risk_pct": float(risk_pct),
-            "public_reward_pct": float(reward_pct),
             "plan_valid": bool(geometry_ok and rr_ok and risk_ok),
             "plan_reasons": tuple(reasons),
         }
@@ -198,13 +221,6 @@ def _build_for_decision(ind, direction: str, base: Dict[str, float], decision: f
 
 
 def build_public_trade_plan(ind, direction: str) -> Dict[str, Any]:
-    """Build a feed-safe trade plan from the indicator snapshot.
-
-    A nearby structural level is preferred only when it produces a coherent
-    public plan. Otherwise the current price becomes the decision zone. That
-    fallback is deliberately labelled ``at_level`` so copy cannot talk about a
-    future retest of the price the market is already trading at.
-    """
     if direction not in {"long", "short"}:
         raise ValueError("direction must be 'long' or 'short'")
 
@@ -213,22 +229,22 @@ def build_public_trade_plan(ind, direction: str) -> Dict[str, Any]:
 
     structural = _structural_candidate(ind, direction, base)
     if structural is not None:
-        structural_plan = _build_for_decision(ind, direction, base, structural, "structure")
-        if structural_plan["plan_valid"]:
-            return structural_plan
+        plan = _build_for_decision(ind, direction, base, structural, "structure")
+        if plan["plan_valid"]:
+            return plan
 
-    # Current-price fallback is not a predicted entry. It is a decision zone:
-    # buyers/sellers must demonstrate control from here before the idea is acted on.
+    # Current price is a decision zone, not a promise of a future retest.
     return _build_for_decision(ind, direction, base, current, "current")
 
 
 def plan_summary(levels: Dict[str, Any]) -> str:
     reasons = "; ".join(str(item) for item in levels.get("plan_reasons", ())) or "ok"
     return (
-        f"mode={levels.get('decision_mode', 'n/a')} "
+        f"state={levels.get('trade_state', 'n/a')} mode={levels.get('decision_mode', 'n/a')} "
         f"source={levels.get('decision_source', 'n/a')} "
-        f"public_rr={float(levels.get('public_rr', 0.0)):.2f} "
+        f"R1={float(levels.get('rr_tp1', 0.0)):.2f} "
+        f"R2={float(levels.get('rr_tp2', 0.0)):.2f} "
+        f"R3={float(levels.get('rr_tp3', levels.get('public_rr', 0.0))):.2f} "
         f"risk={float(levels.get('public_risk_pct', 0.0)):.2f}% "
-        f"target={levels.get('public_target_name', 'n/a')} "
         f"valid={bool(levels.get('plan_valid', False))} ({reasons})"
     )

@@ -1,13 +1,12 @@
-"""Market-attention ranking for Binance Square.
+"""Audience-first market opportunity ranking for Binance Square v9.
 
-The technical engine answers "is there a defensible setup?".  This module asks a
-separate question: "is this the market event people are likely to care about
-*now*?"  The score intentionally combines relative audience demand with fresh
-15-minute behaviour instead of treating a technically clean setup as a good
-content topic by default.
+The selector deliberately separates three ideas:
+1) audience demand -- is there a large enough pool of readers/traders around it;
+2) freshness -- is the interesting move happening *now* rather than 30m ago;
+3) technical actionability -- can we express a coherent plan without chasing.
 
-No private Binance recommendation signals are assumed here.  Everything comes
-from public 24h ticker metadata plus closed candles already fetched by the bot.
+A raw x-volume spike is only a supporting signal.  It saturates quickly and can
+never overpower poor audience demand plus stale 5m behaviour by itself.
 """
 from __future__ import annotations
 
@@ -16,7 +15,7 @@ from dataclasses import dataclass
 import math
 from typing import Iterable, Sequence
 
-from attention import AttentionSnapshot
+from attention import AttentionSnapshot, MicroAttentionSnapshot
 from trend import TrendingMarket
 
 
@@ -25,10 +24,12 @@ class MarketOpportunitySnapshot:
     score: float
     audience_demand: float
     fresh_attention: float
+    micro_freshness: float
     volume_anomaly: float
     move_quality: float
     actionability: float
     saturation_penalty: float
+    stale_penalty: float
     event_class: str
     reason: str
 
@@ -52,28 +53,36 @@ def _percentile(value: float, values: Iterable[float], *, log_scale: bool = Fals
 
 
 def audience_demand_score(meta: TrendingMarket | None, universe: Sequence[TrendingMarket]) -> float:
-    """Relative demand proxy using liquidity, transactions and trend rank.
-
-    Percentiles are used so a mid-cap that is unusually active can compete with
-    BTC/ETH without pretending absolute volume is irrelevant.
-    """
+    """Relative demand proxy: liquidity + real trade activity + current rank."""
     if meta is None:
-        return 18.0
+        return 15.0
     quote_pct = _percentile(meta.quote_volume, (item.quote_volume for item in universe), log_scale=True)
     trades_pct = _percentile(meta.trade_count, (item.trade_count for item in universe), log_scale=True)
     size = max(1, len(universe))
     rank_score = _clamp((1.0 - (max(1, meta.rank) - 1) / max(1, size - 1)) * 100.0)
-    return _clamp(quote_pct * 0.44 + trades_pct * 0.38 + rank_score * 0.18)
+
+    # 24h movement is a weak demand proxy only.  Extremely large completed moves
+    # are not rewarded linearly because they can already be saturated.
+    move24 = abs(float(meta.change_pct))
+    if move24 <= 10:
+        move_interest = _clamp(move24 / 10.0 * 100.0)
+    elif move24 <= 25:
+        move_interest = 100.0 - (move24 - 10.0) * 1.4
+    else:
+        move_interest = max(35.0, 79.0 - (move24 - 25.0) * 1.5)
+
+    return _clamp(
+        quote_pct * 0.39
+        + trades_pct * 0.34
+        + rank_score * 0.19
+        + move_interest * 0.08
+    )
 
 
 def volume_anomaly_score(spike: float) -> float:
-    """Map x-volume to a smooth 0-100 event score.
-
-    Around x2 is noteworthy, x4-x8 is strong and x16+ is exceptional.  Values
-    below normal are intentionally weak even when the technical setup is clean.
-    """
+    """Saturating x-volume score. x4 is strong; x30 is not 7.5x better."""
     ratio = max(0.05, float(spike))
-    return _clamp(32.0 + math.log2(ratio) * 22.0)
+    return _clamp(38.0 + math.log2(ratio) * 16.0)
 
 
 def _move_leg_score(move: float, *, sweet_low: float, sweet_high: float, hard_high: float) -> float:
@@ -85,44 +94,49 @@ def _move_leg_score(move: float, *, sweet_low: float, sweet_high: float, hard_hi
     if value <= sweet_high:
         return 85.0 + (value - sweet_low) / max(0.01, sweet_high - sweet_low) * 15.0
     if value <= hard_high:
-        return 100.0 - (value - sweet_high) / max(0.01, hard_high - sweet_high) * 30.0
-    return _clamp(70.0 - (value - hard_high) * 3.0, 22.0, 70.0)
+        return 100.0 - (value - sweet_high) / max(0.01, hard_high - sweet_high) * 35.0
+    return _clamp(65.0 - (value - hard_high) * 3.5, 18.0, 65.0)
 
 
 def move_quality_score(change_15m: float, change_45m: float) -> float:
-    # The sample that performed best for this account clustered around fresh,
-    # visible moves rather than already-exhausted double-digit 15m candles.  This
-    # is therefore a *soft* sweet spot, not a hard rejection of large moves.
-    score15 = _move_leg_score(change_15m, sweet_low=0.75, sweet_high=4.5, hard_high=9.0)
-    score45 = _move_leg_score(change_45m, sweet_low=1.2, sweet_high=10.0, hard_high=20.0)
-    return _clamp(score15 * 0.68 + score45 * 0.32)
+    score15 = _move_leg_score(change_15m, sweet_low=0.70, sweet_high=4.0, hard_high=8.0)
+    score45 = _move_leg_score(change_45m, sweet_low=1.2, sweet_high=9.0, hard_high=18.0)
+    return _clamp(score15 * 0.70 + score45 * 0.30)
 
 
 def saturation_penalty(attention: AttentionSnapshot) -> float:
     move15 = abs(float(attention.change_15m))
     move45 = abs(float(attention.change_45m))
     penalty = 0.0
-    if move15 > 8.0:
-        penalty += min(18.0, (move15 - 8.0) * 1.8)
-    if move45 > 18.0:
-        penalty += min(10.0, (move45 - 18.0) * 0.8)
+    if move15 > 7.0:
+        penalty += min(20.0, (move15 - 7.0) * 2.0)
+    if move45 > 16.0:
+        penalty += min(12.0, (move45 - 16.0) * 0.9)
     if attention.overextended:
-        penalty += 4.5
-    # Exceptional live volume keeps an extended move interesting as a *story*,
-    # even when it is not a good chase entry.
+        penalty += 5.0
+    # Fresh volume keeps the event worth *discussing*, but does not erase chase risk.
     if attention.volume_spike >= 8.0:
-        penalty *= 0.65
-    return min(24.0, penalty)
+        penalty *= 0.78
+    return min(28.0, penalty)
 
 
-def _event_class(attention: AttentionSnapshot, volume_score: float) -> str:
-    move = abs(float(attention.change_15m))
-    if volume_score >= 88 and move >= 0.75:
-        return "volume_shock"
-    if attention.score >= 80 and move >= 1.0:
-        return "fresh_impulse"
-    if attention.score >= 68 or volume_score >= 70:
+def _event_class(
+    attention: AttentionSnapshot,
+    micro: MicroAttentionSnapshot | None,
+    demand: float,
+) -> str:
+    micro_score = float(micro.score) if micro else 50.0
+    phase = micro.phase if micro else "unknown"
+    if demand >= 68 and micro_score >= 72 and phase == "fresh":
+        return "audience_breakout"
+    if micro_score >= 75 and attention.score >= 70 and phase in {"fresh", "developing"}:
+        return "fresh_event"
+    if demand >= 72 and attention.score >= 58:
+        return "high_demand_active"
+    if attention.score >= 70:
         return "active_market"
+    if phase == "stale":
+        return "stale_event"
     return "ordinary"
 
 
@@ -135,49 +149,56 @@ def score_market_opportunity(
     risk_reward: float,
     strict_setup: bool,
     btc_compatible: bool = True,
+    micro: MicroAttentionSnapshot | None = None,
 ) -> MarketOpportunitySnapshot:
     demand = audience_demand_score(meta, universe)
     volume = volume_anomaly_score(attention.volume_spike)
     move_quality = move_quality_score(attention.change_15m, attention.change_45m)
+    micro_score = float(micro.score) if micro else 50.0
+    stale = float(micro.stale_penalty) if micro else 0.0
+
     rr = max(0.0, float(risk_reward))
-    actionability = 48.0 + min(max(rr - 1.0, 0.0) * 24.0, 36.0)
-    if rr < 1.10:
-        actionability -= 22.0
+    actionability = 45.0 + min(max(rr - 1.0, 0.0) * 22.0, 40.0)
+    if rr < 1.20:
+        actionability -= 18.0
     if attention.overextended:
-        actionability -= 8.0
+        actionability -= 7.0
     actionability = _clamp(actionability)
 
     penalty = saturation_penalty(attention)
     score = (
-        demand * 0.27
-        + float(attention.score) * 0.25
-        + _clamp(technical_score) * 0.18
-        + volume * 0.14
-        + move_quality * 0.10
-        + actionability * 0.06
+        demand * 0.34
+        + float(attention.score) * 0.20
+        + _clamp(technical_score) * 0.17
+        + micro_score * 0.13
+        + move_quality * 0.08
+        + volume * 0.04
+        + actionability * 0.04
     )
     if strict_setup:
-        score += 2.5
+        score += 2.0
     if not btc_compatible:
-        # BTC disagreement is context, not an automatic ban for a hot alt.
-        score -= 4.0
+        score -= 3.0
     score -= penalty
+    score -= stale * 0.45
     score = _clamp(score)
 
-    event = _event_class(attention, volume)
+    event = _event_class(attention, micro, demand)
     reason = (
-        f"demand={demand:.0f}, fresh={attention.score:.0f}, vol_event={volume:.0f}, "
-        f"move={move_quality:.0f}, actionable={actionability:.0f}, saturation=-{penalty:.1f}, "
-        f"event={event}"
+        f"demand={demand:.0f}, fresh15={attention.score:.0f}, micro={micro_score:.0f}, "
+        f"vol={volume:.0f}, move={move_quality:.0f}, actionable={actionability:.0f}, "
+        f"saturation=-{penalty:.1f}, stale=-{stale:.1f}, event={event}"
     )
     return MarketOpportunitySnapshot(
         score=round(score, 2),
         audience_demand=round(demand, 2),
         fresh_attention=round(float(attention.score), 2),
+        micro_freshness=round(micro_score, 2),
         volume_anomaly=round(volume, 2),
         move_quality=round(move_quality, 2),
         actionability=round(actionability, 2),
         saturation_penalty=round(penalty, 2),
+        stale_penalty=round(stale, 2),
         event_class=event,
         reason=reason,
     )
@@ -189,18 +210,23 @@ def preliminary_interest_score(
     attention: AttentionSnapshot,
     meta: TrendingMarket | None,
     universe: Sequence[TrendingMarket],
+    micro: MicroAttentionSnapshot | None = None,
 ) -> float:
-    """Cheap pre-4h/1d shortlist score so hot markets are not discarded early."""
+    """Cheap first-pass score that keeps both high-demand and genuinely fresh events."""
     demand = audience_demand_score(meta, universe)
     volume = volume_anomaly_score(attention.volume_spike)
     move = move_quality_score(attention.change_15m, attention.change_45m)
-    penalty = saturation_penalty(attention) * 0.55
+    micro_score = float(micro.score) if micro else 50.0
+    stale = float(micro.stale_penalty) if micro else 0.0
+    penalty = saturation_penalty(attention) * 0.45
     score = (
-        _clamp(technical_score) * 0.38
-        + float(attention.score) * 0.30
-        + demand * 0.18
-        + volume * 0.09
-        + move * 0.05
+        demand * 0.30
+        + _clamp(technical_score) * 0.25
+        + float(attention.score) * 0.20
+        + micro_score * 0.15
+        + move * 0.06
+        + volume * 0.04
         - penalty
+        - stale * 0.25
     )
     return _clamp(score)

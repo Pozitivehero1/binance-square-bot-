@@ -1,8 +1,9 @@
-"""Write-to-Earn oriented ranking helpers.
+"""Write-to-Earn oriented market and copy scoring for Binance Square v9.
 
-This module does not try to infer Binance's private recommendation algorithm.
-It ranks observable proxies that are useful for W2E: live attention, actual
-trading activity, a clickable cashtag and a clear decision condition.
+W2E itself is not a views program: the useful observable funnel is
+reader -> cashtag -> market -> qualified trade.  We therefore reward early
+cashtag discoverability, a coherent trade plan, trust and readability while
+avoiding pushy or spam-like copy.
 """
 from __future__ import annotations
 
@@ -55,53 +56,46 @@ def score_market_monetization(
     volume_spike: float,
     risk_reward: float,
     overextended: bool,
+    micro_freshness: float = 50.0,
 ) -> MarketMonetizationSnapshot:
-    """Score how useful a market is as a W2E topic right now.
-
-    v5 over-weighted static 24h liquidity/rank. A coin could therefore be moving
-    +3% in 15 minutes on abnormal volume and still lose to a quieter large market.
-    v6 treats fresh attention as the largest component while keeping liquidity
-    and activity as sanity checks rather than hard popularity requirements.
-    """
     size = max(1, int(trend_universe_size))
     rank = max(1, min(int(trend_rank), size))
     rank_score = _clamp((1.0 - (rank - 1) / max(1, size - 1)) * 100.0)
 
-    # Wider calibration than v5: $1M -> 0, ~$5B -> 100. Smaller active alts no
-    # longer receive a near-zero score purely because they are not BTC/ETH sized.
-    liquidity = _log_score(float(quote_volume_24h), 6.0, 9.7)
-    activity = _log_score(float(trade_count_24h), 2.7, 6.7)
+    liquidity = _log_score(float(quote_volume_24h), 6.2, 10.0)
+    activity = _log_score(float(trade_count_24h), 3.0, 6.9)
 
-    move = min(abs(float(abs_change_24h)), 30.0)
-    movement = _clamp(move / 9.0 * 100.0)
+    move = min(abs(float(abs_change_24h)), 35.0)
+    movement = _clamp(move / 10.0 * 100.0)
     if move > 22.0:
-        movement -= min(18.0, (move - 22.0) * 1.5)
+        movement -= min(25.0, (move - 22.0) * 1.6)
     movement = _clamp(movement)
 
+    # Freshness intentionally saturates raw x-volume.  The v8 feedback sample
+    # showed x30+ did not automatically outperform x3-x5 events.
+    volume_bonus = min(max(math.log2(max(float(volume_spike), 1.0)), 0.0) * 4.0, 12.0)
     freshness = _clamp(
-        float(attention_score) * 0.72
-        + min(abs(float(change_15m)) * 32.0, 18.0)
-        + min(max(float(volume_spike) - 1.0, 0.0) * 7.0, 14.0)
+        float(attention_score) * 0.58
+        + float(micro_freshness) * 0.28
+        + min(abs(float(change_15m)) * 5.0, 10.0)
+        + volume_bonus
     )
 
     rr = max(0.0, float(risk_reward))
-    actionability = 48.0 + min(max(rr - 1.0, 0.0) * 20.0, 32.0)
-    if rr < 1.1:
-        actionability -= 20.0
-    # Overextension is bad for chasing a trade, but still valuable as content if
-    # the post explicitly tells the reader to wait for a retest. Keep the penalty
-    # moderate and let the writer/attention gate decide the angle.
+    actionability = 42.0 + min(max(rr - 1.0, 0.0) * 22.0, 42.0)
+    if rr < 1.20:
+        actionability -= 18.0
     if overextended:
-        actionability -= 12.0
+        actionability -= 9.0
     actionability = _clamp(actionability)
 
     score = (
-        rank_score * 0.11
-        + liquidity * 0.17
-        + activity * 0.10
-        + movement * 0.10
-        + freshness * 0.36
-        + actionability * 0.16
+        rank_score * 0.16
+        + liquidity * 0.22
+        + activity * 0.16
+        + movement * 0.06
+        + freshness * 0.28
+        + actionability * 0.12
     )
     score = _clamp(score)
     reason = (
@@ -121,20 +115,19 @@ def score_market_monetization(
 
 
 class ConversionIntentEvaluator:
-    """Evaluate a useful, non-pushy click-to-market journey."""
+    """Score a useful, non-pushy click-to-market journey."""
 
     ACTION_MARKERS = (
-        "если ", "пока ", "жду", "уров", "удерж", "закреп", "ретест",
-        "отмен", "вход", "стоп", "сценар", "пропуска", "не открываю",
-        "не догон", "подтвержд", "цель", "зона интереса",
+        "если ", "пока ", "вход", "зона", "стоп", "stop", "tp1", "tp2", "tp3",
+        "цель", "отмена", "сценар", "лонг", "long", "шорт", "short",
     )
     DECISION_MARKERS = (
-        "для меня", "я бы", "я сейчас", "смотрю", "не спеш", "не догон",
-        "жду", "пропуска", "не хочу", "закрываю",
+        "для меня", "я бы", "смотрю", "пропущ", "не хочу", "не беру", "не открываю",
+        "интересен", "интересна", "рабочий", "рабочая",
     )
     SPAM_MARKERS = (
-        "100%", "гарант", "без риска", "точно даст", "легкие деньги",
-        "срочно покуп", "срочно прода", "заходи сейчас", "иксы гарант",
+        "100%", "гарант", "без риска", "точно даст", "легкие деньги", "лёгкие деньги",
+        "срочно покуп", "срочно прода", "заходи сейчас", "иксы гарант", "не упусти",
     )
     ROBOTIC_MARKERS = (
         "направление у идеи", "граница ошибки", "диапазон контроля",
@@ -147,65 +140,61 @@ class ConversionIntentEvaluator:
         ticker = "$" + re.sub(r"[^A-Za-z0-9]", "", str(basic)).upper()
         ticker_matches = list(re.finditer(re.escape(ticker), clean, flags=re.IGNORECASE))
 
-        discoverability = 15.0
+        discoverability = 10.0
         if ticker_matches:
-            discoverability += 50.0
+            discoverability += 52.0
             first_pos = ticker_matches[0].start()
-            if first_pos <= 120:
-                discoverability += 25.0
-            elif first_pos <= 220:
-                discoverability += 10.0
+            if first_pos <= 70:
+                discoverability += 30.0
+            elif first_pos <= 150:
+                discoverability += 18.0
             if 1 <= len(ticker_matches) <= 2:
-                discoverability += 10.0
+                discoverability += 8.0
             elif len(ticker_matches) > 3:
-                discoverability -= 20.0
+                discoverability -= 18.0
         discoverability = _clamp(discoverability)
 
-        actionability = 30.0
-        actionability += min(55.0, sum(1 for x in self.ACTION_MARKERS if x in lowered) * 6.5)
-        # Reward a complete compact plan without requiring terminal labels.
-        if any(x in lowered for x in ("первая цель", "зона интереса")):
+        actionability = 24.0
+        actionability += min(42.0, sum(1 for marker in self.ACTION_MARKERS if marker in lowered) * 4.5)
+        number_count = len(re.findall(r"(?<!\w)[+-]?\d+(?:[.,]\d+)?%?", clean))
+        if 3 <= number_count <= 8:
+            actionability += 12.0
+        if re.search(r"\b(?:tp1|tp2|tp3)\b", lowered) or "первая цель" in lowered:
             actionability += 8.0
-        if any(x in lowered for x in (
-            "отменяется", "закрываю", "не актуален", "для меня закрыт", "ломает идею"
-        )):
+        if any(marker in lowered for marker in ("стоп", "отмена", "сценарий отмен", "идея отмен")):
             actionability += 10.0
         actionability = _clamp(actionability)
 
-        decision_context = 28.0 + min(
-            60.0,
-            sum(1 for x in self.DECISION_MARKERS if x in lowered) * 9.0,
-        )
+        decision_context = 25.0 + min(65.0, sum(1 for marker in self.DECISION_MARKERS if marker in lowered) * 8.0)
         decision_context = _clamp(decision_context)
 
-        trust = 96.0
+        trust = 98.0
         if any(marker in lowered for marker in self.SPAM_MARKERS):
-            trust -= 70.0
+            trust -= 75.0
         if any(marker in lowered for marker in self.ROBOTIC_MARKERS):
-            trust -= 24.0
-        if clean.count("!") >= 3:
-            trust -= 15.0
-        if len(re.findall(r"\b(?:LONG|SHORT)\b", clean, flags=re.IGNORECASE)) >= 3:
+            trust -= 28.0
+        if clean.count("!") >= 2:
             trust -= 12.0
+        if len(re.findall(r"\b(?:LONG|SHORT|ЛОНГ|ШОРТ)\b", clean, flags=re.IGNORECASE)) >= 4:
+            trust -= 10.0
         trust = _clamp(trust)
 
         readability = 100.0
-        if len(clean) > 600:
-            readability -= min(45.0, (len(clean) - 600) / 4.0)
-        label_hits = sum(lowered.count(x) for x in (
-            "вход:", "цели:", "стоп-лосс:", "r/r:", "направление:",
+        if len(clean) > 560:
+            readability -= min(45.0, (len(clean) - 560) / 4.0)
+        if number_count > 10:
+            readability -= min(38.0, (number_count - 10) * 5.0)
+        label_hits = sum(lowered.count(marker) for marker in (
+            "направление:", "ключевой уровень:", "r/r:", "параметры:",
         ))
-        readability -= min(35.0, label_hits * 8.0)
-        number_count = len(re.findall(r"(?<!\w)[+-]?\d+(?:[.,]\d+)?%?", clean))
-        if number_count > 8:
-            readability -= min(30.0, (number_count - 8) * 5.0)
+        readability -= min(30.0, label_hits * 10.0)
         readability = _clamp(readability)
 
         score = (
-            discoverability * 0.28
-            + actionability * 0.30
-            + decision_context * 0.18
-            + trust * 0.16
+            discoverability * 0.30
+            + actionability * 0.34
+            + decision_context * 0.14
+            + trust * 0.14
             + readability * 0.08
         )
         return ConversionIntentReport(

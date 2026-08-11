@@ -1,4 +1,4 @@
-"""Offline presentation/level-coherence checks for v8."""
+"""Offline presentation/level-coherence checks for Audience Author v9."""
 import os
 import re
 from unittest.mock import patch

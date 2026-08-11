@@ -1,64 +1,26 @@
-Market Attention v8 — offline verification
-==========================================
+Audience Author v9 — offline verification
 
-All checks below passed on the packaged build. No Binance publication was attempted.
+Command:
+    python run_tests.py
 
-attention_test.py
-  ATTENTION: OK
+Final result:
+    ALL V9 OFFLINE TESTS PASSED
 
-opportunity_test.py
-  OPPORTUNITY: OK
+Key checks:
+- 15m attention: OK
+- 5m micro attention: fresh 95.2 vs stale 0.0, stale penalty 30.0
+- opportunity regression: audience/fresh 70.2 > stale x35 40.3 > extreme-pump 32.7
+- three-target trade plan, at-level/retest state and risk guards: OK
+- W2E scoring: useful copy 84.3 vs spam 51.2
+- human copy regression: OK
+- contextual emoji distribution: 18/100
+- all 6 chart styles: OK
+- cron/state lock: OK
+- mocked Mistral full-author mode: 5 accepted AI drafts; full entry/zone/stop/TP1-TP3 package; fabricated x99 rejected
+- deterministic outage stress: 150 simulated cycles; 20 accepted, 130 deliberately skipped; max accepted similarity 0.410 with 0.46 gate
 
-w2e_test.py
-  W2E: OK
+The high skip count in the deterministic stress test is intentional: the test
+repeats static market structures. During an AI outage, v9 prefers skipping a
+cycle over publishing near-duplicate fallback copy.
 
-trade_plan_test.py
-  TRADE PLAN: OK
-  - current price ~= decision level => at_level
-  - no fake retest wording
-  - public R/R >= 1.30
-  - public risk <= 9%
-  - wide-risk plan rejected
-
-emoji_test.py
-  EMOJI: OK
-  - sparse contextual accents
-  - no push-pin emoji
-  - max one supported emoji
-
-presentation_test.py
-  PRESENTATION: OK
-  - coherent decision/target/invalidation geometry
-  - compact copy
-  - emoji/hashtag guard
-
-human_copy_test.py
-  HUMAN COPY: OK
-  - hot BICO-like scenario
-  - human-first output
-  - fact-locked target/invalidation
-
-copy_matrix_test.py
-  COPY MATRIX: OK
-  - aligned and counter-trend headlines are direction-aware
-
-self_test.py
-  LONG: OK
-  SHORT: OK
-  DIVERSITY: OK
-    max candidate similarity = 0.450
-  MISTRAL FACT LOCK: OK
-  BALANCED FALLBACK: OK
-  PUBLISHER COMMAND: OK
-
-cron_test.py
-  CRON SAFETY: OK
-
-repetition_test.py
-  REPETITION STRESS: OK
-  posts = 150
-  max_similarity = 0.489
-  gate = 0.50
-
-config_check.py
-  CONFIG CHECK: OK
+No test publishes to Binance.

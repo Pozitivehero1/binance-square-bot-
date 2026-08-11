@@ -1,11 +1,10 @@
-"""Offline regression tests for Market Attention v8 public trade plans."""
+"""Offline regression tests for Audience Author v9 public trade plans."""
 from __future__ import annotations
 
 from types import SimpleNamespace
 
 from trade_plan import build_public_trade_plan
 from writer import _fmt_price, _trade_sentences
-from content_strategy import headline_candidates
 
 
 def _indicator(*, price=0.1362, atr=0.0050):
@@ -31,8 +30,11 @@ def main() -> None:
     assert plan["plan_valid"], plan
     assert plan["decision_mode"] == "at_level", plan
     assert abs(plan["decision"] - 0.1362) < 1e-12
-    assert plan["public_rr"] >= 1.30, plan
-    assert plan["public_risk_pct"] <= 9.0, plan
+    assert plan["rr_tp1"] >= 1.0, plan
+    assert plan["rr_tp1"] < plan["rr_tp2"] < plan["rr_tp3"], plan
+    assert plan["public_rr"] >= 1.55, plan
+    assert plan["public_risk_pct"] <= 8.0, plan
+    assert plan["entry_zone_low"] <= plan["plan_entry"] <= plan["entry_zone_high"], plan
 
     key = _fmt_price(plan["decision"])
     entry, invalidation = _trade_sentences(
@@ -44,27 +46,8 @@ def main() -> None:
     assert "на откате" not in combined
     assert key in combined
 
-    headlines = headline_candidates(
-        ticker="$TUT",
-        direction="long",
-        format_id="hot_reaction",
-        key_level=key,
-        risk_pct="6,6%",
-        reward_pct="10,4%",
-        rsi=52.0,
-        adx=23.0,
-        price_vs_vwap="выше",
-        angle_title="уровень",
-        change_15m=1.9,
-        volume_spike=1.6,
-        decision_mode="at_level",
-        event_strength="active",
-    )
-    normalized = "\n".join(headlines).lower().replace("ё", "е")
-    assert "сильный ход" not in normalized
-    assert "сильная свеч" not in normalized
-    assert "резкий" not in normalized
-    assert "ретест" not in normalized
+    # At-level state must never be described as a future retest.
+    assert plan["trade_state"] == "decision_now"
 
     # A wide stop should not be dressed up as a clean public setup.
     wide = build_public_trade_plan(_indicator(atr=0.0100), "long")

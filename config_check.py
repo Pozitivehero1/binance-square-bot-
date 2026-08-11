@@ -18,7 +18,7 @@ from publication_guard import PublicationGuard
 from publisher import find_skill_dir
 
 
-VALID_CONTENT_MODES = {"ai", "ai_first", "mistral", "deterministic"}
+VALID_CONTENT_MODES = {"ai_author", "ai", "ai_first", "mistral", "deterministic"}
 VALID_MEDIA_MODES = {"adaptive", "card", "chart", "both", "none"}
 VALID_VOICES = {"calm", "direct", "analytical", "contrarian"}
 
@@ -62,7 +62,7 @@ def main() -> int:
     warnings: list[str] = []
 
     mistral_key = bool((os.getenv("MISTRAL_API") or os.getenv("MISTRAL_API_KEY") or "").strip())
-    default_content_mode = "ai_first" if mistral_key else "deterministic"
+    default_content_mode = "ai_author" if mistral_key else "deterministic"
     content_mode = os.getenv("CONTENT_MODE", default_content_mode).strip().lower()
     media_mode = os.getenv("PUBLISH_MEDIA_MODE", "chart").strip().lower()
     author_voice = os.getenv("AUTHOR_VOICE", "direct").strip().lower()
@@ -82,27 +82,28 @@ def main() -> int:
         errors.append(f"AUTHOR_VOICE: неизвестный голос {author_voice!r}")
 
     post_variants = _number("POST_VARIANTS", "16", int, 4, 16, errors)
-    max_similarity = _number("MAX_POST_SIMILARITY", "0.50", float, 0.35, 0.75, errors)
-    min_quality = _number("MIN_POST_QUALITY", "82", float, 50, 100, errors)
-    min_feed = _number("MIN_FEED_APPEAL", "74", float, 40, 100, errors)
-    min_conversion = _number("MIN_CONVERSION_INTENT", "70", float, 40, 100, errors)
+    max_similarity = _number("MAX_POST_SIMILARITY", "0.46", float, 0.35, 0.75, errors)
+    min_quality = _number("MIN_POST_QUALITY", "84", float, 50, 100, errors)
+    min_feed = _number("MIN_FEED_APPEAL", "76", float, 40, 100, errors)
+    min_conversion = _number("MIN_CONVERSION_INTENT", "75", float, 40, 100, errors)
     min_w2e = _number("MIN_W2E_MARKET_SCORE", "56", float, 0, 100, errors)
     soft_w2e = _number("W2E_SOFT_FLOOR", "40", float, 0, 100, errors)
     hot_w2e = _number("HOT_W2E_FLOOR", "34", float, 0, 100, errors)
-    min_opportunity = _number("MIN_OPPORTUNITY_SCORE", "59", float, 0, 100, errors)
-    min_demand = _number("MIN_AUDIENCE_DEMAND", "18", float, 0, 100, errors)
+    min_opportunity = _number("MIN_OPPORTUNITY_SCORE", "62", float, 0, 100, errors)
+    min_demand = _number("MIN_AUDIENCE_DEMAND", "24", float, 0, 100, errors)
     min_public_rr = _number("MIN_PUBLIC_PLAN_RR", "1.30", float, 1.0, 5.0, errors)
-    max_public_risk = _number("MAX_PUBLIC_RISK_PCT", "9.0", float, 1.0, 25.0, errors)
+    min_tp3_rr = _number("MIN_PUBLIC_TP3_RR", "1.55", float, 1.0, 8.0, errors)
+    max_public_risk = _number("MAX_PUBLIC_RISK_PCT", "8.0", float, 1.0, 25.0, errors)
     decision_near_atr = _number("DECISION_NEAR_ATR", "0.30", float, 0.05, 1.5, errors)
     decision_near_pct = _number("DECISION_NEAR_PCT", "0.25", float, 0.05, 2.0, errors)
     stop_buffer_atr = _number("PUBLIC_STOP_BUFFER_ATR", "0.75", float, 0.25, 2.0, errors)
-    emoji_rate = _number("EMOJI_RATE", "0.20", float, 0, 0.5, errors)
-    question_every = _number("QUESTION_EVERY", "7", int, 4, 50, errors)
-    post_min = _number("POST_MIN_CHARS", "140", int, 120, 700, errors)
-    post_max = _number("POST_MAX_CHARS", "500", int, 300, 1500, errors)
+    emoji_rate = _number("EMOJI_RATE", "0.16", float, 0, 0.5, errors)
+    question_every = _number("QUESTION_EVERY", "9", int, 4, 50, errors)
+    post_min = _number("POST_MIN_CHARS", "150", int, 120, 700, errors)
+    post_max = _number("POST_MAX_CHARS", "560", int, 300, 1500, errors)
     min_interval = _number("MIN_GLOBAL_INTERVAL_MIN", "20", int, 20, 1440, errors)
     max_daily = _number("MAX_POSTS_PER_DAY", "72", int, 1, 72, errors)
-    min_reach = _number("MIN_REACH_SCORE", "67", float, 0, 100, errors)
+    min_reach = _number("MIN_REACH_SCORE", "68", float, 0, 100, errors)
     cooldown = _number("COOLDOWN_MIN", "240", int, 20, 10080, errors)
     if post_min is not None and post_max is not None and post_min >= post_max:
         errors.append("POST_MIN_CHARS должен быть меньше POST_MAX_CHARS")
@@ -157,7 +158,7 @@ def main() -> int:
         f"opportunity={min_opportunity} | demand={min_demand}"
     )
     print(
-        f"  PUBLIC_PLAN_RR={min_public_rr} | MAX_PUBLIC_RISK={max_public_risk}% | "
+        f"  PUBLIC_PLAN_RR={min_public_rr} | TP3_RR={min_tp3_rr} | MAX_PUBLIC_RISK={max_public_risk}% | "
         f"near={decision_near_atr}ATR/{decision_near_pct}% | stop_buffer={stop_buffer_atr}ATR"
     )
     print(f"  EMOJI_RATE={emoji_rate} | QUESTION_EVERY={question_every}")

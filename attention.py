@@ -1,141 +1,158 @@
-"""Measure whether a technical setup is receiving attention *right now*.
+name: Binance Square Bot
 
-The old selector mostly rewarded a clean technical structure. That can choose a
-coin whose interesting move already happened. This module scores only closed
-15-minute candles and prefers fresh price acceleration, abnormal volume,
-expanding candle ranges and meaningful USDT turnover.
-"""
-from __future__ import annotations
+on:
+  workflow_dispatch:
 
-from dataclasses import dataclass
-import math
-from typing import Optional
+permissions:
+  contents: read
 
-import pandas as pd
+concurrency:
+  group: binance-square-bot
+  cancel-in-progress: false
 
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
 
-@dataclass(frozen=True)
-class AttentionSnapshot:
-    score: float
-    change_15m: float
-    change_45m: float
-    volume_spike: float
-    range_expansion: float
-    turnover_1h: float
-    distance_atr: float
-    label: str
-    overextended: bool
+    env:
+      PYTHONUNBUFFERED: "1"
 
+      SQUARE_API: ${{ secrets.SQUARE_API }}
+      MISTRAL_API: ${{ secrets.MISTRAL_API }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
-def _clamp(value: float, low: float = 0.0, high: float = 100.0) -> float:
-    return max(low, min(high, float(value)))
+      DRY_RUN: "0"
+      SQUARE_SKILL_DIR: ${{ github.workspace }}/.agents/skills/square-post
 
+      # External cron may call this workflow every ~20 minutes. The bot itself
+      # decides whether the current market deserves a publication.
+      ENABLE_PACING_LIMITS: "0"
+      ENABLE_REACH_GATE: "1"
+      MIN_REACH_SCORE: "68"
+      COOLDOWN_MIN: "240"
 
-def _safe_ratio(value: float, baseline: float, default: float = 1.0) -> float:
-    if not math.isfinite(value) or not math.isfinite(baseline) or baseline <= 0:
-        return default
-    return max(0.01, value / baseline)
+      # Audience Author v9: Mistral writes the WHOLE post from Python-locked facts.
+      CONTENT_MODE: "ai_author"
+      MISTRAL_MODEL: "mistral-small-latest"
+      AI_VARIANTS: "6"
+      AI_RETRIES: "2"
+      AI_TEMPERATURE: "0.68"
+      AI_TIMEOUT: "55"
 
+      # Editorial controls
+      EMOJI_RATE: "0.16"
+      QUESTION_EVERY: "9"
+      USE_HASHTAGS: "0"
+      POST_VARIANTS: "16"
+      POST_MIN_CHARS: "150"
+      POST_MAX_CHARS: "560"
+      MIN_POST_QUALITY: "84"
+      MIN_FEED_APPEAL: "76"
+      MAX_POST_SIMILARITY: "0.46"
+      MIN_CONVERSION_INTENT: "75"
 
-def _pct(current: float, previous: float) -> float:
-    if not math.isfinite(current) or not math.isfinite(previous) or previous == 0:
-        return 0.0
-    return (current - previous) / previous * 100.0
+      # Audience / freshness selection
+      MIN_OPPORTUNITY_SCORE: "62"
+      MIN_AUDIENCE_DEMAND: "24"
+      MIN_W2E_MARKET_SCORE: "56"
+      W2E_SOFT_FLOOR: "40"
+      HOT_W2E_FLOOR: "34"
+      STRICT_BTC_FILTER: "0"
 
+      # Public trade plan. Python owns entry zone, stop, TP1/TP2/TP3.
+      MIN_PUBLIC_TP3_RR: "1.55"
+      MIN_PUBLIC_PLAN_RR: "1.30"
+      MAX_PUBLIC_RISK_PCT: "8.0"
+      DECISION_NEAR_ATR: "0.30"
+      DECISION_NEAR_PCT: "0.25"
+      MAX_STRUCTURAL_DISTANCE_ATR: "2.40"
+      MAX_STRUCTURAL_DISTANCE_PCT: "4.0"
+      PUBLIC_STOP_BUFFER_ATR: "0.75"
+      ENTRY_ZONE_ATR: "0.16"
+      ENTRY_ZONE_MAX_PCT: "0.35"
 
-def _label(score: float, volume_spike: float, change_15m: float) -> str:
-    if score >= 78 and volume_spike >= 2.0:
-        return "резкий всплеск внимания"
-    if score >= 66:
-        return "активное движение"
-    if score >= 54:
-        return "растущий интерес"
-    if abs(change_15m) >= 0.7:
-        return "движение без сильного объёма"
-    return "обычная рыночная активность"
+      # Broad scan: 5m freshness + 15m/1h setup; 4h/1d only for shortlist.
+      TOP_SYMBOLS: "120"
+      SHORTLIST_SIZE: "36"
+      FINAL_CANDIDATES: "20"
+      DATA_WORKERS: "8"
+      MIN_QUOTE_VOLUME: "5000000"
+      PUBLISH_MEDIA_MODE: "chart"
 
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-def compute_attention(frame: Optional[pd.DataFrame], indicator, direction: str) -> AttentionSnapshot:
-    """Return a 0-100 current-attention score from closed 15m candles."""
-    if frame is None or len(frame) < 24:
-        return AttentionSnapshot(35.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, "нет данных о свежем импульсе", False)
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
 
-    data = frame.tail(80).copy()
-    for column in ("open", "high", "low", "close", "volume"):
-        data[column] = pd.to_numeric(data[column], errors="coerce")
-    data = data.dropna(subset=["open", "high", "low", "close", "volume"])
-    if len(data) < 24:
-        return AttentionSnapshot(35.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, "нет данных о свежем импульсе", False)
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+        continue-on-error: true
 
-    close = data["close"]
-    high = data["high"]
-    low = data["low"]
-    volume = data["volume"]
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
-    change_15m = _pct(float(close.iloc[-1]), float(close.iloc[-2]))
-    change_45m = _pct(float(close.iloc[-1]), float(close.iloc[-4]))
+      - name: Install Binance Square Skill
+        run: |
+          npx --yes skills add \
+            https://github.com/binance/binance-skills-hub \
+            --skill square-post \
+            -y
 
-    previous_volume = float(volume.iloc[-21:-1].median())
-    volume_spike = _safe_ratio(float(volume.iloc[-1]), previous_volume)
+      - name: Verify Binance Square Skill
+        run: |
+          echo "Expected skill directory:"
+          echo "$SQUARE_SKILL_DIR"
 
-    ranges = (high - low).abs()
-    previous_range = float(ranges.iloc[-21:-1].median())
-    range_expansion = _safe_ratio(float(ranges.iloc[-1]), previous_range)
+          find "$GITHUB_WORKSPACE" -maxdepth 6 \
+            -type f \
+            \( -name "post-text.mjs" -o -name "post-image.mjs" \) \
+            -print
 
-    turnover_1h = float((close.tail(4) * volume.tail(4)).sum())
-    turnover_component = _clamp((math.log10(max(turnover_1h, 1.0)) - 4.5) * 28.0)
+          if [ ! -f "$SQUARE_SKILL_DIR/scripts/post-text.mjs" ] && \
+             [ ! -f "$SQUARE_SKILL_DIR/scripts/post-image.mjs" ]; then
+            echo "::error::Binance Square Skill was not installed correctly"
+            exit 1
+          fi
 
-    motion_component = _clamp(abs(change_15m) * 45.0 + abs(change_45m) * 18.0)
-    volume_component = _clamp(48.0 + math.log2(max(volume_spike, 0.05)) * 24.0)
-    range_component = _clamp(46.0 + math.log2(max(range_expansion, 0.05)) * 20.0)
+      - name: Restore bot state
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            state
+            post_memory.json
+            published_history.json
+          key: square-state-${{ github.ref_name }}
+          restore-keys: |
+            square-state-${{ github.ref_name }}-
+            square-state-
 
-    aligned = (direction == "long" and change_15m > 0 and change_45m > 0) or (
-        direction == "short" and change_15m < 0 and change_45m < 0
-    )
-    alignment_bonus = 7.0 if aligned else -5.0
+      - name: Check configuration
+        run: |
+          if [ -f config_check.py ]; then
+            python config_check.py --publishing
+          fi
 
-    atr = max(float(getattr(indicator, "atr", 0.0) or 0.0), 1e-12)
-    ema20 = float(getattr(indicator, "ema20", close.iloc[-1]) or close.iloc[-1])
-    price = float(getattr(indicator, "price", close.iloc[-1]) or close.iloc[-1])
-    distance_atr = abs(price - ema20) / atr
-    rsi = float(getattr(indicator, "rsi", 50.0) or 50.0)
-    overextended = distance_atr >= 2.7 or (direction == "long" and rsi >= 80.0) or (
-        direction == "short" and rsi <= 20.0
-    )
-    overextension_penalty = 13.0 if overextended else 0.0
-    # A genuine high-volume breakout can still be interesting even when extended,
-    # but a late low-volume chase should fall down the ranking.
-    if overextended and volume_spike >= 2.8 and abs(change_15m) >= 0.8:
-        overextension_penalty = 5.0
+      - name: Run bot
+        run: |
+          python run_bot.py
 
-    score = (
-        motion_component * 0.34
-        + volume_component * 0.27
-        + range_component * 0.14
-        + turnover_component * 0.25
-        + alignment_bonus
-        - overextension_penalty
-    )
-    score = _clamp(score)
-    return AttentionSnapshot(
-        score=score,
-        change_15m=change_15m,
-        change_45m=change_45m,
-        volume_spike=volume_spike,
-        range_expansion=range_expansion,
-        turnover_1h=turnover_1h,
-        distance_atr=distance_atr,
-        label=_label(score, volume_spike, change_15m),
-        overextended=overextended,
-    )
-
-
-def format_turnover(value: float) -> str:
-    value = max(0.0, float(value))
-    if value >= 1_000_000_000:
-        return f"${value / 1_000_000_000:.2f}B"
-    if value >= 1_000_000:
-        return f"${value / 1_000_000:.1f}M"
-    if value >= 1_000:
-        return f"${value / 1_000:.0f}K"
-    return f"${value:.0f}"
+      - name: Save bot state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            state
+            post_memory.json
+            published_history.json
+          key: square-state-${{ github.ref_name }}-${{ github.run_id }}

@@ -1,12 +1,12 @@
-"""Main orchestration for Binance Square Market Attention v8.
+"""Main orchestration for Binance Square Audience Author v9.
 
 Pipeline:
-1. Scan liquid/trending USDT pairs.
-2. Rank the cheap 15m/1h pass by audience demand + fresh attention.
-3. Fetch 4h/1d only for the attention-led shortlist.
-4. Merge strict and balanced technically defensible setups.
-5. Choose the strongest live market opportunity for Square/W2E.
-6. Generate compact human variants, render one chart, publish and persist state.
+1. Scan a broad liquid USDT universe on 5m/15m/1h.
+2. Rank by audience demand and *fresh* market attention, not raw x-volume.
+3. Fetch 4h/1d only for the strongest live opportunities.
+4. Build a Python-owned entry zone / stop / TP1 / TP2 / TP3 plan.
+5. Let Mistral write the whole post from the fact package.
+6. Fact-check, anti-template rank, render a rotating chart and publish.
 """
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ from runtime import PROJECT_DIR, ProcessLock, load_project_env, setup_logging, w
 load_project_env()
 
 from btc_context import get_btc_context, get_funding_rate, is_direction_compatible
-from attention import AttentionSnapshot, compute_attention
+from attention import AttentionSnapshot, MicroAttentionSnapshot, compute_attention, compute_micro_attention
 from card import generate_card
 from chart import generate_chart
 from data import get_data
@@ -35,45 +35,41 @@ from publication_guard import PublicationGuard
 from quality import PostQualityEvaluator, QualityReport
 from engagement import FeedAppealEvaluator
 from monetization import ConversionIntentEvaluator, MarketMonetizationSnapshot, score_market_monetization
-from opportunity import MarketOpportunitySnapshot, preliminary_interest_score, score_market_opportunity
+from opportunity import MarketOpportunitySnapshot, audience_demand_score, preliminary_interest_score, score_market_opportunity
 from trend import TrendingMarket, get_base_asset, get_trending_market
 from content_variation import detect_signal_angles
-from writer import GeneratedPost, _levels, generate_post_candidates
+from writer import GeneratedPost, _levels, generate_post_candidates, phrase_family_penalty
 from trade_plan import plan_summary
 
 logger = setup_logging()
 
-PRIMARY_TIMEFRAMES = ("15m", "1h")
+PRIMARY_TIMEFRAMES = ("5m", "15m", "1h")
 CONFIRMATION_TIMEFRAMES = ("4h", "1d")
-COOLDOWN_MIN = int(os.getenv("COOLDOWN_MIN", "180"))
-TOP_SYMBOLS = int(os.getenv("TOP_SYMBOLS", "80"))
-SHORTLIST_SIZE = int(os.getenv("SHORTLIST_SIZE", "28"))
-FINAL_CANDIDATES = int(os.getenv("FINAL_CANDIDATES", "16"))
-DATA_WORKERS = max(1, min(int(os.getenv("DATA_WORKERS", "6")), 12))
+COOLDOWN_MIN = int(os.getenv("COOLDOWN_MIN", "240"))
+TOP_SYMBOLS = int(os.getenv("TOP_SYMBOLS", "120"))
+SHORTLIST_SIZE = int(os.getenv("SHORTLIST_SIZE", "36"))
+FINAL_CANDIDATES = int(os.getenv("FINAL_CANDIDATES", "20"))
+DATA_WORKERS = max(1, min(int(os.getenv("DATA_WORKERS", "8")), 12))
 KLINE_LIMIT = max(220, min(int(os.getenv("KLINE_LIMIT", "260")), 500))
 MAX_FUNDING_ABS = float(os.getenv("MAX_FUNDING_ABS", "0.001"))
 ENABLE_BALANCED_FALLBACK = os.getenv("ENABLE_BALANCED_FALLBACK", "1").lower() in {
     "1", "true", "yes"
 }
 POST_VARIANTS = max(4, min(int(os.getenv("POST_VARIANTS", "16")), 16))
-MAX_POST_SIMILARITY = float(os.getenv("MAX_POST_SIMILARITY", "0.50"))
-MIN_POST_QUALITY = float(os.getenv("MIN_POST_QUALITY", "82"))
-MIN_FEED_APPEAL = float(os.getenv("MIN_FEED_APPEAL", "74"))
+MAX_POST_SIMILARITY = float(os.getenv("MAX_POST_SIMILARITY", "0.46"))
+MIN_POST_QUALITY = float(os.getenv("MIN_POST_QUALITY", "84"))
+MIN_FEED_APPEAL = float(os.getenv("MIN_FEED_APPEAL", "76"))
 MIN_W2E_MARKET_SCORE = float(os.getenv("MIN_W2E_MARKET_SCORE", "56"))
 W2E_SOFT_FLOOR = float(os.getenv("W2E_SOFT_FLOOR", "40"))
 HOT_W2E_FLOOR = float(os.getenv("HOT_W2E_FLOOR", "34"))
-HOT_TECH_MIN = float(os.getenv("HOT_TECH_MIN", "65"))
-HOT_ATTENTION_MIN = float(os.getenv("HOT_ATTENTION_MIN", "82"))
-HOT_VOLUME_SPIKE_MIN = float(os.getenv("HOT_VOLUME_SPIKE_MIN", "3"))
-HOT_MOVE_15M_MIN = float(os.getenv("HOT_MOVE_15M_MIN", "1.2"))
-MIN_CONVERSION_INTENT = float(os.getenv("MIN_CONVERSION_INTENT", "70"))
-MIN_OPPORTUNITY_SCORE = float(os.getenv("MIN_OPPORTUNITY_SCORE", "59"))
-MIN_AUDIENCE_DEMAND = float(os.getenv("MIN_AUDIENCE_DEMAND", "18"))
+MIN_CONVERSION_INTENT = float(os.getenv("MIN_CONVERSION_INTENT", "75"))
+MIN_OPPORTUNITY_SCORE = float(os.getenv("MIN_OPPORTUNITY_SCORE", "62"))
+MIN_AUDIENCE_DEMAND = float(os.getenv("MIN_AUDIENCE_DEMAND", "24"))
 PRELIM_MIN_SCORE = float(os.getenv("PRELIM_MIN_SCORE", "38"))
-STRICT_BTC_FILTER = os.getenv("STRICT_BTC_FILTER", "1").lower() in {"1", "true", "yes"}
+STRICT_BTC_FILTER = os.getenv("STRICT_BTC_FILTER", "0").lower() in {"1", "true", "yes"}
 DRY_RUN = os.getenv("DRY_RUN", "1").lower() in {"1", "true", "yes"}
 PUBLISH_IMAGES = os.getenv("PUBLISH_IMAGES", "1").lower() in {"1", "true", "yes"}
-PUBLISH_MEDIA_MODE = os.getenv("PUBLISH_MEDIA_MODE", "adaptive").strip().lower()
+PUBLISH_MEDIA_MODE = os.getenv("PUBLISH_MEDIA_MODE", "chart").strip().lower()
 if PUBLISH_MEDIA_MODE not in {"adaptive", "card", "chart", "both", "none"}:
     logger.warning("Unknown PUBLISH_MEDIA_MODE=%s; using adaptive", PUBLISH_MEDIA_MODE)
     PUBLISH_MEDIA_MODE = "adaptive"
@@ -125,14 +121,15 @@ def _preliminary_shortlist(
     market_meta: Dict[str, TrendingMarket],
     market_universe: List[TrendingMarket],
 ) -> List[str]:
-    """Rank the cheap 15m/1h pass by market interest, not technical score alone.
+    """Build a blended shortlist from audience and live-event baskets.
 
-    This is the first major v8 change: a hot market must survive long enough to
-    receive 4h/1d confirmation even if its preliminary technical score is only
-    average.
+    One global score can accidentally let many obscure x-volume spikes crowd out
+    liquid coins, or do the opposite and hide a genuinely fresh breakout. v9
+    explicitly reserves room for both groups, then fills the rest by the combined
+    score.
     """
     signal_filter = SignalFilter(min_score=PRELIM_MIN_SCORE)
-    scored: List[Tuple[str, float]] = []
+    rows: List[Tuple[str, float, float, float]] = []
     for symbol, frames in primary_data.items():
         if "15m" not in frames or "1h" not in frames:
             continue
@@ -141,22 +138,58 @@ def _preliminary_shortlist(
         if score is None:
             continue
         attention = compute_attention(frames.get("15m"), mtf.tf_15m, score.direction)
+        micro = compute_micro_attention(frames.get("5m"))
+        meta = market_meta.get(symbol)
+        demand = audience_demand_score(meta, market_universe)
         interest = preliminary_interest_score(
-            technical_score=score.total,
-            attention=attention,
-            meta=market_meta.get(symbol),
-            universe=market_universe,
+            technical_score=score.total, attention=attention, meta=meta,
+            universe=market_universe, micro=micro,
         )
-        # Keep a modest floor but allow a genuine attention event to bypass a
-        # merely average preliminary technical score.
-        if score.total >= PRELIM_MIN_SCORE or attention.score >= 66 or attention.volume_spike >= 2.5:
-            scored.append((symbol, interest))
+        live_event = (
+            micro.score * 0.48
+            + attention.score * 0.34
+            + min(abs(attention.change_15m) * 7.0, 18.0)
+        )
+        if (
+            score.total >= PRELIM_MIN_SCORE
+            or demand >= 60.0
+            or attention.score >= 66
+            or micro.score >= 68
+            or (micro.phase == "fresh" and micro.volume_spike_5m >= 2.0)
+        ):
+            rows.append((symbol, interest, demand, live_event))
             logger.debug(
-                "Prelim %s tech=%.1f attention=%.1f vol=x%.2f interest=%.1f",
-                symbol, score.total, attention.score, attention.volume_spike, interest,
+                "Prelim %s tech=%.1f attention=%.1f micro=%.1f/%s demand=%.1f vol15=x%.2f vol5=x%.2f interest=%.1f",
+                symbol, score.total, attention.score, micro.score, micro.phase, demand,
+                attention.volume_spike, micro.volume_spike_5m, interest,
             )
-    scored.sort(key=lambda item: item[1], reverse=True)
-    return [symbol for symbol, _ in scored[:SHORTLIST_SIZE]]
+
+    if not rows:
+        return []
+
+    audience_quota = max(6, int(SHORTLIST_SIZE * 0.42))
+    event_quota = max(6, int(SHORTLIST_SIZE * 0.38))
+    selected: List[str] = []
+    seen: set[str] = set()
+
+    def add_from(items: List[Tuple[str, float, float, float]], limit: int) -> None:
+        added = 0
+        for symbol, _, _, _ in items:
+            if symbol in seen:
+                continue
+            selected.append(symbol)
+            seen.add(symbol)
+            added += 1
+            if added >= limit or len(selected) >= SHORTLIST_SIZE:
+                return
+
+    audience_rows = sorted(rows, key=lambda row: (row[2], row[1]), reverse=True)
+    event_rows = sorted(rows, key=lambda row: (row[3], row[1]), reverse=True)
+    overall_rows = sorted(rows, key=lambda row: row[1], reverse=True)
+    add_from(audience_rows, audience_quota)
+    add_from(event_rows, event_quota)
+    add_from(overall_rows, SHORTLIST_SIZE)
+    return selected[:SHORTLIST_SIZE]
 
 def _build_full_candidates(
     shortlist: List[str],
@@ -178,30 +211,50 @@ def _build_full_candidates(
 def _w2e_candidate_gate(
     score: SignalScore,
     attention: AttentionSnapshot,
+    micro: MicroAttentionSnapshot,
     monetization: MarketMonetizationSnapshot,
     opportunity: MarketOpportunitySnapshot,
 ) -> Tuple[bool, str]:
-    """Event-first gate with a W2E sanity floor.
+    """Audience-first W2E gate with a controlled fresh-event escape hatch.
 
-    A market can pass because it has normal W2E characteristics or because it is
-    a genuine fresh attention event.  Low-demand, low-volume ordinary setups no
-    longer win simply by having a neat chart.
+    Normal posts need both a strong opportunity and reasonable W2E market quality.
+    A genuinely fresh 5m event may pass with lower baseline demand, but stale raw
+    volume spikes cannot.
     """
+    if micro.phase == "stale" and opportunity.audience_demand < 78.0:
+        return False, "stale event"
+
     if opportunity.score >= MIN_OPPORTUNITY_SCORE and monetization.score >= W2E_SOFT_FLOOR:
-        return True, "opportunity"
+        return True, "standard"
 
-    hot_market = (
-        monetization.score >= HOT_W2E_FLOOR
-        and opportunity.event_class in {"volume_shock", "fresh_impulse"}
-        and score.total >= HOT_TECH_MIN
-        and attention.score >= 74.0
-        and opportunity.volume_anomaly >= 72.0
-    )
-    if hot_market:
-        return True, "event override"
+    if (
+        opportunity.event_class == "audience_breakout"
+        and opportunity.audience_demand >= 58.0
+        and monetization.score >= 42.0
+        and score.total >= 58.0
+    ):
+        return True, "audience breakout"
 
-    return False, "below opportunity/W2E gates"
+    if (
+        opportunity.event_class == "high_demand_active"
+        and opportunity.audience_demand >= 70.0
+        and opportunity.score >= MIN_OPPORTUNITY_SCORE - 5.0
+        and monetization.score >= 45.0
+    ):
+        return True, "high-demand active"
 
+    if (
+        opportunity.event_class == "fresh_event"
+        and micro.phase in {"fresh", "developing"}
+        and micro.score >= 74.0
+        and opportunity.audience_demand >= 18.0
+        and attention.score >= 66.0
+        and score.total >= 62.0
+        and monetization.score >= HOT_W2E_FLOOR
+    ):
+        return True, "fresh-event override"
+
+    return False, "below audience/opportunity/W2E gates"
 
 def _choose_market_candidate(
     ranked: List[Tuple[MultiTimeframeIndicators, SignalScore]],
@@ -216,6 +269,7 @@ def _choose_market_candidate(
     SignalScore,
     Optional[float],
     AttentionSnapshot,
+    MicroAttentionSnapshot,
     MarketMonetizationSnapshot,
     MarketOpportunitySnapshot,
     Dict[str, object],
@@ -256,9 +310,11 @@ def _choose_market_candidate(
         diversity_penalty = min(9.0, repeat_count * 1.25 + immediate_repeat * 3.0)
 
         raw_15m = primary_data.get(mtf.symbol, {}).get("15m")
+        raw_5m = primary_data.get(mtf.symbol, {}).get("5m")
         attention = compute_attention(raw_15m, mtf.tf_15m, score.direction)
+        micro = compute_micro_attention(raw_5m)
 
-        # v8 validates the *public* plan before the market event can win the race.
+        # v9 validates the *public* plan before the market event can win the race.
         # Internal TP3 R/R is not enough if the post would show a 1:1 first target
         # or a stop wider than we are willing to present to readers.
         levels = _levels(mtf.tf_15m, score.direction)
@@ -280,6 +336,7 @@ def _choose_market_candidate(
                 volume_spike=attention.volume_spike,
                 risk_reward=float(levels.get("public_rr", score.risk_reward)),
                 overextended=attention.overextended,
+                micro_freshness=micro.score,
             )
         else:
             monetization = score_market_monetization(
@@ -293,6 +350,7 @@ def _choose_market_candidate(
                 volume_spike=attention.volume_spike,
                 risk_reward=float(levels.get("public_rr", score.risk_reward)),
                 overextended=attention.overextended,
+                micro_freshness=micro.score,
             )
 
         opportunity = score_market_opportunity(
@@ -303,22 +361,32 @@ def _choose_market_candidate(
             risk_reward=float(levels.get("public_rr", score.risk_reward)),
             strict_setup=mtf.symbol in strict_symbols,
             btc_compatible=btc_compatible,
+            micro=micro,
         )
-        gate_allowed, gate_mode = _w2e_candidate_gate(score, attention, monetization, opportunity)
+        gate_allowed, gate_mode = _w2e_candidate_gate(score, attention, micro, monetization, opportunity)
 
         # Public plan quality is a small tie-breaker. Market attention still leads,
         # but a cleaner actionable plan beats an equally hot 1.3-R/R alternative.
         plan_rr = float(levels.get("public_rr", 0.0))
-        plan_bonus = min(4.0, max(0.0, (plan_rr - 1.30) * 2.2))
-        adjusted_score = opportunity.score - diversity_penalty + plan_bonus
+        plan_bonus = min(4.0, max(0.0, (plan_rr - 1.30) * 2.0))
+        event_bonus = {
+            "audience_breakout": 5.0,
+            "fresh_event": 3.0,
+            "high_demand_active": 2.0,
+            "active_market": 0.5,
+            "stale_event": -7.0,
+        }.get(opportunity.event_class, 0.0)
+        demand_bonus = min(4.0, max(0.0, (opportunity.audience_demand - 65.0) / 8.0))
+        adjusted_score = opportunity.score - diversity_penalty + plan_bonus + event_bonus + demand_bonus
 
         logger.info(
-            "Candidate %s tech=%.1f attention=%.1f w2e=%.1f opportunity=%.1f final=%.1f "
-            "gate=%s profile=%s angle=%s 15m=%+.2f%% 45m=%+.2f%% vol=x%.2f extended=%s plan_rr=%.2f mode=%s [%s]",
-            mtf.symbol, score.total, attention.score, monetization.score, opportunity.score,
-            adjusted_score, gate_mode, "strict" if mtf.symbol in strict_symbols else "balanced",
-            best_angle.id, attention.change_15m, attention.change_45m, attention.volume_spike,
-            attention.overextended, float(levels.get("public_rr", 0.0)), levels.get("decision_mode"), opportunity.reason,
+            "Candidate %s tech=%.1f attention=%.1f micro=%.1f/%s demand=%.1f w2e=%.1f opportunity=%.1f final=%.1f "
+            "gate=%s profile=%s angle=%s 5m=%+.2f%% 15m=%+.2f%% vol15=x%.2f vol5=x%.2f plan_R3=%.2f state=%s [%s]",
+            mtf.symbol, score.total, attention.score, micro.score, micro.phase, opportunity.audience_demand,
+            monetization.score, opportunity.score, adjusted_score, gate_mode,
+            "strict" if mtf.symbol in strict_symbols else "balanced", best_angle.id,
+            micro.change_5m, attention.change_15m, attention.volume_spike, micro.volume_spike_5m,
+            float(levels.get("rr_tp3", levels.get("public_rr", 0.0))), levels.get("trade_state"), opportunity.reason,
         )
 
         if not gate_allowed:
@@ -329,27 +397,30 @@ def _choose_market_candidate(
             continue
 
         # Very low baseline demand is allowed only for a true live event.
-        if (
-            opportunity.audience_demand < MIN_AUDIENCE_DEMAND
-            and opportunity.event_class == "ordinary"
-            and opportunity.volume_anomaly < 72.0
-        ):
-            logger.info(
-                "Skip %s: audience demand %.1f too low for an ordinary event",
-                mtf.symbol, opportunity.audience_demand,
+        if opportunity.audience_demand < MIN_AUDIENCE_DEMAND:
+            fresh_exception = (
+                opportunity.event_class == "fresh_event"
+                and micro.phase in {"fresh", "developing"}
+                and micro.score >= 78.0
+                and attention.score >= 72.0
             )
-            continue
+            if not fresh_exception:
+                logger.info(
+                    "Skip %s: audience demand %.1f < %.1f without exceptional fresh event",
+                    mtf.symbol, opportunity.audience_demand, MIN_AUDIENCE_DEMAND,
+                )
+                continue
 
         eligible.append((
-            adjusted_score, mtf, score, funding, best_angle.id, attention, monetization, opportunity, levels
+            adjusted_score, mtf, score, funding, best_angle.id, attention, micro, monetization, opportunity, levels
         ))
 
     if not eligible:
         return None
 
     eligible.sort(key=lambda item: item[0], reverse=True)
-    _, mtf, score, funding, _, attention, monetization, opportunity, levels = eligible[0]
-    return mtf, score, funding, attention, monetization, opportunity, levels
+    _, mtf, score, funding, _, attention, micro, monetization, opportunity, levels = eligible[0]
+    return mtf, score, funding, attention, micro, monetization, opportunity, levels
 
 def _text_similarity(left: str, right: str) -> float:
     return PostMemory.compare_texts(left, right)
@@ -365,6 +436,9 @@ def _best_post_variant(
     memory: PostMemory,
     btc,
     attention: AttentionSnapshot,
+    micro: MicroAttentionSnapshot,
+    opportunity: MarketOpportunitySnapshot,
+    monetization: MarketMonetizationSnapshot,
 ) -> Optional[Tuple[GeneratedPost, QualityReport]]:
     evaluator = PostQualityEvaluator()
     appeal_evaluator = FeedAppealEvaluator()
@@ -375,7 +449,7 @@ def _best_post_variant(
     recent_signals = memory.get_last_signal_types(24)
     recent_formats = memory.get_last_content_formats(30)
     recent_visuals = memory.get_last_visual_styles(20)
-    recent_texts = memory.recent_texts(3)
+    recent_texts = memory.recent_texts(8)
     recent_had_emoji = any(any(mark in text for mark in ("⚡", "⚠️", "👀")) for text in recent_texts)
 
     try:
@@ -388,6 +462,9 @@ def _best_post_variant(
             levels=levels,
             btc=btc,
             attention=attention,
+            micro=micro,
+            opportunity=opportunity,
+            monetization=monetization,
             variant_count=POST_VARIANTS,
         )
     except Exception as exc:
@@ -429,46 +506,34 @@ def _best_post_variant(
             if recent_signals[-1:] == [draft.signal_type]:
                 novelty_penalty += 2.0
 
-            # Market Attention v8: factual validity stays a hard gate, while the
-            # ranking favours compact, readable posts that fit the *current*
-            # market state. A hot/extended move should become a retest/caution
-            # story, not a dashboard or a blind entry alert.
-            editorial_bonus = 2.5 if draft.content_format not in recent_formats[-6:] else 0.0
+            # v9: factual validity is a hard gate. Ranking rewards a post that
+            # fits the live event *and* differs semantically from recent output.
+            editorial_bonus = 3.0 if draft.content_format not in recent_formats[-7:] else 0.0
             context_bonus = 0.0
-            if attention.overextended or abs(attention.change_15m) >= 1.0:
-                if draft.content_format in {
-                    "hot_reaction", "one_problem", "crowd_trap", "why_wait",
-                    "contrarian_take", "mistake_to_avoid", "signal_vs_trade",
-                }:
-                    context_bonus += 9.0
-                if draft.content_format in {"setup_plan", "execution_protocol", "data_brief"}:
-                    context_bonus -= 9.0
-            elif attention.score >= 60:
-                if draft.content_format in {"hot_reaction", "chart_story", "level_story"}:
-                    context_bonus += 4.0
-
-            if attention.volume_spike >= 2.5 and (
-                "за 15 минут" in draft.headline.lower()
-                or "объём" in draft.headline.lower()
-                or "свеч" in draft.headline.lower()
-            ):
+            if opportunity.event_class in {"audience_breakout", "fresh_event"}:
+                if draft.content_format in {"hot_take", "market_story", "volume_read", "micro_note"}:
+                    context_bonus += 7.0
+            if attention.overextended or abs(attention.change_15m) >= 3.0:
+                if draft.content_format in {"no_chase", "two_paths", "risk_first"}:
+                    context_bonus += 6.0
+            if levels.get("trade_state") == "decision_now" and draft.content_format in {"one_level", "trade_map", "risk_first"}:
                 context_bonus += 4.0
+            if opportunity.audience_demand >= 70 and draft.content_format in {"hot_take", "micro_note", "market_story"}:
+                context_bonus += 3.0
 
             appeal = appeal_evaluator.report(draft.text)
             conversion = conversion_evaluator.report(draft.text, basic)
 
-            human_format_bonus = 0.0
-            if draft.content_format in {
-                "hot_reaction", "one_problem", "crowd_trap", "chart_story",
-                "why_wait", "level_story", "contrarian_take", "mistake_to_avoid",
-            }:
-                human_format_bonus += 6.0
+            human_format_bonus = 5.0 if draft.content_format in {
+                "hot_take", "one_level", "no_chase", "two_paths",
+                "market_story", "micro_note", "volume_read",
+            } else 2.0
 
             # Mobile-first sweet spot: enough substance to be useful, short enough
             # to scan before the chart.
-            length_bonus = 4.0 if 220 <= len(draft.text) <= 480 else 0.0
-            if len(draft.text) > 500:
-                length_bonus -= min(10.0, (len(draft.text) - 500) / 6.0)
+            length_bonus = 4.0 if 190 <= len(draft.text) <= 500 else 0.0
+            if len(draft.text) > 520:
+                length_bonus -= min(10.0, (len(draft.text) - 520) / 5.0)
 
             has_emoji = any(mark in draft.headline for mark in ("⚡", "⚠️", "👀"))
             aesthetic_bonus = 0.0
@@ -486,23 +551,29 @@ def _best_post_variant(
                 if phrase in lowered_text:
                     robotic_penalty += 12.0
 
+            phrase_penalty = phrase_family_penalty(draft.text, recent_texts)
+            author_bonus = 4.0 if draft.source == "mistral" else 0.0
+
             adjusted_score = (
-                report.score * 0.35
-                + appeal.score * 0.40
-                + conversion.score * 0.25
+                report.score * 0.30
+                + appeal.score * 0.34
+                + conversion.score * 0.36
                 - similarity_penalty
                 - novelty_penalty
                 - robotic_penalty
+                - phrase_penalty
                 + editorial_bonus
                 + context_bonus
                 + human_format_bonus
                 + length_bonus
                 + aesthetic_bonus
+                + author_bonus
             )
             logger.info(
-                "Post candidate %s: format=%s visual=%s angle=%s quality=%.1f appeal=%.1f conversion=%.1f valid=%s "
-                "memory_sim=%.2f local_sim=%.2f adjusted=%.1f",
+                "Post candidate %s: source=%s format=%s visual=%s angle=%s quality=%.1f appeal=%.1f conversion=%.1f valid=%s "
+                "memory_sim=%.2f local_sim=%.2f phrase_penalty=%.1f adjusted=%.1f",
                 index + 1,
+                draft.source,
                 draft.content_format,
                 draft.visual_style,
                 draft.signal_type,
@@ -512,6 +583,7 @@ def _best_post_variant(
                 report.valid,
                 memory_similarity,
                 local_similarity,
+                phrase_penalty,
                 adjusted_score,
             )
 
@@ -654,7 +726,7 @@ def _run_once() -> int:
     strict_symbols = {mtf.symbol for mtf, _ in strict_ranked}
     ranked = list(strict_ranked)
 
-    # v8 always lets near-threshold *balanced* setups enter the attention race.
+    # v9 always lets near-threshold *balanced* setups enter the attention race.
     # They do not automatically publish: opportunity/W2E gates still decide.
     if ENABLE_BALANCED_FALLBACK:
         balanced_ranked = get_top_candidates(
@@ -683,7 +755,7 @@ def _run_once() -> int:
         write_status("skipped", "no candidate passed market-opportunity selection")
         return 0
 
-    best_mtf, best_score, funding, attention, monetization, opportunity, levels = chosen
+    best_mtf, best_score, funding, attention, micro, monetization, opportunity, levels = chosen
     symbol = best_mtf.symbol
     basic = get_base_asset(symbol)
     indicator = best_mtf.tf_15m
@@ -695,23 +767,24 @@ def _run_once() -> int:
         plan_summary(levels),
     )
     logger.info(
-        "BEST %s tech=%.1f attention=%.1f w2e=%.1f opportunity=%.1f direction=%s profile=%s trend=%.0f momentum=%.0f volume=%.0f "
-        "mtf=%.0f internal_R/R=%.2f public_R/R=%.2f 15m=%+.2f%% fresh_vol=x%.2f funding=%s",
+        "BEST %s tech=%.1f attention=%.1f micro=%.1f/%s demand=%.1f w2e=%.1f opportunity=%.1f direction=%s profile=%s "
+        "internal_R/R=%.2f TP3_R/R=%.2f 5m=%+.2f%% 15m=%+.2f%% vol15=x%.2f vol5=x%.2f funding=%s",
         symbol,
         best_score.total,
         attention.score,
+        micro.score,
+        micro.phase,
+        opportunity.audience_demand,
         monetization.score,
         opportunity.score,
         best_score.direction,
         "strict" if symbol in strict_symbols else "balanced",
-        best_score.trend,
-        best_score.momentum,
-        best_score.volume,
-        best_score.multi_tf,
         best_score.risk_reward,
-        float(levels.get("public_rr", 0.0)),
+        float(levels.get("rr_tp3", levels.get("public_rr", 0.0))),
+        micro.change_5m,
         attention.change_15m,
         attention.volume_spike,
+        micro.volume_spike_5m,
         f"{funding * 100:.4f}%" if funding is not None else "n/a",
     )
 
@@ -724,6 +797,9 @@ def _run_once() -> int:
         memory=memory,
         btc=btc,
         attention=attention,
+        micro=micro,
+        opportunity=opportunity,
+        monetization=monetization,
     )
     if generated is None:
         logger.info("No publication-quality post was generated")
@@ -731,8 +807,9 @@ def _run_once() -> int:
     selected_post, quality_report = generated
     post_text = selected_post.text
     logger.info(
-        "Selected post quality: %.1f | format=%s | visual=%s | signal=%s",
+        "Selected post quality: %.1f | source=%s | format=%s | visual=%s | signal=%s",
         quality_report.score,
+        selected_post.source,
         selected_post.content_format,
         selected_post.visual_style,
         selected_post.signal_type,
@@ -785,9 +862,9 @@ def _run_once() -> int:
                         basic=basic,
                         direction=best_score.direction,
                         entry=levels.get("plan_entry", levels["entry"]),
-                        tp1=levels.get("public_target", levels["tp1"]),
-                        tp2=levels.get("public_target", levels["tp2"]),
-                        tp3=levels.get("public_target", levels["tp3"]),
+                        tp1=levels["tp1"],
+                        tp2=levels["tp2"],
+                        tp3=levels["tp3"],
                         stop=levels["stop"],
                         rr=levels.get("public_rr", levels["risk_reward"]),
                         confidence=best_score.total,
@@ -817,9 +894,9 @@ def _run_once() -> int:
                         raw_15m,
                         basic,
                         entry=levels.get("plan_entry", levels["entry"]),
-                        tp1=levels.get("public_target", levels["tp1"]),
-                        tp2=levels.get("public_target", levels["tp2"]),
-                        tp3=levels.get("public_target", levels["tp3"]),
+                        tp1=levels["tp1"],
+                        tp2=levels["tp2"],
+                        tp3=levels["tp3"],
                         stop=levels["stop"],
                         direction=best_score.direction,
                         support=indicator.support,
@@ -849,6 +926,8 @@ def _run_once() -> int:
                 quality_score=quality_report.score,
                 w2e_market_score=monetization.score,
                 opportunity_score=opportunity.score,
+                micro_freshness=micro.score,
+                audience_demand=opportunity.audience_demand,
                 public_rr=levels.get("public_rr"),
                 decision_mode=levels.get("decision_mode"),
             )
@@ -894,6 +973,8 @@ def _run_once() -> int:
             opportunity_score=opportunity.score,
             audience_demand=opportunity.audience_demand,
             event_class=opportunity.event_class,
+            micro_freshness=micro.score,
+            writer_source=selected_post.source,
             content_format=selected_post.content_format,
             visual_style=selected_post.visual_style,
             public_rr=levels.get("public_rr"),

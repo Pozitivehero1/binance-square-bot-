@@ -1,241 +1,198 @@
-# Binance Square Bot — Human Feed Edition
+# Binance Square Bot — Audience Author v9
 
-## Market Attention v8
+Автоматический Binance Square-бот с упором на две задачи: находить **события, на которые у рынка уже есть аудитория**, и превращать их в живые, фактически корректные публикации с полноценным торговым планом.
 
-The current build is **Market Attention v8**. It keeps the v7 market-attention ranking and adds a public trade-plan coherence layer: the displayed decision level, target and invalidation must form a sensible plan; copy is generated from the actual current-price/level relationship, so a market already sitting on a level is described as an **удержание/контроль**, never as a future retest. Weak public R/R and excessively wide invalidation are skipped rather than dressed up as a trade. Emoji are sparse and contextual, not decorative. See `CHANGES_V8.md`.
+## Что изменилось в v9
 
+### 1. Audience-first отбор монеты
 
-> Human Feed v6 (2026-08-07): генератор переписан под короткие живые посты. Убраны терминальные фразы, обязательные CTA и технические простыни; горячие движения превращаются в понятные сценарии с ретестом, первой целью и отменой. Подробности: `HUMAN_FEED_EDITION.md`.
+Бот больше не ставит аномальный `volume xN` во главу угла. Предварительный shortlist собирается из двух корзин — **Audience** (ликвидные/торгуемые активы) и **Live Event** (свежие события), после чего финальный отбор учитывает:
 
+- относительный спрос аудитории: 24h quote volume, число сделок и текущий rank монеты;
+- свежесть события на 5m;
+- 15m attention;
+- техническую состоятельность сетапа;
+- качество движения без автоматического бонуса за уже состоявшийся огромный памп;
+- пригодность торгового плана для публикации.
 
-Версия для запуска через сторонний cron-менеджер каждые 20 минут. Частота не урезается: при каждом запуске бот может опубликовать новый пост. Основное изменение — выбор темы по свежему вниманию рынка, а не только по «красивому» техническому сетапу.
+Большой объём насыщается: `x30` не получает в несколько раз больший вес, чем уже сильный `x4-x8`. Событие, которое произошло несколько свечей назад и затухает, получает `stale_penalty`.
 
-## Почему прежняя версия могла собирать мало просмотров
+### 2. 5m Micro Attention
 
-1. `COOLDOWN_MIN` ограничивал только повтор одной монеты. При universe из десятков тикеров бот всё равно мог выпускать новую публикацию почти на каждом cron-запуске.
-2. `post_memory.json` и `published_history.json` были относительными путями. Некоторые cron-панели запускают команду из своей рабочей папки, поэтому бот мог создавать новую пустую память и повторять подачу.
-3. Не было глобального интервала между постами и дневного бюджета.
-4. Не было защиты от двух одновременно работающих cron-процессов.
-5. Хороший технический сетап мог побеждать, даже если движение уже закончилось и интерес к монете угас.
-6. Почти каждый заголовок начинался с `$TICKER:`, а каждый пост заканчивался одним и тем же набором хэштегов. Даже разные тексты визуально складывались в автоматическую RSS-ленту.
+`attention.py` отдельно определяет, происходит ли событие прямо сейчас:
 
-## Что изменено
+- `fresh` — импульс/объём возник на последней или предпоследней 5m-свече;
+- `developing` — событие ещё развивается;
+- `stale` — самый сильный всплеск уже остался в прошлом;
+- `ordinary` — обычная активность.
 
-### Cron-safe запуск
+Это позволяет не путать «в графике когда-то был x20» с «x20 появился только что».
 
-Запускайте только:
+### 3. Полный Python-owned trade plan
 
-```bash
-python run_bot.py
-```
+Перед написанием текста Python строит и проверяет:
 
-`run_bot.py` загружает `.env` из папки проекта и выставляет правильную рабочую директорию. Состояние хранится в `state/`, журналы — в `logs/`, поэтому запуск из любой папки не сбрасывает память.
+- `entry`;
+- `entry_zone_low / entry_zone_high`;
+- `stop_loss`;
+- `TP1`;
+- `TP2`;
+- `TP3`;
+- `R/R` для каждой цели;
+- процент риска;
+- состояние сделки: `decision_now / waiting_retest / waiting_breakout / waiting_breakdown`.
 
-### Частота остаётся 20 минут
+Цифры не придумываются LLM. Если геометрия уровней некорректна, TP3 R/R недостаточен или стоп слишком широк, кандидат отбрасывается **до** генерации поста.
 
-По умолчанию:
+### 4. Mistral теперь полноценный автор
 
-```env
-ENABLE_PACING_LIMITS=0
-MIN_GLOBAL_INTERVAL_MIN=20
-MAX_POSTS_PER_DAY=72
-COOLDOWN_MIN=240
-ENABLE_REACH_GATE=1
-MIN_REACH_SCORE=67
-```
+Режим по умолчанию: `CONTENT_MODE=ai_author`.
 
-Cron запускается каждые 20 минут и задаёт реальную частоту публикаций. `ENABLE_PACING_LIMITS=0` отключает старый лимит 120 минут и дневной бюджет 6 постов. `ENABLE_REACH_GATE=1` разрешает пропустить слабый запуск: внешний cron по-прежнему запускается каждые 20 минут, но публикация происходит только при достаточном рыночном качестве.
+Python передаёт Mistral не готовый шаблон, а semantic package с рыночными фактами и полным торговым планом. Mistral сам выбирает композицию, ритм, хук и то, какие второстепенные факты стоит упомянуть.
 
-Вместо урезания частоты бот ранжирует кандидатов по текущему вниманию:
+После этого Python проверяет текст:
 
-- изменение цены за последние 15 и 45 минут;
-- всплеск объёма последней закрытой 15M-свечи;
-- расширение диапазона свечи;
-- оборот в USDT за последний час;
-- штраф за поздний вход после уже растянутого движения.
+- cashtag должен быть в первой строке;
+- LONG/SHORT нельзя поменять;
+- entry/TP1/stop нельзя изменить;
+- для `trade_map` и `risk_first` обязательны TP1/TP2/TP3;
+- запрещены любые новые числа, которых нет в fact package;
+- запрещены обещания будущего и гарантии;
+- запрещён «будущий ретест», если цена уже находится у уровня;
+- запрещены старые роботизированные обороты;
+- не более одного вопроса и одного редкого контекстного emoji;
+- текст не должен быть слишком похож на недавние публикации.
 
-### Постоянная память
+Если Mistral не прошёл проверки, бот пробует другой вариант. Если API недоступен, включается fact-perfect deterministic fallback. Если fallback уже начинает повторяться — бот **лучше пропустит цикл, чем отправит дубликат**.
 
-Относительные имена сохраняются внутри `STATE_DIR`:
+### 5. Content Rotation
 
-```env
-STATE_DIR=state
-POST_MEMORY_FILE=post_memory.json
-PUBLISHED_HISTORY_FILE=published_history.json
-PUBLICATION_STATE_FILE=publication_state.json
-BOT_STATUS_FILE=status.json
-RUN_LOCK_FILE=bot.lock
-```
+Доступны разные смысловые форматы:
 
-Старые `post_memory.json` и `published_history.json` из корня проекта автоматически копируются в новое хранилище при первом запуске.
+- `hot_take`;
+- `trade_map`;
+- `one_level`;
+- `no_chase`;
+- `two_paths`;
+- `risk_first`;
+- `market_story`;
+- `micro_note`;
+- `volume_read`.
 
-### Защита от параллельных процессов
+И шесть реально отличающихся визуальных режимов:
 
-Атомарный `bot.lock` не даёт двум cron-запускам одновременно выбрать разные монеты и опубликовать два поста подряд. Зависший lock автоматически считается устаревшим через `LOCK_STALE_MIN`.
+- `minimal_chart`;
+- `event_chart`;
+- `trade_map`;
+- `scenario_chart`;
+- `context_chart`;
+- `clean_chart`.
 
-### Диагностика cron
+Соседние посты дополнительно штрафуются за одинаковую композицию, визуал, semantic phrase-family и слишком похожий текст.
 
-Логи не пропадают вместе с выводом cron-панели:
+## Быстрый запуск
 
-```env
-LOG_FILE=logs/bot.log
-LOG_MAX_BYTES=3000000
-LOG_BACKUPS=5
-```
+### GitHub Actions
 
-Проверка последнего состояния:
+1. Залей содержимое архива в репозиторий.
+2. В `Settings → Secrets and variables → Actions` добавь:
+   - `SQUARE_API`;
+   - `MISTRAL_API`.
+3. Workflow уже лежит в `.github/workflows/run.yml`.
+4. Внешний cron может вызывать `workflow_dispatch` примерно каждые 20 минут. Это **частота сканирования**, а не обязательная частота публикации: слабый цикл бот пропустит.
 
-```bash
-python status.py
-```
+`OPENAI_API_KEY` в workflow оставлен только для совместимости и этой версии не требуется.
 
-Команда показывает последний результат, историю успешных публикаций и хвост журнала без вывода API-ключей.
-
-### Более естественная лента
-
-- добавлены hook-first заголовки, где `$TICKER` не всегда стоит первым символом;
-- часть публикаций выходит без хэштегов, остальные — максимум с одним;
-- по умолчанию используются feed-first форматы; сухие risk/data/indicator memo доступны только через `ALLOW_TECHNICAL_FORMATS=1`;
-- генератор собирает до 16 разных кандидатов, а selector выбирает лучший по quality + feed appeal + W2E conversion + новизне;
-- `CONTENT_MODE=ai_first` использует Mistral только для короткой редакторской фразы; при любой ошибке остаётся deterministic fallback;
-- Mistral не управляет ценами, направлением, уровнями, целями или индикаторами — эти факты остаются code-controlled.
-
-## Установка
-
-Требуются Python 3.11+, Node.js 18+ и установленный официальный `square-post` skill.
-
-```bash
-python -m venv .venv
-```
-
-Linux/macOS:
+### Локальная проверка без публикации
 
 ```bash
-source .venv/bin/activate
-```
-
-Windows PowerShell:
-
-```powershell
-.venv\Scripts\Activate.ps1
-```
-
-Зависимости:
-
-```bash
-pip install -r requirements.txt
-npx skills add https://github.com/binance/binance-skills-hub --skill square-post -y
-```
-
-Конфигурация:
-
-```bash
-cp env.example .env
-```
-
-Windows PowerShell:
-
-```powershell
-Copy-Item env.example .env
-```
-
-## Безопасный первый запуск
-
-Оставьте:
-
-```env
-DRY_RUN=1
-CONTENT_MODE=ai_first
-```
-
-Затем:
-
-```bash
+python -m pip install -r requirements.txt
 python config_check.py
 python self_test.py
-python cron_test.py
-python repetition_test.py
-python preview_gallery.py
-python run_bot.py
+python run_tests.py
 ```
 
-`run_bot.py` в режиме `DRY_RUN=1` получает реальные рыночные данные и печатает выбранный пост, но не отправляет его в Binance Square.
+По умолчанию локально `DRY_RUN=1`.
 
-## Реальная публикация
-
-В `.env` задайте ключ и выключите безопасный режим:
+## Основные настройки
 
 ```env
-SQUARE_API=ваш_ключ
-DRY_RUN=0
-```
+CONTENT_MODE=ai_author
+MISTRAL_MODEL=mistral-small-latest
+AI_VARIANTS=6
+AI_RETRIES=2
+AI_TEMPERATURE=0.68
 
-Проверка:
+POST_MIN_CHARS=150
+POST_MAX_CHARS=560
+MAX_POST_SIMILARITY=0.46
+MIN_POST_QUALITY=84
+MIN_FEED_APPEAL=76
+MIN_CONVERSION_INTENT=75
 
-```bash
-python config_check.py --publishing
-python run_bot.py
-```
+MIN_OPPORTUNITY_SCORE=62
+MIN_AUDIENCE_DEMAND=24
+MIN_W2E_MARKET_SCORE=56
+W2E_SOFT_FLOOR=40
+HOT_W2E_FLOOR=34
 
-## Настройка стороннего cron
+MIN_PUBLIC_TP3_RR=1.55
+MAX_PUBLIC_RISK_PCT=8.0
 
-Рекомендуемая частота проверки — каждые 20 минут. Команда должна содержать абсолютный путь:
-
-```bash
-python /absolute/path/to/binance-square-bot/run_bot.py
-```
-
-Не запускайте `main.py` из произвольной рабочей директории старой командой. Он тоже защищён lock-файлом, но `run_bot.py` является штатной точкой входа.
-
-### Пример crontab
-
-```cron
-*/20 * * * * /absolute/path/to/.venv/bin/python /absolute/path/to/binance-square-bot/run_bot.py
-```
-
-### Окна публикации
-
-Опционально можно ограничить публикации локальными временными окнами:
-
-```env
-BOT_TIMEZONE=Europe/Berlin
-PUBLISH_WINDOWS=07:00-10:00,12:00-15:00,18:00-22:30
-```
-
-Пустое `PUBLISH_WINDOWS` разрешает публикацию в любое время при соблюдении остальных ограничений.
-
-## Главные настройки
-
-```env
-POST_VARIANTS=16
-POST_MIN_CHARS=140
-POST_MAX_CHARS=500
-MIN_POST_QUALITY=82
-MIN_FEED_APPEAL=74
-MAX_POST_SIMILARITY=0.50
-MIN_CONVERSION_INTENT=70
-ALLOW_TECHNICAL_FORMATS=0
-ENABLE_PACING_LIMITS=0
-MIN_GLOBAL_INTERVAL_MIN=20
-MAX_POSTS_PER_DAY=72
-ENABLE_REACH_GATE=1
-MIN_REACH_SCORE=67
+TOP_SYMBOLS=120
+SHORTLIST_SIZE=36
+FINAL_CANDIDATES=20
 COOLDOWN_MIN=240
 ```
 
-При `ENABLE_PACING_LIMITS=0` внешний cron задаёт частоту проверок. Внутренние W2E/reach/quality gates всё равно могут пропустить слабый цикл. `FORCE_PUBLISH=1` оставлен только для разовой диагностики.
+Полный набор есть в `env.example` и в workflow.
 
-## Медиа
+## Что означают логи кандидата
 
-```env
-PUBLISH_IMAGES=1
-PUBLISH_MEDIA_MODE=adaptive
+Пример:
+
+```text
+Candidate XRPUSDT tech=74.1 attention=81.3 micro=88.0/fresh demand=79.4
+w2e=72.0 opportunity=77.6 final=84.1 gate=audience breakout ...
 ```
 
-`adaptive` публикует один визуал, соответствующий идее поста. Для human-first форматов график упрощён до трёх решений: ключевой уровень, первая цель и отмена; лишние TP2/TP3 и терминальная панель убраны. Доступны `card`, `chart`, `both`, `none`.
+Ключевые поля:
 
-## Что бот не умеет
+- `tech` — техническое качество;
+- `attention` — 15m текущий интерес;
+- `micro` — 5m свежесть;
+- `demand` — относительный спрос аудитории;
+- `w2e` — пригодность рынка для click-to-market сценария;
+- `opportunity` — общий audience-first score;
+- `gate` — почему кандидат допущен;
+- `plan_R3` — R/R до TP3;
+- `state` — состояние сделки.
 
-Официальный `square-post` skill создаёт публикации, но не читает статистику существующих постов. Поэтому эта версия не выдумывает просмотры и не пытается неофициально обходить Creator Center. Автоматический подбор стратегии по фактическим просмотрам возможен только при появлении поддерживаемого API чтения аналитики либо при импорте выгрузки из Creator Center.
+## Защита от плохих публикаций
 
-Ни один код не может гарантировать конкретный охват. Распределение также зависит от истории аккаунта, подписчиков, языка, актуальности темы, доверия к профилю и правил Binance Square.
+Бот пропускает публикацию, если:
+
+- нет связного public trade plan;
+- событие уже устарело и спрос аудитории недостаточен;
+- opportunity/W2E gate не пройден;
+- текст Mistral изменил или придумал число;
+- текст слишком похож на недавний;
+- feed appeal / conversion intent ниже порога;
+- reach gate не пройден;
+- монета ещё находится в cooldown.
+
+## Файлы v9
+
+- `main.py` — orchestration и market selection;
+- `attention.py` — 15m + 5m freshness;
+- `opportunity.py` — audience-first ranking;
+- `trade_plan.py` — entry / zone / stop / TP1-3;
+- `writer.py` — Mistral author + fact validator + fallback;
+- `quality.py` — жёсткая проверка фактов и формы;
+- `engagement.py` — feed appeal;
+- `monetization.py` — W2E-oriented market/copy scoring;
+- `chart.py` — ротация визуальных композиций;
+- `memory.py` — анти-повторы и история форматов;
+- `.github/workflows/run.yml` — готовый GitHub Actions workflow.
+
+Никакой тест из архива не публикует посты в Binance.

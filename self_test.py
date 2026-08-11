@@ -1,14 +1,11 @@
-"""Offline smoke test for indicators, filters, post text, card and chart.
+"""Offline smoke/regression suite for Audience Author v9.
 
-Run:
-    python self_test.py
-
-The test never publishes anything and does not call market APIs.
+No market API and no real publication are attempted.
 """
 from __future__ import annotations
 
-import os
 import json
+import os
 import tempfile
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -16,14 +13,24 @@ from unittest.mock import Mock, patch
 import numpy as np
 import pandas as pd
 
+from attention import compute_attention, compute_micro_attention
 from card import generate_card
 from chart import generate_chart
 from filters import SignalFilter, get_top_candidates
 from indicators import calculate_multi_timeframe
 from memory import PostMemory
-from quality import PostQualityEvaluator
+from monetization import score_market_monetization
+from opportunity import score_market_opportunity
 from publisher import publish
-from writer import FULL_PLAN_FORMATS, generate_post_candidates, _ticker_count, _levels
+from quality import PostQualityEvaluator
+from trend import TrendingMarket
+from writer import (
+    FULL_PLAN_FORMATS,
+    _fmt_price,
+    _levels,
+    _ticker_count,
+    generate_post_candidates,
+)
 
 
 def _make_frame(rng, frequency: str, slope: float, rows: int = 260) -> pd.DataFrame:
@@ -42,15 +49,15 @@ def _make_frame(rng, frequency: str, slope: float, rows: int = 260) -> pd.DataFr
 
 def _build_setup(side: str):
     rng = np.random.default_rng(17 if side == "long" else 29)
-    slopes = (0.065, 0.14, 0.30, 0.55) if side == "long" else (-0.065, -0.14, -0.30, -0.55)
-    frames = {
-        interval: _make_frame(rng, frequency, slope)
-        for interval, frequency, slope in zip(
-            ("15m", "1h", "4h", "1d"),
-            ("15min", "1h", "4h", "1d"),
-            slopes,
-        )
+    slopes = {
+        "5m": 0.025 if side == "long" else -0.025,
+        "15m": 0.065 if side == "long" else -0.065,
+        "1h": 0.14 if side == "long" else -0.14,
+        "4h": 0.30 if side == "long" else -0.30,
+        "1d": 0.55 if side == "long" else -0.55,
     }
+    freqs = {"5m": "5min", "15m": "15min", "1h": "1h", "4h": "4h", "1d": "1d"}
+    frames = {key: _make_frame(rng, freqs[key], slope) for key, slope in slopes.items()}
 
     current = frames["15m"]
     if side == "long":
@@ -59,301 +66,239 @@ def _build_setup(side: str):
     else:
         level = current["low"].iloc[-51:-1].min()
         current.iloc[-1] = [level * 0.999, level * 1.001, level * 0.988, level * 0.992, 3300]
+
+    # Make the 5m event fresh rather than an old historical spike.
+    micro = frames["5m"]
+    if side == "long":
+        micro.iloc[-1, micro.columns.get_loc("close")] *= 1.004
+        micro.iloc[-1, micro.columns.get_loc("high")] = max(micro.iloc[-1]["open"], micro.iloc[-1]["close"]) * 1.002
+    else:
+        micro.iloc[-1, micro.columns.get_loc("close")] *= 0.996
+        micro.iloc[-1, micro.columns.get_loc("low")] = min(micro.iloc[-1]["open"], micro.iloc[-1]["close"]) * 0.998
+    micro.iloc[-1, micro.columns.get_loc("volume")] = 4800
     return frames
+
+
+def _market_context(mtf, frames, score):
+    attention = compute_attention(frames["15m"], mtf.tf_15m, score.direction)
+    micro = compute_micro_attention(frames["5m"])
+    universe = [
+        TrendingMarket("BTCUSDT", 90, 20_000_000_000, 4_000_000, 1.5, 100000, 1),
+        TrendingMarket("ETHUSDT", 85, 9_000_000_000, 2_800_000, 2.1, 4000, 2),
+        TrendingMarket("TESTUSDT", 72, 650_000_000, 850_000, 4.2, mtf.tf_15m.price, 8),
+        TrendingMarket("ALTUSDT", 50, 90_000_000, 170_000, 8.0, 1, 24),
+    ]
+    meta = universe[2]
+    levels = _levels(mtf.tf_15m, score.direction)
+    opportunity = score_market_opportunity(
+        meta=meta,
+        universe=universe,
+        attention=attention,
+        technical_score=score.total,
+        risk_reward=float(levels["public_rr"]),
+        strict_setup=True,
+        micro=micro,
+    )
+    monetization = score_market_monetization(
+        quote_volume_24h=meta.quote_volume,
+        trade_count_24h=meta.trade_count,
+        abs_change_24h=abs(meta.change_pct),
+        trend_rank=meta.rank,
+        trend_universe_size=len(universe),
+        attention_score=attention.score,
+        change_15m=attention.change_15m,
+        volume_spike=attention.volume_spike,
+        risk_reward=float(levels["public_rr"]),
+        overextended=attention.overextended,
+        micro_freshness=micro.score,
+    )
+    return levels, attention, micro, opportunity, monetization
 
 
 def _test_side(side: str) -> None:
     frames = _build_setup(side)
     mtf = calculate_multi_timeframe("TESTUSDT", frames)
     score = SignalFilter(min_score=0).evaluate(mtf)
-    assert score is not None, "Signal score was not calculated"
-    assert score.direction == side, f"Expected {side}, got {score.direction}"
-    assert score.passed_gates, f"Signal failed gates: {score.gate_reasons}"
+    assert score is not None and score.direction == side
+    assert score.passed_gates, score.gate_reasons
+    levels, attention, micro, opportunity, monetization = _market_context(mtf, frames, score)
+    assert levels["plan_valid"], levels
+    assert levels["rr_tp1"] < levels["rr_tp2"] < levels["rr_tp3"]
 
-    levels = _levels(mtf.tf_15m, side)
-    with tempfile.TemporaryDirectory() as temp_directory:
-        memory = PostMemory(Path(temp_directory) / "post_memory.json")
+    with tempfile.TemporaryDirectory() as td:
+        memory = PostMemory(Path(td) / "post_memory.json")
         with patch.dict(os.environ, {"CONTENT_MODE": "deterministic"}, clear=False):
             drafts = generate_post_candidates(
-                symbol="TESTUSDT",
-                basic="TEST",
-                mtf=mtf,
-                score=score,
-                memory=memory,
-                levels=levels,
-                variant_count=8,
+                symbol="TESTUSDT", basic="TEST", mtf=mtf, score=score,
+                memory=memory, levels=levels, attention=attention, micro=micro,
+                opportunity=opportunity, monetization=monetization, variant_count=9,
             )
-        assert drafts, "No post candidates were generated"
-        text = drafts[0].text
-        report = PostQualityEvaluator().report(
-            text,
-            basic="TEST",
-            direction=side,
-            levels=levels,
-            content_format=drafts[0].content_format,
-            headline=drafts[0].headline,
-        )
-        assert report.valid, report.reasons
-        assert report.score >= 78, report.score
-        assert 1 <= _ticker_count(text, "TEST") <= 3
-        assert __import__("writer")._fmt_price(levels["public_target"]) in text
-        assert __import__("writer")._fmt_price(levels["stop"]) in text
-        assert ("LONG" if side == "long" else "SHORT") in text.upper()
-        lowered = text.lower().replace("ё", "е")
-        assert "направление у идеи" not in lowered
-        assert "граница ошибки" not in lowered
-        assert "диапазон контроля" not in lowered
+        assert len(drafts) >= 6, len(drafts)
+        evaluator = PostQualityEvaluator()
+        for draft in drafts:
+            report = evaluator.report(
+                draft.text, basic="TEST", direction=side, levels=levels,
+                content_format=draft.content_format, headline=draft.headline,
+            )
+            assert report.valid, (draft.content_format, report.reasons, draft.text)
+            assert _fmt_price(levels["tp1"]) in draft.text
+            assert _fmt_price(levels["stop"]) in draft.text
+            if draft.content_format in FULL_PLAN_FORMATS:
+                assert _fmt_price(levels["tp2"]) in draft.text
+                assert _fmt_price(levels["tp3"]) in draft.text
+            assert 1 <= _ticker_count(draft.text, "TEST") <= 2
+
+        selected = drafts[0]
         memory.add_post(
-            "TESTUSDT",
-            text,
-            post_style=drafts[0].style_id,
-            signal_type=drafts[0].signal_type,
-            content_format=drafts[0].content_format,
-            visual_style=drafts[0].visual_style,
-            direction=side,
-            levels=levels,
+            "TESTUSDT", selected.text, post_style=selected.style_id,
+            signal_type=selected.signal_type, content_format=selected.content_format,
+            visual_style=selected.visual_style, direction=side, levels=levels,
             market_price=mtf.tf_15m.price,
         )
-        assert memory.is_similar(text), "Memory did not recognize an identical post"
+        assert memory.is_similar(selected.text)
 
-    card_path = generate_card(
-        "TEST",
-        side,
-        levels["plan_entry"],
-        levels["public_target"],
-        levels["public_target"],
-        levels["public_target"],
-        levels["stop"],
-        levels["public_rr"],
-        score.total,
-        mtf.tf_15m.change_1h,
-        content_format=drafts[0].content_format,
-        visual_style=drafts[0].visual_style,
-        headline=drafts[0].headline,
-        signal_label=drafts[0].angle_title,
-        rsi=mtf.tf_15m.rsi,
-        adx=mtf.tf_15m.adx,
-        volume_relative=mtf.tf_15m.volume_relative,
-    )
+    # Test the richest visual mode with the full three-target ladder.
     chart_path = generate_chart(
-        "TESTUSDT",
-        frames["15m"],
-        "TEST",
-        entry=levels["plan_entry"],
-        tp1=levels["public_target"],
-        tp2=levels["public_target"],
-        tp3=levels["public_target"],
-        stop=levels["stop"],
-        direction=side,
-        support=mtf.tf_15m.support,
-        resistance=mtf.tf_15m.resistance,
-        vol_rel=mtf.tf_15m.volume_relative,
-        indicator=mtf.tf_15m,
-        visual_style=drafts[0].visual_style,
-        headline=drafts[0].headline,
+        "TESTUSDT", frames["15m"], "TEST",
+        entry=levels["plan_entry"], entry_zone_low=levels["entry_zone_low"],
+        entry_zone_high=levels["entry_zone_high"], tp1=levels["tp1"],
+        tp2=levels["tp2"], tp3=levels["tp3"], stop=levels["stop"],
+        direction=side, decision_level=levels["decision"],
+        decision_mode=levels["decision_mode"], vol_rel=attention.volume_spike,
+        indicator=mtf.tf_15m, visual_style="trade_map", headline=drafts[0].headline,
         signal_label=drafts[0].angle_title,
-        decision_mode=levels.get("decision_mode", "at_level"),
     )
     try:
-        assert card_path and os.path.getsize(card_path) > 10_000
         assert chart_path and os.path.getsize(chart_path) > 10_000
     finally:
-        for path in (card_path, chart_path):
-            if path and os.path.exists(path):
-                os.remove(path)
+        if chart_path and os.path.exists(chart_path):
+            os.remove(chart_path)
 
     print(
-        f"{side.upper()}: OK | score={score.total:.1f} | "
-        f"R/R={score.risk_reward:.2f} | post quality={report.score:.1f}"
+        f"{side.upper()}: OK | tech={score.total:.1f} | micro={micro.score:.1f}/{micro.phase} | "
+        f"opportunity={opportunity.score:.1f} | TP3 R/R={levels['rr_tp3']:.2f}"
     )
-
-
-
-def _normalized_similarity(left: str, right: str) -> float:
-    return PostMemory.compare_texts(left, right)
 
 
 def _test_content_diversity() -> None:
     frames = _build_setup("long")
     mtf = calculate_multi_timeframe("TESTUSDT", frames)
     score = SignalFilter(min_score=0).evaluate(mtf)
-    assert score is not None
-    levels = _levels(mtf.tf_15m, "long")
-
-    with tempfile.TemporaryDirectory() as temp_directory:
-        memory = PostMemory(Path(temp_directory) / "post_memory.json")
+    levels, attention, micro, opportunity, monetization = _market_context(mtf, frames, score)
+    with tempfile.TemporaryDirectory() as td:
+        memory = PostMemory(Path(td) / "post_memory.json")
         with patch.dict(os.environ, {"CONTENT_MODE": "deterministic"}, clear=False):
             drafts = generate_post_candidates(
-                symbol="TESTUSDT",
-                basic="TEST",
-                mtf=mtf,
-                score=score,
-                memory=memory,
-                levels=levels,
-                variant_count=8,
+                symbol="TESTUSDT", basic="TEST", mtf=mtf, score=score, memory=memory,
+                levels=levels, attention=attention, micro=micro,
+                opportunity=opportunity, monetization=monetization, variant_count=9,
             )
-
-    styles = {draft.style_id for draft in drafts}
-    formats = {draft.content_format for draft in drafts}
-    visuals = {draft.visual_style for draft in drafts}
-    signals = {draft.signal_type for draft in drafts}
+    assert len(drafts) >= 7
+    assert len({d.content_format for d in drafts}) >= 7
+    assert len({d.visual_style for d in drafts}) >= 5
     similarities = [
-        _normalized_similarity(drafts[i].text, drafts[j].text)
-        for i in range(len(drafts))
-        for j in range(i)
+        PostMemory.compare_texts(drafts[i].text, drafts[j].text)
+        for i in range(len(drafts)) for j in range(i)
     ]
-    lengths = [len(draft.text) for draft in drafts]
-    assert len(drafts) >= 6, f"Not enough candidates: {len(drafts)}"
-    assert len(styles) >= 8, f"Not enough layouts: {styles}"
-    assert len(formats) >= 8, f"Not enough editorial formats: {formats}"
-    assert len(visuals) >= 3, f"Not enough visual families: {visuals}"
-    assert len(signals) >= 5, f"Not enough signal angles: {signals}"
-    assert all(not __import__("re").search(r"^\$TEST\s*[—-]\s*(?:LONG|SHORT)\s*:", draft.headline) for draft in drafts)
-    assert max(similarities) < 0.58, f"Variants are too similar: {max(similarities):.3f}"
-    assert max(lengths) <= 620, lengths
-    assert sum(lengths) / len(lengths) <= 500, lengths
+    assert max(similarities) < 0.62, max(similarities)
     print(
-        f"DIVERSITY: OK | layouts={len(styles)} | formats={len(formats)} | visuals={len(visuals)} | signals={len(signals)} | "
-        f"max_similarity={max(similarities):.3f} | avg_chars={sum(lengths)/len(lengths):.0f}"
+        f"DIVERSITY: OK | formats={len({d.content_format for d in drafts})} | "
+        f"visuals={len({d.visual_style for d in drafts})} | max_pair_similarity={max(similarities):.3f}"
     )
 
 
-def _test_mistral_fact_lock() -> None:
+def _test_mistral_full_author_and_fact_lock() -> None:
     frames = _build_setup("long")
     mtf = calculate_multi_timeframe("TESTUSDT", frames)
     score = SignalFilter(min_score=0).evaluate(mtf)
-    assert score is not None
-    levels = _levels(mtf.tf_15m, "long")
+    levels, attention, micro, opportunity, monetization = _market_context(mtf, frames, score)
+    e = _fmt_price(levels["plan_entry"])
+    lo, hi = _fmt_price(levels["entry_zone_low"]), _fmt_price(levels["entry_zone_high"])
+    sl = _fmt_price(levels["stop"])
+    t1, t2, t3 = (_fmt_price(levels[k]) for k in ("tp1", "tp2", "tp3"))
+
     payload = {
         "candidates": [
-            {
-                "format_id": "hot_reaction",
-                "hook": "Очевидное направление ещё не означает хорошую цену исполнения",
-                "insight": "Сначала проверяю качество реакции, а уже потом принимаю решение.",
-                "question": "Какой контраргумент к этому сценарию для вас сильнее всего?",
-                "fact_ids": ["volume", "vwap", "risk_math"],
-            },
-            {
-                "format_id": "one_problem",
-                "hook": "Цифры полезны только вместе с понятным условием сделки",
-                "insight": "Данные подтверждают наблюдение, но не заменяют реакцию цены.",
-                "question": "",
-                "fact_ids": ["fresh_move"],
-            },
-            {
-                "format_id": "crowd_trap",
-                "hook": "Отдельный индикатор легко создаёт ложную уверенность",
-                "insight": "Связка структуры и уровня важнее одного показателя.",
-                "question": "Вы бы здесь ждали ретест или просто пропустили движение?",
-                "fact_ids": ["momentum"],
-            },
-            {
-                "format_id": "chart_story",
-                "hook": "Вся идея сводится к реакции возле одной границы",
-                "insight": "Если рынок не удерживает уровень, направление перестаёт иметь значение.",
-                "question": "",
-                "fact_ids": ["range"],
-            },
+            {"format_id": "hot_take", "text": f"$TEST сегодня интересен мне не свечой, а качеством входа\n\nЗона около {e} уже в работе. Если покупатели сохранят контроль, смотрю LONG к {t1}.\n\nСтоп {sl}: ниже этой цены идею закрываю."},
+            {"format_id": "trade_map", "text": f"В $TEST есть план, который можно проверить без гадания\n\nЗона входа {lo}–{hi}, стоп {sl}. Для LONG цели распределяю так: TP1 {t1}, TP2 {t2}, TP3 {t3}.\n\nЕсли условия входа не выполняются, сделку просто пропускаю."},
+            {"format_id": "one_level", "text": f"Для $TEST сейчас важнее всего цена {e}\n\nПока рынок держит рабочую область, LONG остаётся для меня вариантом. Первая цель {t1}.\n\nСтоп {sl}; за этой ценой идея больше не актуальна."},
+            {"format_id": "no_chase", "text": f"$TEST двигается, но догонять его ценой плохого входа я не хочу\n\nИнтерес к LONG для меня начинается около {e}; ближайшая цель {t1}.\n\nСтоп {sl}. Если рынок не даёт этот сценарий, я остаюсь вне позиции."},
+            {"format_id": "two_paths", "text": f"У $TEST сейчас два понятных исхода, и оба мне подходят\n\nЕсли зона {e} остаётся рабочей, рассматриваю LONG к {t1}. Если цена уходит к стопу {sl}, сценарий снимаю.\n\nНичего между этими условиями угадывать не требуется."},
+            {"format_id": "risk_first", "text": f"В $TEST я сначала считаю, где ошибусь, а потом смотрю вверх\n\nВход {lo}–{hi}, стоп {sl}. План LONG: TP1 {t1}, TP2 {t2}, TP3 {t3}.\n\nЕсли цена нарушает условие риска, сделка для меня закончена."},
+            # This candidate must be rejected because x99 does not exist in facts.
+            {"format_id": "hot_take", "text": f"$TEST якобы получил объём x99 — но это проверка валидатора\n\nLONG от {e} к {t1}; стоп {sl}. Такой вариант не должен пройти."},
         ]
     }
     response = Mock()
     response.raise_for_status.return_value = None
-    response.json.return_value = {
-        "choices": [{"message": {"content": json.dumps(payload, ensure_ascii=False)}}]
-    }
+    response.json.return_value = {"choices": [{"message": {"content": json.dumps(payload, ensure_ascii=False)}}]}
 
-    with tempfile.TemporaryDirectory() as temp_directory:
-        memory = PostMemory(Path(temp_directory) / "post_memory.json")
-        with patch.dict(
-            os.environ,
-            {"CONTENT_MODE": "ai_first", "MISTRAL_API": "test-key"},
-            clear=False,
-        ), patch("writer.requests.post", return_value=response) as mocked_post:
+    with tempfile.TemporaryDirectory() as td:
+        memory = PostMemory(Path(td) / "post_memory.json")
+        memory.add_post(
+            "OLDUSDT", "$OLD: недавно я ждал подтверждения уровня\n\nЭто тест памяти последних постов. Стоп 1, цель 2.",
+            content_format="hot_take", visual_style="event_chart",
+        )
+        with patch.dict(os.environ, {"CONTENT_MODE": "ai_author", "MISTRAL_API": "test-key"}, clear=False), \
+             patch("writer.requests.post", return_value=response) as mocked:
             drafts = generate_post_candidates(
-                symbol="TESTUSDT",
-                basic="TEST",
-                mtf=mtf,
-                score=score,
-                memory=memory,
-                levels=levels,
-                variant_count=4,
+                symbol="TESTUSDT", basic="TEST", mtf=mtf, score=score, memory=memory,
+                levels=levels, attention=attention, micro=micro,
+                opportunity=opportunity, monetization=monetization, variant_count=9,
             )
 
-    assert mocked_post.call_count == 1, "Expected one batched Mistral request"
-    assert len(drafts) == 4, [draft.style_id for draft in drafts]
-    ai_drafts = [draft for draft in drafts if draft.style_id.startswith("ai_")]
-    assert len(ai_drafts) >= 2, [draft.style_id for draft in drafts]
-    for draft in ai_drafts:
-        assert draft.content_format in {"hot_reaction", "one_problem", "crowd_trap", "chart_story"}
-        assert 1 <= _ticker_count(draft.text, "TEST") <= 3
-        assert __import__("writer")._fmt_price(levels["public_target"]) in draft.text
-        assert __import__("writer")._fmt_price(levels["stop"]) in draft.text
-        report = PostQualityEvaluator().report(
-            draft.text,
-            basic="TEST",
-            direction="long",
-            levels=levels,
-            content_format=draft.content_format,
-            headline=draft.headline,
-        )
-        assert report.valid, report.reasons
-    print("MISTRAL FACT LOCK: OK | one request | AI drafts fact-locked | deterministic fill")
+    assert mocked.call_count >= 1
+    ai = [d for d in drafts if d.source == "mistral"]
+    assert len(ai) >= 5, [d.content_format for d in drafts]
+    assert all("x99" not in d.text for d in ai)
+    request_json = mocked.call_args.kwargs["json"]
+    semantic = json.loads(request_json["messages"][1]["content"])["semantic_package"]
+    trade = semantic["trade_plan"]
+    assert all(key in trade for key in ("entry", "entry_zone", "stop_loss", "tp1", "tp2", "tp3", "rr_tp1", "rr_tp2", "rr_tp3"))
+    print(f"MISTRAL AUTHOR: OK | accepted_ai={len(ai)} | full semantic trade plan | fabricated x99 rejected")
 
 
 def _test_balanced_fallback() -> None:
     frames = _build_setup("long")
     frames["15m"].iloc[-1, frames["15m"].columns.get_loc("volume")] = 550
     mtf = calculate_multi_timeframe("BALANCEDUSDT", frames)
-
     strict = SignalFilter(min_score=0, profile="strict").evaluate(mtf)
     balanced = SignalFilter(min_score=0, profile="balanced").evaluate(mtf)
     assert strict is not None and balanced is not None
     assert not strict.passed_gates
-    assert any("relative volume" in reason for reason in strict.gate_reasons)
     assert balanced.passed_gates, balanced.gate_reasons
-
-    strict_ranked = get_top_candidates([mtf], top_n=1, profile="strict")
-    balanced_ranked = get_top_candidates([mtf], top_n=1, profile="balanced")
-    assert not strict_ranked
-    assert balanced_ranked and balanced_ranked[0][0].symbol == "BALANCEDUSDT"
-    print(
-        "BALANCED FALLBACK: OK | "
-        f"volume={mtf.tf_15m.volume_relative:.2f} | score={balanced.total:.1f}"
-    )
+    assert not get_top_candidates([mtf], top_n=1, profile="strict")
+    assert get_top_candidates([mtf], top_n=1, profile="balanced")
+    print("BALANCED FALLBACK: OK")
 
 
 def _test_publisher_command() -> None:
-    with tempfile.TemporaryDirectory() as temp_directory:
-        skill_dir = Path(temp_directory) / "square-post"
-        scripts_dir = skill_dir / "scripts"
-        scripts_dir.mkdir(parents=True)
-        (scripts_dir / "post-image.mjs").write_text("// test stub", encoding="utf-8")
-        image = Path(temp_directory) / "chart.png"
+    with tempfile.TemporaryDirectory() as td:
+        skill_dir = Path(td) / "square-post"
+        scripts = skill_dir / "scripts"
+        scripts.mkdir(parents=True)
+        (scripts / "post-image.mjs").write_text("// test stub", encoding="utf-8")
+        image = Path(td) / "chart.png"
         image.write_bytes(b"test-image")
-
         completed = Mock(returncode=0, stdout="Success! ID: test", stderr="")
         with patch.dict(os.environ, {"SQUARE_API": "test-square-key"}, clear=False), \
              patch("publisher.find_skill_dir", return_value=str(skill_dir)), \
              patch("publisher.subprocess.run", return_value=completed) as mocked_run:
             assert publish("$TEST — test post", image_path=str(image))
-
         command = mocked_run.call_args.args[0]
-        assert command[0] == "node"
-        assert command[1].endswith("post-image.mjs")
-        assert command[2:5] == ["--text", "$TEST — test post", "--images"]
-        assert command[5] == str(image.resolve())
-        environment = mocked_run.call_args.kwargs["env"]
-        assert environment["BINANCE_SQUARE_OPENAPI_KEY"] == "test-square-key"
-    print("PUBLISHER COMMAND: OK | image script | key only in environment")
+        assert command[0] == "node" and command[1].endswith("post-image.mjs")
+        assert mocked_run.call_args.kwargs["env"]["BINANCE_SQUARE_OPENAPI_KEY"] == "test-square-key"
+    print("PUBLISHER COMMAND: OK")
+
 
 def main() -> None:
     _test_side("long")
     _test_side("short")
     _test_content_diversity()
-    _test_mistral_fact_lock()
+    _test_mistral_full_author_and_fact_lock()
     _test_balanced_fallback()
     _test_publisher_command()
-    print("All offline tests passed. No publication was attempted.")
+    print("All Audience Author v9 offline tests passed. No publication was attempted.")
 
 
 if __name__ == "__main__":

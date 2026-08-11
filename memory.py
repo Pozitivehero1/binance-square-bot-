@@ -289,7 +289,11 @@ class PostMemory:
                 "levels": {
                     key: float(value)
                     for key, value in (levels or {}).items()
-                    if key in {"entry", "decision", "tp1", "tp2", "tp3", "stop", "risk_reward"}
+                    if key in {
+                        "entry", "decision", "plan_entry", "entry_zone_low", "entry_zone_high",
+                        "tp1", "tp2", "tp3", "stop", "risk_reward",
+                        "rr_tp1", "rr_tp2", "rr_tp3", "public_rr", "public_risk_pct",
+                    }
                     and isinstance(value, (int, float))
                 },
                 "market_price": float(market_price) if isinstance(market_price, (int, float)) else None,
