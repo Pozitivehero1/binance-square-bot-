@@ -25,6 +25,13 @@ jobs:
       DRY_RUN: "0"
       SQUARE_SKILL_DIR: ${{ github.workspace }}/.agents/skills/square-post
 
+      # v10 Shadow Learning: collect real public post performance, but do not
+      # let affinity alter candidate ranking yet.
+      SQUARE_PROFILE_UID: "6w3LNrVCJ9O4VGhRSf6oug"
+      LEARNING_ONLY: "1"
+      STATS_REFRESH_PAGES: "4"
+      ANALYTICS_TZ_OFFSET: "3"
+
       # External cron may call this workflow every ~20 minutes. The bot itself
       # decides whether the current market deserves a publication.
       ENABLE_PACING_LIMITS: "0"
@@ -153,6 +160,11 @@ jobs:
           if [ -f config_check.py ]; then
             python config_check.py --publishing
           fi
+
+      - name: Refresh Square performance history
+        continue-on-error: true
+        run: |
+          python collect_stats.py --pages "$STATS_REFRESH_PAGES"
 
       - name: Run bot
         run: |

@@ -1,4 +1,4 @@
-"""Run the practical offline v9.1 regression suite.
+"""Run the practical offline v10 shadow-learning regression suite.
 
 Set RUN_STRESS_TESTS=1 to append the longer repetition stress tests.
 """
@@ -22,6 +22,7 @@ STANDARD_TESTS = [
     "presentation_test.py",
     "visual_test.py",
     "cron_test.py",
+    "analytics_test.py",
     "self_test.py",
 ]
 
@@ -43,7 +44,7 @@ def main() -> int:
             print(f"FAILED: {test}")
             return result.returncode
 
-    print("\nALL V9.1 STANDARD OFFLINE TESTS PASSED")
+    print("\nALL V10 STANDARD OFFLINE TESTS PASSED")
     if tests == STANDARD_TESTS:
         print("Long repetition stress tests are available with RUN_STRESS_TESTS=1 python run_tests.py")
     return 0

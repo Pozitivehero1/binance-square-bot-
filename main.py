@@ -49,6 +49,7 @@ from trade_plan import plan_summary
 from event_writer import (
     event_decision_level, generate_event_candidates, rank_event_candidates,
 )
+from performance_store import record_publication
 
 logger = setup_logging()
 
@@ -1262,6 +1263,34 @@ def _run_once() -> int:
         if not published:
             logger.error("Publication failed")
             return 2
+
+        try:
+            record_publication(
+                post_id=published.post_id,
+                symbol=basic,
+                market_symbol=symbol,
+                text=post_text,
+                lane=lane,
+                direction=best_score.direction if plan_valid else "observation",
+                content_format=selected_post.content_format,
+                visual_style=selected_post.visual_style,
+                event_class=opportunity.event_class,
+                writer_source=selected_post.source,
+                signal_type=selected_post.signal_type,
+                opportunity_score=opportunity.score,
+                audience_demand=opportunity.audience_demand,
+                attention_score=attention.score,
+                micro_freshness=micro.score,
+                w2e_market_score=monetization.score,
+                change_5m=micro.change_5m,
+                change_15m=attention.change_15m,
+                volume_5m=micro.volume_spike_5m,
+                volume_15m=attention.volume_spike,
+                public_rr=levels.get("public_rr") if plan_valid else None,
+                decision_mode=str(levels.get("decision_mode", "")) if plan_valid else "observation",
+            )
+        except Exception as exc:
+            logger.warning("Could not record publication analytics metadata: %s", exc)
 
         add_published(symbol)
         memory.add_post(

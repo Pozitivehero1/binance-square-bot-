@@ -1,35 +1,19 @@
-Audience Author v9.1 Dual-Lane — offline verification
-Date: 2026-08-11
+Binance Square Bot v10 Shadow Learning — offline validation
+Date: 2026-08-12
 
-STANDARD SUITE
-- attention_test.py: PASS
-- micro_attention_test.py: PASS
-- opportunity_test.py: PASS
-- dual_lane_test.py: PASS
-- event_author_test.py: PASS
-- event_visual_test.py: PASS
-- trade_plan_test.py: PASS
-- w2e_test.py: PASS
-- human_copy_test.py: PASS
-- emoji_test.py: PASS
-- presentation_test.py: PASS
-- visual_test.py: PASS
-- cron_test.py: PASS
-- self_test.py: PASS
+PASS: Python compile (all modules)
+PASS: v9.1 standard regression suite
+PASS: v9.1 150-cycle repetition stress test (max similarity 0.410 < 0.46)
+PASS: event repetition stress test (max similarity 0.243)
+PASS: public Square profile payload parser
+PASS: real HAR profile response parsed offline (20 posts, views/likes/comments/quotes/shares)
+PASS: analytics persistence + public import
+PASS: dashboard JSON builder
+PASS: dashboard JavaScript syntax check
+PASS: run.yml YAML parse
+PASS: dashboard.yml YAML parse
+PASS: publication metadata record path
 
-Key checks
-- Technical-gate bypass for fresh EVENT candidate: PASS
-- Observation-only EVENT cannot invent LONG/SHORT/entry/SL/TP: PASS
-- EVENT with valid plan receives entry zone + stop + TP1/TP2/TP3 + R/R: PASS
-- Fabricated numeric fact (x99) blocked: PASS
-- Observation-only chart renders without fake TP/SL: PASS
-- Sparse contextual emoji test: 18/100 decorated, no push-pin: PASS
-- Trade plan R/R, risk, no-fake-retest guards: PASS
-- Mistral semantic trade plan / fact lock: PASS
-- GitHub cron overlap/state safety: PASS
-
-Stress tests executed separately on the same v9.1 core
-- TRADE repetition: 150 cycles, 20 accepted, 130 intentionally skipped by similarity gate, max accepted similarity 0.410 (< 0.46): PASS
-- EVENT repetition: 40 cycles, 12 accepted, max accepted similarity 0.243 (< 0.46): PASS
-
-No real Binance Square publication was attempted during offline tests.
+No Binance publication was attempted during validation.
+No private cookie or authorization header is required by the public stats collector.
+LEARNING_ONLY=1: analytics does not alter v9.1 publishing decisions.

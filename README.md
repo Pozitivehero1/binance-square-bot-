@@ -199,3 +199,11 @@ LANE WINNER=TRADE symbol=XRPUSDT ... plan=valid
 - `.github/workflows/run.yml` — готовый workflow.
 
 `CHANGES_V9_1.md` содержит краткий список изменений. Ни один offline-тест не публикует посты в Binance.
+
+## v10 Shadow Learning dashboard
+
+v10 adds a public-statistics feedback loop without changing v9.1 publication ranking. `collect_stats.py` reads the public Square profile metrics into `state/performance_history.json`; `dashboard_builder.py` exports the static dashboard data.
+
+The web UI lives in `dashboard/` and is deployed by `.github/workflows/dashboard.yml`. In GitHub open **Settings → Pages**, choose **GitHub Actions** as the source, then manually run **Square Analytics Dashboard** once. After that it refreshes hourly.
+
+The dashboard never receives `SQUARE_API` or `MISTRAL_API`. It contains only public Square post data plus the bot's non-secret scores and metadata.
