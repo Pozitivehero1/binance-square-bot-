@@ -1,112 +1,195 @@
-# Binance Square Bot — Audience Author v9.1 Dual-Lane
+# Binance Square Bot — v10.1 Adaptive W2E Proxy
 
-Автоматический Binance Square-бот, который разделяет две разные задачи: **найти хорошую сделку** и **найти событие, которое действительно интересно аудитории прямо сейчас**. В v9.1 эти задачи больше не блокируют друг друга.
+Production-oriented Binance Square bot for `PozitiveHero`. The objective is not raw posting volume: it is to publish **fresh, useful, tradable content** that has a better chance to earn reach and to lead readers into a qualified market interaction.
 
-## Архитектура
+> Important: the bot cannot guarantee a specific number of views or a fixed W2E payout. It optimizes the measurable funnel and keeps hard factual/risk gates.
 
-### TRADE lane
+## What changed in v10.1
 
-Используется, когда рынок даёт нормальную торговую геометрию. Python рассчитывает и проверяет:
+### 1. Adaptive ranking is ON
 
-- направление;
-- entry и entry zone;
+v10 collected real public Square performance in `state/performance_history.json`. v10.1 now uses that history as a **bounded nudge** on top of the live market engine.
+
+The adaptive layer learns:
+
+- ticker affinity — which symbols historically perform better on this account;
+- hour affinity — which UTC+3 publishing hours historically perform better;
+- lane affinity — EVENT vs TRADE performance;
+- relative breakout rate;
+- recency decay — recent performance weighs more than old performance;
+- exploration — strong new tickers still get a chance;
+- saturation — repeatedly posting the same winner is penalized.
+
+Historical performance cannot invent a setup or bypass technical, factual, liquidity, risk, quality or reach gates. Total adaptive influence is capped.
+
+Default controls:
+
+```env
+LEARNING_ONLY=0
+ENABLE_ADAPTIVE_RANKING=1
+ADAPTIVE_MIN_MATURE_SAMPLES=80
+ADAPTIVE_LOOKBACK_DAYS=14
+ADAPTIVE_HALF_LIFE_DAYS=7
+ADAPTIVE_MAX_TOTAL=14
+ADAPTIVE_TICKER_MAX=10
+ADAPTIVE_HOUR_MAX=5
+ADAPTIVE_LANE_MAX=2.5
+ADAPTIVE_BREAKOUT_MAX=3
+ADAPTIVE_EXPLORATION_MAX=2.5
+ADAPTIVE_SATURATION_MAX=5
+```
+
+If the analytics cache disappears or there are fewer than 80 mature samples, adaptive ranking automatically disables itself until enough data returns.
+
+### 2. W2E Proxy ranking
+
+We do not have an automated per-post W2E-revenue feed, so v10.1 **does not pretend it can learn directly from USDC**. Instead it adds a small, capped W2E proxy based on observable market qualities:
+
+- liquidity and trading activity;
+- current audience demand;
+- event freshness;
+- actionability;
+- valid public trade plan when one exists;
+- non-overextended entry quality.
+
+This proxy is deliberately smaller than the live market opportunity score.
+
+```env
+W2E_PROXY_MAX_BONUS=5
+W2E_PROXY_MAX_PENALTY=3
+```
+
+### 3. DeepSeek V4 Pro primary, Mistral fallback
+
+Python remains the analyst and risk manager. The LLM only writes prose from Python-locked facts.
+
+Primary author:
+
+```env
+ORCAROUTER_BASE_URL=https://api.orcarouter.ai/v1
+ORCAROUTER_MODEL=deepseek/deepseek-v4-pro-free
+ORCAROUTER_API_KEY=...
+```
+
+Fallback:
+
+```env
+MISTRAL_API=...
+MISTRAL_MODEL=mistral-small-latest
+```
+
+Routing is strict:
+
+1. DeepSeek through OrcaRouter is tried first.
+2. If the primary API is unavailable/unusable (timeout, HTTP error, malformed API response), Mistral is called.
+3. If DeepSeek responds normally but its prose fails the factual/content validator, the bot retries the primary author rather than silently using Mistral as a style substitute.
+4. Deterministic copy remains the last outage-safe fallback.
+
+### 4. No direct engagement/tip begging
+
+The writer prompt and validator reject direct solicitation such as requests for likes, comments, follows, donations/tips or author rewards. The bot can benefit from Binance creator monetization features naturally, but it does not turn posts into donation or engagement bait.
+
+### 5. TRADE + EVENT dual lane stays
+
+#### TRADE lane
+
+Python owns and validates:
+
+- LONG/SHORT direction;
+- entry and entry zone;
 - stop loss;
 - TP1 / TP2 / TP3;
-- R/R каждой цели;
-- процент риска;
-- состояние сделки (`decision_now`, `waiting_retest`, `waiting_breakout`, `waiting_breakdown`).
+- R/R;
+- risk percentage;
+- state of the setup (`decision_now`, retest/breakout/breakdown states).
 
-Только после этого Mistral пишет пост. Все торговые числа принадлежат Python и не могут быть изменены моделью.
+The author cannot change those values.
 
-### EVENT lane
+#### EVENT lane
 
-Весь preliminary shortlist проходит отдельную audience/event-оценку **даже если ADX, R/R или relative volume не прошли technical gates**.
+A fresh audience event is evaluated independently from strict ADX/R/R gates. If there is no valid public trade plan, the post becomes `OBSERVATION_ONLY`; the writer may not manufacture LONG/SHORT, entry, SL or targets.
 
-EVENT lane учитывает:
+This keeps discovery broad without turning every market event into a fake signal.
 
-- относительный audience demand;
-- 5m micro freshness;
-- 15m attention;
-- скорость/качество свежего движения;
-- насыщение уже состоявшегося пампа/дампа;
-- рыночную пригодность для W2E;
-- технический score только как небольшой контекст, а не как hard gate.
+## AI fact lock
 
-Это исправляет ситуацию, когда популярный/интересный тикер даже не доходил до audience engine из-за одного технического порога.
+Every AI candidate is checked for:
 
-## Если события хватает, а сделки нет
+- correct cashtag in the headline;
+- no fabricated numbers;
+- correct direction;
+- correct entry/stop/TP values;
+- no future guarantees;
+- no invented news, whales, liquidations or reasons for movement;
+- state coherence (for example, no “wait for retest” if price is already at the level);
+- no hashtags by default;
+- no direct donation/like/comment/follow solicitation;
+- similarity to recent posts;
+- feed appeal / quality / conversion intent.
 
-Это теперь нормальный режим, а не ошибка.
+## Audience-first market selection
 
-Если public trade plan не проходит проверку, EVENT lane выставляет:
+The broad scan uses 5m freshness plus 15m/1h context. The shortlist reserves room for:
+
+- liquid/high-demand tickers;
+- fresh events;
+- technically strong setups.
+
+Huge volume anomalies saturate instead of dominating the score. A stale `x30` volume spike is not automatically better than a fresh `x4` event.
+
+## Dashboard / analytics
+
+`collect_stats.py` reads public Square post metrics and stores them in:
 
 ```text
-optional_trade_plan.available=false
-OBSERVATION_ONLY
+state/performance_history.json
 ```
 
-Mistral в таком посте **не имеет права** придумывать LONG/SHORT, entry, stop или TP. Он пишет наблюдение: что изменилось, почему тикер стоит открыть, какую реальную цену/зону стоит смотреть, почему пока нет чистой сделки.
+The dashboard shows:
 
-Если public plan валиден, Mistral получает полный пакет:
+- views and engagement;
+- 30m / 2h / 6h / 24h milestones;
+- ticker affinity;
+- hour affinity;
+- EVENT vs TRADE;
+- relative breakout rate;
+- absolute 300+ rate;
+- adaptive mode status;
+- AI author performance (DeepSeek / Mistral / deterministic).
+
+The dashboard never receives `SQUARE_API`, `ORCAROUTER_API_KEY` or `MISTRAL_API`.
+
+## GitHub setup
+
+Replace the current repository contents with this archive. Keep the same repository/branch so the existing GitHub Actions cache can restore the accumulated analytics state.
+
+Required GitHub Secrets:
 
 ```text
-entry
-entry_zone_low / entry_zone_high
-stop_loss
-TP1
-TP2
-TP3
-R/R TP1 / TP2 / TP3
-risk_pct
+SQUARE_API
+ORCAROUTER_API_KEY
+MISTRAL_API
 ```
 
-Но даже тогда EVENT-пост не обязан превращаться в сухой сигнал.
+`MISTRAL_API` remains the fallback key. `OPENAI_API_KEY` is optional and not required for the author chain.
 
-## Mistral — автор, Python — редактор фактов
+The publishing workflow is already in:
 
-По умолчанию `CONTENT_MODE=ai_author`.
+```text
+.github/workflows/run.yml
+```
 
-Mistral получает semantic package и последние публикации, которые нельзя копировать. Он сам выбирает хук, ритм, структуру и то, какие факты упомянуть. После этого Python проверяет:
+Your external cron can keep triggering `workflow_dispatch` at the same cadence as before. The cadence is a **market scan frequency**, not a promise to publish every run.
 
-- cashtag в первой строке;
-- отсутствие выдуманных чисел;
-- отсутствие выдуманных новостей/причин движения/китов/ликвидаций;
-- корректность LONG/SHORT, если public plan существует;
-- корректность entry/SL/TP;
-- отсутствие торгового призыва в observation-only;
-- отсутствие обещаний будущего;
-- отсутствие роботизированных шаблонов;
-- similarity к недавним постам;
-- feed appeal и W2E conversion score.
+The dashboard workflow is:
 
-Если текст не проходит — берётся другой вариант. Deterministic copy остаётся только safety net.
+```text
+.github/workflows/dashboard.yml
+```
 
-## Audience-first shortlist
+It can be run manually whenever you want fresh GitHub Pages data.
 
-Сканирование идёт по 5m/15m/1h, затем shortlist собирается из трёх корзин:
-
-- **Audience** — ликвидные/активно торгуемые тикеры;
-- **Live Event** — свежие события;
-- **Trade Quality** — технически сильные сетапы, чтобы audience/event логика не вытесняла хорошие сделки.
-
-4h/1d подгружаются только для shortlist. Огромный `volume xN` имеет насыщаемый вес: `x30` не считается автоматически в несколько раз лучше `x4-x8`. Stale-события штрафуются.
-
-## Визуалы
-
-TRADE-пост может показывать полный торговый план. Observation-only EVENT-пост не рисует выдуманные TP/SL: остаётся чистый график, реальная ключевая цена и контекст активности.
-
-Используются разные композиции: `minimal_chart`, `event_chart`, `trade_map`, `scenario_chart`, `context_chart`, `clean_chart`. Повтор одинакового формата/визуала получает penalty.
-
-## Быстрый запуск
-
-1. Залей содержимое архива в репозиторий.
-2. Добавь GitHub Secrets:
-   - `SQUARE_API`;
-   - `MISTRAL_API`.
-3. Workflow уже находится в `.github/workflows/run.yml`.
-4. Внешний cron может запускать `workflow_dispatch` примерно раз в 20 минут. Это **частота сканирования**, а не обязанность публиковать каждые 20 минут.
-
-Локальная проверка:
+## Local validation
 
 ```bash
 python -m pip install -r requirements.txt
@@ -114,96 +197,26 @@ python config_check.py
 python run_tests.py
 ```
 
-Длинные stress-тесты повторяемости запускаются отдельно:
+Optional longer repetition tests:
 
 ```bash
 RUN_STRESS_TESTS=1 python run_tests.py
 ```
 
-По умолчанию локально `DRY_RUN=1`.
+Local default stays safe with `DRY_RUN=1`.
 
-## Основные настройки
+## Important files
 
-```env
-CONTENT_MODE=ai_author
-MISTRAL_MODEL=mistral-small-latest
-AI_VARIANTS=6
-EVENT_AI_VARIANTS=6
+- `main.py` — dual-lane selection + adaptive/W2E-proxy final ranking;
+- `adaptive.py` — ticker/hour/lane affinity, decay, exploration, saturation;
+- `ai_provider.py` — DeepSeek primary / Mistral fallback routing;
+- `writer.py` — fact-locked TRADE author/validator;
+- `event_writer.py` — fact-locked EVENT author/validator;
+- `trade_plan.py` — entry/zone/SL/TP1-3;
+- `opportunity.py` — live market/audience opportunity;
+- `monetization.py` — W2E proxy and conversion-intent scoring;
+- `performance_store.py` — analytics history and learning summaries;
+- `dashboard_builder.py` — static dashboard export;
+- `.github/workflows/run.yml` — production workflow.
 
-POST_MIN_CHARS=150
-POST_MAX_CHARS=560
-MAX_POST_SIMILARITY=0.46
-MIN_POST_QUALITY=84
-MIN_FEED_APPEAL=76
-MIN_CONVERSION_INTENT=75
-
-MIN_OPPORTUNITY_SCORE=62
-MIN_AUDIENCE_DEMAND=24
-MIN_W2E_MARKET_SCORE=56
-
-MIN_EVENT_SCORE=60
-EVENT_W2E_FLOOR=42
-EVENT_MIN_DEMAND=20
-EVENT_LANE_ADVANTAGE=1.5
-EVENT_MIN_POST_QUALITY=80
-EVENT_MIN_FEED_APPEAL=74
-EVENT_MIN_CONVERSION=72
-
-MIN_PUBLIC_PLAN_RR=1.30
-MIN_PUBLIC_TP3_RR=1.55
-MAX_PUBLIC_RISK_PCT=8.0
-
-TOP_SYMBOLS=120
-SHORTLIST_SIZE=36
-FINAL_CANDIDATES=20
-COOLDOWN_MIN=240
-```
-
-## Как читать новые логи
-
-TRADE lane:
-
-```text
-Candidate ... profile=strict/balanced ... plan_R3=... gate=...
-```
-
-EVENT lane:
-
-```text
-Event candidate TSTUSDT ... gate=fresh-event override plan=observation_only tech_gates=bypassed ...
-```
-
-Победитель:
-
-```text
-LANE WINNER=EVENT symbol=TSTUSDT ... plan=observation_only
-```
-
-или:
-
-```text
-LANE WINNER=TRADE symbol=XRPUSDT ... plan=valid
-```
-
-## Основные файлы
-
-- `main.py` — dual-lane orchestration и финальный выбор;
-- `opportunity.py` — TRADE opportunity + независимый audience EVENT score;
-- `event_writer.py` — Mistral author/validator для event-контента;
-- `writer.py` — Mistral author/validator для trade-контента;
-- `trade_plan.py` — entry / zone / stop / TP1-3;
-- `attention.py` — 15m attention + 5m micro freshness;
-- `monetization.py` — W2E-oriented market/copy scoring;
-- `chart.py` — визуалы;
-- `memory.py` — анти-повторы;
-- `.github/workflows/run.yml` — готовый workflow.
-
-`CHANGES_V9_1.md` содержит краткий список изменений. Ни один offline-тест не публикует посты в Binance.
-
-## v10 Shadow Learning dashboard
-
-v10 adds a public-statistics feedback loop without changing v9.1 publication ranking. `collect_stats.py` reads the public Square profile metrics into `state/performance_history.json`; `dashboard_builder.py` exports the static dashboard data.
-
-The web UI lives in `dashboard/` and is deployed by `.github/workflows/dashboard.yml`. In GitHub open **Settings → Pages**, choose **GitHub Actions** as the source, then manually run **Square Analytics Dashboard** once. After that it refreshes hourly.
-
-The dashboard never receives `SQUARE_API` or `MISTRAL_API`. It contains only public Square post data plus the bot's non-secret scores and metadata.
+See `CHANGES_V10_1.md` and `V10_1_SETUP.md` for the short upgrade guide.

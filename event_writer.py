@@ -1,18 +1,9 @@
-"""Audience-event writer for Binance Square Audience Author v9.1.
+"""Fact-locked Binance Square EVENT writer — v10.1 Adaptive W2E Proxy.
 
-This module is intentionally separate from the trade writer.
-
-Trade lane:
-    Python must own a valid entry/stop/TP1/TP2/TP3 plan.
-
-Event lane:
-    Python first decides that a ticker/event is worth discussing.  If the
-    public trade plan is valid it is passed to Mistral as optional material;
-    if not, Mistral must write an observation-only post and may not invent a
-    directional call, entry, stop or targets.
-
-The point is to keep audience discovery independent from ADX/R/R hard gates
-without sacrificing factual safety.
+Python decides whether an audience event is worth discussing and owns any
+optional trade plan. DeepSeek V4 Pro is the primary prose author; Mistral is
+used only when the primary API is unavailable. Observation-only posts may not
+invent direction, entry, stop or targets.
 """
 from __future__ import annotations
 
@@ -24,9 +15,9 @@ import os
 import re
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-import requests
 
 from attention import AttentionSnapshot, MicroAttentionSnapshot, format_turnover
+from ai_provider import has_ai_provider, request_candidates
 from engagement import FeedAppealEvaluator
 from memory import PostMemory
 from quality import QualityReport
@@ -74,6 +65,8 @@ _FORBIDDEN_PATTERNS = (
     r"\bгарант\w*", r"\bбез\s+риска\b", r"\bточно\s+(?:выраст|упад|пойд)",
     r"\bсрочно\s+(?:покуп|прода)", r"\b100\s*%", r"\bинсайд\w*", r"\bлистинг\w*",
     r"\bкиты\s+(?:покуп|прода)", r"\bпамп\s+неизбеж", r"\bлегк\w+\s+деньг",
+    r"\bдонат\w*", r"\bчаев\w*", r"\btip\b", r"поддерж\w+\s+автор",
+    r"постав\w+\s+лайк", r"остав\w+\s+коммент", r"подпиш\w+\s+на",
 )
 _PREDICTIVE_PATTERNS = (
     r"\bпокупатели\s+удержат\b", r"\bпродавцы\s+удержат\b",
@@ -87,7 +80,7 @@ _ROBOTIC = (
 
 
 def _api_key() -> str:
-    return (os.getenv("MISTRAL_API") or os.getenv("MISTRAL_API_KEY") or "").strip()
+    return "configured" if has_ai_provider() else ""
 
 
 def _content_mode() -> str:
@@ -276,8 +269,7 @@ def _request_ai_candidates(
     recent_posts: Sequence[str],
     attempt: int,
 ) -> List[dict]:
-    key = _api_key()
-    if not key:
+    if not has_ai_provider():
         return []
     plan_available = bool(package.get("optional_trade_plan", {}).get("available"))
     payload = {
@@ -297,6 +289,7 @@ def _request_ai_candidates(
             "Не используй одинаковую композицию, открывающую фразу и финал из recent_posts_to_avoid.",
             "Не пиши шаблон 'жду подтверждения → уровень → цель → отмена' просто по привычке.",
             "Не добавляй новости, китов, ликвидации, инсайды, причины движения и другие факты, которых нет в пакете.",
+            "Не выпрашивай лайки, комментарии, подписки, донаты или чаевые и не упоминай Write to Earn/вознаграждение автора.",
             "Не добавляй хэштеги и эмодзи. Код сам решит, нужен ли один акцент.",
             "Вопрос в конце не обязателен и допустим максимум в одном варианте партии.",
             f"Длина каждого поста {POST_MIN_CHARS}-{POST_MAX_CHARS} символов.",
@@ -314,38 +307,21 @@ def _request_ai_candidates(
             ]
         },
     }
-    body = {
-        "model": os.getenv("MISTRAL_MODEL", "mistral-small-latest"),
-        "messages": [
-            {
-                "role": "system",
-                "content": (
-                    "Ты автор трейдерского аккаунта Binance Square. Пиши живые и разные посты из строго заданных фактов. "
-                    "Никаких выдуманных рыночных данных и обещаний. Если чистой сделки нет, ценность поста — в наблюдении, "
-                    "а не в искусственно придуманном сигнале. Верни только валидный JSON."
-                ),
-            },
-            {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
-        ],
-        "response_format": {"type": "json_object"},
-        "temperature": AI_TEMPERATURE,
-        "presence_penalty": 0.65,
-        "frequency_penalty": 0.50,
-        "max_tokens": 3200,
-    }
-    response = requests.post(
-        "https://api.mistral.ai/v1/chat/completions",
-        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-        json=body,
+    result = request_candidates(
+        system_prompt=(
+            "Ты автор трейдерского аккаунта Binance Square. Пиши живые и разные посты из строго заданных фактов. "
+            "Никаких выдуманных рыночных данных и обещаний. Если чистой сделки нет, ценность поста — в наблюдении, "
+            "а не в искусственно придуманном сигнале. Не проси донаты, лайки, комментарии или подписки. "
+            "Верни только валидный JSON."
+        ),
+        user_payload=payload,
+        temperature=AI_TEMPERATURE,
+        max_tokens=3200,
         timeout=AI_TIMEOUT,
+        presence_penalty=0.65,
+        frequency_penalty=0.50,
     )
-    response.raise_for_status()
-    content = response.json()["choices"][0]["message"]["content"]
-    if isinstance(content, list):
-        content = "".join(str(item.get("text", "")) if isinstance(item, dict) else str(item) for item in content)
-    parsed = json.loads(_clean_json(str(content)))
-    candidates = parsed.get("candidates", []) if isinstance(parsed, dict) else []
-    return [item for item in candidates if isinstance(item, dict)]
+    return result.candidates
 
 
 def _decorate_headline(text: str, *, format_id: str, attention: AttentionSnapshot, micro: MicroAttentionSnapshot, index: int) -> Tuple[str, str]:
@@ -560,7 +536,7 @@ def generate_event_candidates(
                     attempt=attempt,
                 )
             except Exception as exc:
-                logger.warning("Mistral event-author attempt %s failed: %s", attempt, exc)
+                logger.warning("AI event-author attempt %s failed: %s", attempt, exc)
                 break
             for raw in raw_candidates:
                 fmt = str(raw.get("format_id", "")).strip()
@@ -574,7 +550,7 @@ def generate_event_candidates(
                     package=package,
                 )
                 if not valid:
-                    logger.debug("Rejected Mistral event candidate %s: %s", fmt, "; ".join(reasons))
+                    logger.debug("Rejected AI event candidate %s: %s", fmt, "; ".join(reasons))
                     continue
                 text, headline = _decorate_headline(
                     text,
@@ -585,21 +561,21 @@ def generate_event_candidates(
                 )
                 draft = GeneratedPost(
                     text=text,
-                    style_id=f"mistral_event_{fmt}_{len(drafts) % 5}",
+                    style_id=f"{str(raw.get('_provider', 'ai'))}_event_{fmt}_{len(drafts) % 5}",
                     signal_type=f"event_{opportunity.event_class}",
                     angle_title=str(opportunity.event_class).replace("_", " "),
                     content_format=fmt,
                     visual_style=EVENT_FORMAT_SPECS[fmt]["visual"],
                     headline=headline,
                     question_mode="optional",
-                    source="mistral_event",
+                    source=("deepseek_event" if str(raw.get("_provider", "")) == "deepseek_v4_pro" else "mistral_event"),
                 )
                 if all(PostMemory.compare_texts(draft.text, item.text) < 0.78 for item in drafts):
                     drafts.append(draft)
             if len(drafts) >= min(3, len(ai_formats)):
                 break
 
-    # Safety net.  Mistral remains the preferred source, but one API hiccup must
+    # Safety net.  AI remains the preferred source, but one API hiccup must
     # not make the market scanner fragile.
     for index, fmt in enumerate(formats):
         if len(drafts) >= max(6, min(count, 14)):

@@ -1,16 +1,13 @@
-"""Offline regression tests for Audience Author v9 public trade plans."""
+"""Offline regression tests for the public trade-plan state machine."""
 from __future__ import annotations
 
 from types import SimpleNamespace
 
 from trade_plan import build_public_trade_plan
-from writer import _fmt_price, _trade_sentences
+from writer import _fmt_price, _state_instruction
 
 
 def _indicator(*, price=0.1362, atr=0.0050):
-    # Resistance deliberately far away so current price becomes the public
-    # decision zone. This reproduces the class of bug seen in the TUT post:
-    # current price ~= published level, yet old copy said "wait for retest".
     return SimpleNamespace(
         price=price,
         atr=atr,
@@ -37,16 +34,10 @@ def main() -> None:
     assert plan["entry_zone_low"] <= plan["plan_entry"] <= plan["entry_zone_high"], plan
 
     key = _fmt_price(plan["decision"])
-    entry, invalidation = _trade_sentences(
-        "long", key, plan, attention=None, variant_index=0, format_id="hot_reaction"
-    )
-    combined = f"{entry} {invalidation}".lower().replace("ё", "е")
-    assert "ретест" not in combined
-    assert "после отката" not in combined
-    assert "на откате" not in combined
-    assert key in combined
-
-    # At-level state must never be described as a future retest.
+    instruction = _state_instruction(plan, "long").lower().replace("ё", "е")
+    assert "цена уже у рабочей зоны" in instruction
+    assert "будущий ретест" in instruction
+    assert key == "0.1362"
     assert plan["trade_state"] == "decision_now"
 
     # A wide stop should not be dressed up as a clean public setup.
@@ -54,10 +45,7 @@ def main() -> None:
     assert not wide["plan_valid"], wide
     assert any("public risk" in reason for reason in wide["plan_reasons"]), wide
 
-    print(
-        "TRADE PLAN: OK | at-level language | public RR guard | "
-        "risk guard | no fake retest/strength claims"
-    )
+    print("TRADE PLAN: OK | at-level state | public RR guard | risk guard")
 
 
 if __name__ == "__main__":

@@ -1,15 +1,14 @@
-"""Mistral-first, fact-locked Binance Square writer — Audience Author v9.
+"""Fact-locked Binance Square trade writer — v10.1 Adaptive W2E Proxy.
 
 Architecture:
     Python = analyst + risk manager
-    Mistral = author
+    DeepSeek V4 Pro (OrcaRouter) = primary author
+    Mistral = API fallback only
     Python = validator / final editor
 
-Unlike v8, Mistral receives a complete semantic package and writes the *whole*
-post from scratch.  It gets entry zone, stop loss, TP1/TP2/TP3, market pulse,
-BTC context and recent posts to avoid.  It is not allowed to calculate or alter
-any tradable number.  Invalid drafts are rejected and deterministic copy is used
-only as a fallback.
+The AI receives a complete semantic package and writes the whole post from
+scratch. Entry, stop, TP1/TP2/TP3 and every market number remain Python-owned.
+Invalid drafts are rejected; deterministic copy is the final outage safety net.
 """
 from __future__ import annotations
 
@@ -22,10 +21,10 @@ import os
 import re
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
-import requests
 from dotenv import load_dotenv
 
 from attention import AttentionSnapshot, MicroAttentionSnapshot, format_turnover
+from ai_provider import has_ai_provider, request_candidates
 from content_variation import SignalAngle, detect_signal_angles
 from memory import PostMemory
 from trade_plan import build_public_trade_plan
@@ -215,7 +214,7 @@ def _apply_headline_decoration(
 
 
 def _api_key() -> str:
-    return (os.getenv("MISTRAL_API") or os.getenv("MISTRAL_API_KEY") or "").strip()
+    return "configured" if has_ai_provider() else ""
 
 
 def _content_mode() -> str:
@@ -418,6 +417,8 @@ _FORBIDDEN_PATTERNS = (
     r"\bгарант\w*", r"\bбез\s+риска\b", r"\bточно\s+(?:выраст|упад|пойд)",
     r"\bсрочно\s+(?:покуп|прода)", r"\b100\s*%", r"\bинсайд\w*", r"\bлистинг\w*",
     r"\bкиты\s+(?:покуп|прода)", r"\bпамп\s+неизбеж", r"\bлегк\w+\s+деньг",
+    r"\bдонат\w*", r"\bчаев\w*", r"\btip\b", r"поддерж\w+\s+автор",
+    r"постав\w+\s+лайк", r"остав\w+\s+коммент", r"подпиш\w+\s+на",
 )
 _PREDICTIVE_PATTERNS = (
     r"\bпокупатели\s+удержат\b", r"\bпродавцы\s+удержат\b",
@@ -546,8 +547,7 @@ def _request_ai_candidates(
     recent_posts: Sequence[str],
     attempt: int,
 ) -> List[dict]:
-    key = _api_key()
-    if not key:
+    if not has_ai_provider():
         return []
 
     format_briefs = [{"format_id": fmt, "brief": FORMAT_SPECS[fmt]["brief"]} for fmt in formats]
@@ -567,6 +567,7 @@ def _request_ai_candidates(
             "Не утверждай будущее. Только условия: если/пока/при закреплении/при потере уровня.",
             "Следуй trade_plan.state_rule. Если цена уже у уровня, не обещай будущий ретест этого же уровня.",
             "Не используй штампы: 'направление идеи', 'граница ошибки', 'диапазон контроля', 'параметры сценария'.",
+            "Не выпрашивай лайки, комментарии, подписки, донаты или чаевые и не упоминай Write to Earn/вознаграждение автора.",
             "Не заканчивай каждый пост вопросом. В этой партии вопрос допустим максимум в одном варианте.",
             "Не добавляй хэштеги и эмодзи. Код сам решит, нужен ли один визуальный акцент.",
             f"Длина каждого поста {POST_MIN_CHARS}-{POST_MAX_CHARS} символов.",
@@ -579,38 +580,21 @@ def _request_ai_candidates(
             ]
         },
     }
-    body = {
-        "model": os.getenv("MISTRAL_MODEL", "mistral-small-latest"),
-        "messages": [
-            {
-                "role": "system",
-                "content": (
-                    "Ты автор трейдерского аккаунта Binance Square. Твоя задача — живой, разнообразный, полезный текст, "
-                    "который помогает читателю понять сделку. Все торговые числа уже рассчитаны программой: никогда не меняй их "
-                    "и не придумывай новые. Не обещай доходность и не дави на читателя. Верни только валидный JSON."
-                ),
-            },
-            {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
-        ],
-        "response_format": {"type": "json_object"},
-        "temperature": AI_TEMPERATURE,
-        "presence_penalty": 0.55,
-        "frequency_penalty": 0.45,
-        "max_tokens": 3200,
-    }
-    response = requests.post(
-        "https://api.mistral.ai/v1/chat/completions",
-        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-        json=body,
+    result = request_candidates(
+        system_prompt=(
+            "Ты автор трейдерского аккаунта Binance Square. Твоя задача — живой, разнообразный, полезный текст, "
+            "который помогает читателю понять сделку. Все торговые числа уже рассчитаны программой: никогда не меняй их "
+            "и не придумывай новые. Не обещай доходность, не дави на читателя и не проси донаты/лайки/комментарии. "
+            "Верни только валидный JSON."
+        ),
+        user_payload=payload,
+        temperature=AI_TEMPERATURE,
+        max_tokens=3200,
         timeout=AI_TIMEOUT,
+        presence_penalty=0.55,
+        frequency_penalty=0.45,
     )
-    response.raise_for_status()
-    content = response.json()["choices"][0]["message"]["content"]
-    if isinstance(content, list):
-        content = "".join(str(item.get("text", "")) if isinstance(item, dict) else str(item) for item in content)
-    parsed = json.loads(_clean_json(str(content)))
-    candidates = parsed.get("candidates", []) if isinstance(parsed, dict) else []
-    return [item for item in candidates if isinstance(item, dict)]
+    return result.candidates
 
 
 def _natural_state_line(levels: Dict[str, Any], direction: str, variant: int) -> str:
@@ -980,7 +964,7 @@ def generate_post_candidates(
                     attempt=attempt,
                 )
             except Exception as exc:
-                logger.warning("Mistral author attempt %s failed: %s", attempt, exc)
+                logger.warning("AI author attempt %s failed: %s", attempt, exc)
                 break
 
             for raw in raw_candidates:
@@ -1002,7 +986,7 @@ def generate_post_candidates(
                     index=index,
                     attention=attention,
                     micro=micro,
-                    source="mistral",
+                    source=("deepseek" if str(raw.get("_provider", "")) == "deepseek_v4_pro" else "mistral"),
                 )
                 if generated and all(PostMemory.compare_texts(generated.text, item.text) < 0.78 for item in drafts):
                     drafts.append(generated)

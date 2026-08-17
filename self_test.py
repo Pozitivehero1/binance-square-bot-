@@ -225,6 +225,8 @@ def _test_mistral_full_author_and_fact_lock() -> None:
             {"format_id": "no_chase", "text": f"$TEST двигается, но догонять его ценой плохого входа я не хочу\n\nИнтерес к LONG для меня начинается около {e}; ближайшая цель {t1}.\n\nСтоп {sl}. Если рынок не даёт этот сценарий, я остаюсь вне позиции."},
             {"format_id": "two_paths", "text": f"У $TEST сейчас два понятных исхода, и оба мне подходят\n\nЕсли зона {e} остаётся рабочей, рассматриваю LONG к {t1}. Если цена уходит к стопу {sl}, сценарий снимаю.\n\nНичего между этими условиями угадывать не требуется."},
             {"format_id": "risk_first", "text": f"В $TEST я сначала считаю, где ошибусь, а потом смотрю вверх\n\nВход {lo}–{hi}, стоп {sl}. План LONG: TP1 {t1}, TP2 {t2}, TP3 {t3}.\n\nЕсли цена нарушает условие риска, сделка для меня закончена."},
+            # This candidate must be rejected because direct tip/donation solicitation is not allowed by our policy guard.
+            {"format_id": "hot_take", "text": f"$TEST: рабочий LONG-сценарий уже рассчитан\n\nВход около {e}, TP1 {t1}, стоп {sl}. Если идея полезна, поддержи автора донатом."},
             # This candidate must be rejected because x99 does not exist in facts.
             {"format_id": "hot_take", "text": f"$TEST якобы получил объём x99 — но это проверка валидатора\n\nLONG от {e} к {t1}; стоп {sl}. Такой вариант не должен пройти."},
         ]
@@ -239,8 +241,8 @@ def _test_mistral_full_author_and_fact_lock() -> None:
             "OLDUSDT", "$OLD: недавно я ждал подтверждения уровня\n\nЭто тест памяти последних постов. Стоп 1, цель 2.",
             content_format="hot_take", visual_style="event_chart",
         )
-        with patch.dict(os.environ, {"CONTENT_MODE": "ai_author", "MISTRAL_API": "test-key"}, clear=False), \
-             patch("writer.requests.post", return_value=response) as mocked:
+        with patch.dict(os.environ, {"CONTENT_MODE": "ai_author", "ORCAROUTER_API_KEY": "", "MISTRAL_API": "test-key"}, clear=False), \
+             patch("ai_provider.requests.post", return_value=response) as mocked:
             drafts = generate_post_candidates(
                 symbol="TESTUSDT", basic="TEST", mtf=mtf, score=score, memory=memory,
                 levels=levels, attention=attention, micro=micro,
@@ -251,11 +253,12 @@ def _test_mistral_full_author_and_fact_lock() -> None:
     ai = [d for d in drafts if d.source == "mistral"]
     assert len(ai) >= 5, [d.content_format for d in drafts]
     assert all("x99" not in d.text for d in ai)
+    assert all("донат" not in d.text.lower() for d in ai)
     request_json = mocked.call_args.kwargs["json"]
     semantic = json.loads(request_json["messages"][1]["content"])["semantic_package"]
     trade = semantic["trade_plan"]
     assert all(key in trade for key in ("entry", "entry_zone", "stop_loss", "tp1", "tp2", "tp3", "rr_tp1", "rr_tp2", "rr_tp3"))
-    print(f"MISTRAL AUTHOR: OK | accepted_ai={len(ai)} | full semantic trade plan | fabricated x99 rejected")
+    print(f"AI AUTHOR FACT LOCK: OK | accepted_ai={len(ai)} | full semantic trade plan | fabricated x99 + donation solicitation rejected")
 
 
 def _test_balanced_fallback() -> None:
@@ -298,7 +301,7 @@ def main() -> None:
     _test_mistral_full_author_and_fact_lock()
     _test_balanced_fallback()
     _test_publisher_command()
-    print("All Audience Author v9.1 offline tests passed. No publication was attempted.")
+    print("All v10.1 core offline tests passed. No publication was attempted.")
 
 
 if __name__ == "__main__":

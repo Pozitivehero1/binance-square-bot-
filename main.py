@@ -1,12 +1,12 @@
-"""Main orchestration for Binance Square Audience Author v9.1 Dual-Lane.
+"""Main orchestration for Binance Square Bot v10.1 Adaptive W2E Proxy.
 
 Pipeline:
 1. Scan a broad liquid USDT universe on 5m/15m/1h.
-2. Rank by audience demand and *fresh* market attention, not raw x-volume.
-3. Fetch 4h/1d only for the strongest live opportunities.
-4. Build a Python-owned entry zone / stop / TP1 / TP2 / TP3 plan.
-5. Let Mistral write the whole post from the fact package.
-6. Fact-check, anti-template rank, render a rotating chart and publish.
+2. Rank by live audience demand/freshness and W2E-oriented market quality.
+3. Apply a bounded historical ticker/hour/lane adjustment with exploration and saturation protection.
+4. Build a Python-owned entry zone / stop / TP1 / TP2 / TP3 plan when valid.
+5. Let DeepSeek V4 Pro write from locked facts; use Mistral only if the primary API is unavailable.
+6. Fact-check, anti-template rank, render a chart and publish.
 """
 from __future__ import annotations
 
@@ -50,6 +50,7 @@ from event_writer import (
     event_decision_level, generate_event_candidates, rank_event_candidates,
 )
 from performance_store import record_publication
+from adaptive import AdaptiveAdjustment, score_adaptive
 
 logger = setup_logging()
 
@@ -84,6 +85,8 @@ EVENT_MIN_POST_QUALITY = float(os.getenv("EVENT_MIN_POST_QUALITY", "80"))
 EVENT_MIN_FEED_APPEAL = float(os.getenv("EVENT_MIN_FEED_APPEAL", "74"))
 EVENT_MIN_CONVERSION = float(os.getenv("EVENT_MIN_CONVERSION", "72"))
 PRELIM_MIN_SCORE = float(os.getenv("PRELIM_MIN_SCORE", "38"))
+W2E_PROXY_MAX_BONUS = float(os.getenv("W2E_PROXY_MAX_BONUS", "5.0"))
+W2E_PROXY_MAX_PENALTY = float(os.getenv("W2E_PROXY_MAX_PENALTY", "3.0"))
 STRICT_BTC_FILTER = os.getenv("STRICT_BTC_FILTER", "0").lower() in {"1", "true", "yes"}
 DRY_RUN = os.getenv("DRY_RUN", "1").lower() in {"1", "true", "yes"}
 PUBLISH_IMAGES = os.getenv("PUBLISH_IMAGES", "1").lower() in {"1", "true", "yes"}
@@ -229,6 +232,15 @@ def _build_full_candidates(
     return candidates
 
 
+def _w2e_proxy_adjustment(monetization: MarketMonetizationSnapshot, *, plan_valid: bool) -> float:
+    """Small revenue-proxy nudge; market opportunity and factual safety still dominate."""
+    centered = (float(monetization.score) - 50.0) * 0.055
+    actionable = (float(monetization.actionability_score) - 50.0) * 0.035
+    plan = 0.8 if plan_valid else -0.8
+    value = centered + actionable + plan
+    return max(-W2E_PROXY_MAX_PENALTY, min(W2E_PROXY_MAX_BONUS, value))
+
+
 def _w2e_candidate_gate(
     score: SignalScore,
     attention: AttentionSnapshot,
@@ -295,6 +307,7 @@ def _choose_market_candidate(
     MarketOpportunitySnapshot,
     Dict[str, object],
     float,
+    AdaptiveAdjustment,
 ]]:
     """Choose the best TRADE-lane candidate among technically defensible setups."""
     frequencies = memory.signal_type_frequency(24)
@@ -399,16 +412,25 @@ def _choose_market_candidate(
             "stale_event": -7.0,
         }.get(opportunity.event_class, 0.0)
         demand_bonus = min(4.0, max(0.0, (opportunity.audience_demand - 65.0) / 8.0))
-        adjusted_score = opportunity.score - diversity_penalty + plan_bonus + event_bonus + demand_bonus
+        adaptive = score_adaptive(
+            symbol=get_base_asset(mtf.symbol), lane="TRADE", live_score=opportunity.score,
+            event_class=opportunity.event_class, micro_score=micro.score,
+        )
+        w2e_proxy_bonus = _w2e_proxy_adjustment(monetization, plan_valid=True)
+        adjusted_score = (
+            opportunity.score - diversity_penalty + plan_bonus + event_bonus + demand_bonus
+            + adaptive.total + w2e_proxy_bonus
+        )
 
         logger.info(
             "Candidate %s tech=%.1f attention=%.1f micro=%.1f/%s demand=%.1f w2e=%.1f opportunity=%.1f final=%.1f "
-            "gate=%s profile=%s angle=%s 5m=%+.2f%% 15m=%+.2f%% vol15=x%.2f vol5=x%.2f plan_R3=%.2f state=%s [%s]",
+            "adaptive=%+.1f w2e_proxy=%+.1f gate=%s profile=%s angle=%s 5m=%+.2f%% 15m=%+.2f%% vol15=x%.2f vol5=x%.2f "
+            "plan_R3=%.2f state=%s [%s] [%s]",
             mtf.symbol, score.total, attention.score, micro.score, micro.phase, opportunity.audience_demand,
-            monetization.score, opportunity.score, adjusted_score, gate_mode,
+            monetization.score, opportunity.score, adjusted_score, adaptive.total, w2e_proxy_bonus, gate_mode,
             "strict" if mtf.symbol in strict_symbols else "balanced", best_angle.id,
             micro.change_5m, attention.change_15m, attention.volume_spike, micro.volume_spike_5m,
-            float(levels.get("rr_tp3", levels.get("public_rr", 0.0))), levels.get("trade_state"), opportunity.reason,
+            float(levels.get("rr_tp3", levels.get("public_rr", 0.0))), levels.get("trade_state"), opportunity.reason, adaptive.reason,
         )
 
         if not gate_allowed:
@@ -434,15 +456,15 @@ def _choose_market_candidate(
                 continue
 
         eligible.append((
-            adjusted_score, mtf, score, funding, best_angle.id, attention, micro, monetization, opportunity, levels
+            adjusted_score, mtf, score, funding, best_angle.id, attention, micro, monetization, opportunity, levels, adaptive
         ))
 
     if not eligible:
         return None
 
     eligible.sort(key=lambda item: item[0], reverse=True)
-    selection_score, mtf, score, funding, _, attention, micro, monetization, opportunity, levels = eligible[0]
-    return mtf, score, funding, attention, micro, monetization, opportunity, levels, float(selection_score)
+    selection_score, mtf, score, funding, _, attention, micro, monetization, opportunity, levels, adaptive = eligible[0]
+    return mtf, score, funding, attention, micro, monetization, opportunity, levels, float(selection_score), adaptive
 
 
 def _event_candidate_gate(
@@ -525,6 +547,7 @@ def _choose_event_candidate(
     MarketOpportunitySnapshot,
     Dict[str, object],
     float,
+    AdaptiveAdjustment,
 ]]:
     """Choose an audience/event candidate independently of signal gates."""
     eligible = []
@@ -604,29 +627,37 @@ def _choose_event_candidate(
             rotation_adjustment -= 3.0
         elif recent_event_count == 0:
             rotation_adjustment += 1.5
-        selection_score = opportunity.score + event_bonus + demand_bonus + plan_bonus + rotation_adjustment
+        adaptive = score_adaptive(
+            symbol=get_base_asset(mtf.symbol), lane="EVENT", live_score=opportunity.score,
+            event_class=opportunity.event_class, micro_score=micro.score,
+        )
+        w2e_proxy_bonus = _w2e_proxy_adjustment(monetization, plan_valid=plan_valid)
+        selection_score = (
+            opportunity.score + event_bonus + demand_bonus + plan_bonus + rotation_adjustment
+            + adaptive.total + w2e_proxy_bonus
+        )
 
         logger.info(
             "Event candidate %s tech_context=%.1f attention=%.1f micro=%.1f/%s demand=%.1f w2e=%.1f event_score=%.1f final=%.1f "
-            "gate=%s plan=%s tech_gates=%s 5m=%+.2f%% 15m=%+.2f%% vol15=x%.2f vol5=x%.2f [%s]",
+            "adaptive=%+.1f w2e_proxy=%+.1f gate=%s plan=%s tech_gates=%s 5m=%+.2f%% 15m=%+.2f%% vol15=x%.2f vol5=x%.2f [%s] [%s]",
             mtf.symbol, score.total, attention.score, micro.score, micro.phase, opportunity.audience_demand,
-            monetization.score, opportunity.score, selection_score, gate_mode,
+            monetization.score, opportunity.score, selection_score, adaptive.total, w2e_proxy_bonus, gate_mode,
             "valid" if plan_valid else "observation_only",
             "pass" if score.passed_gates else "bypassed",
             micro.change_5m, attention.change_15m, attention.volume_spike, micro.volume_spike_5m,
-            opportunity.reason,
+            opportunity.reason, adaptive.reason,
         )
         if not allowed:
             continue
         eligible.append((
-            selection_score, mtf, score, attention, micro, monetization, opportunity, levels
+            selection_score, mtf, score, attention, micro, monetization, opportunity, levels, adaptive
         ))
 
     if not eligible:
         return None
     eligible.sort(key=lambda item: item[0], reverse=True)
-    selection_score, mtf, score, attention, micro, monetization, opportunity, levels = eligible[0]
-    return mtf, score, attention, micro, monetization, opportunity, levels, float(selection_score)
+    selection_score, mtf, score, attention, micro, monetization, opportunity, levels, adaptive = eligible[0]
+    return mtf, score, attention, micro, monetization, opportunity, levels, float(selection_score), adaptive
 
 
 def _best_event_post_variant(
@@ -1019,7 +1050,7 @@ def _run_once() -> int:
     if trade_chosen is not None:
         (
             trade_mtf, trade_score, trade_funding, trade_attention, trade_micro,
-            trade_monetization, trade_opportunity, trade_levels, trade_selection_score,
+            trade_monetization, trade_opportunity, trade_levels, trade_selection_score, trade_adaptive,
         ) = trade_chosen
     else:
         trade_selection_score = float("-inf")
@@ -1027,7 +1058,7 @@ def _run_once() -> int:
     if event_chosen is not None:
         (
             event_mtf, event_score, event_attention, event_micro, event_monetization,
-            event_opportunity, event_levels, event_selection_score,
+            event_opportunity, event_levels, event_selection_score, event_adaptive,
         ) = event_chosen
     else:
         event_selection_score = float("-inf")
@@ -1044,6 +1075,7 @@ def _run_once() -> int:
         opportunity = event_opportunity
         levels = event_levels
         selection_score = event_selection_score
+        adaptive = event_adaptive
     else:
         lane = "trade"
         best_mtf = trade_mtf
@@ -1055,6 +1087,7 @@ def _run_once() -> int:
         opportunity = trade_opportunity
         levels = trade_levels
         selection_score = trade_selection_score
+        adaptive = trade_adaptive
 
     symbol = best_mtf.symbol
     basic = get_base_asset(symbol)
@@ -1080,10 +1113,10 @@ def _run_once() -> int:
         )
 
     logger.info(
-        "BEST %s lane=%s tech=%.1f attention=%.1f micro=%.1f/%s demand=%.1f w2e=%.1f opportunity=%.1f "
+        "BEST %s lane=%s tech=%.1f attention=%.1f micro=%.1f/%s demand=%.1f w2e=%.1f opportunity=%.1f adaptive=%+.1f "
         "directional_bias=%s 5m=%+.2f%% 15m=%+.2f%% vol15=x%.2f vol5=x%.2f funding=%s",
         symbol, lane, best_score.total, attention.score, micro.score, micro.phase,
-        opportunity.audience_demand, monetization.score, opportunity.score, best_score.direction,
+        opportunity.audience_demand, monetization.score, opportunity.score, adaptive.total, best_score.direction,
         micro.change_5m, attention.change_15m, attention.volume_spike, micro.volume_spike_5m,
         f"{funding * 100:.4f}%" if funding is not None else "n/a",
     )
@@ -1288,6 +1321,12 @@ def _run_once() -> int:
                 volume_15m=attention.volume_spike,
                 public_rr=levels.get("public_rr") if plan_valid else None,
                 decision_mode=str(levels.get("decision_mode", "")) if plan_valid else "observation",
+                adaptive_total=adaptive.total,
+                ticker_affinity=adaptive.ticker_affinity,
+                hour_affinity=adaptive.hour_affinity,
+                lane_affinity=adaptive.lane_affinity,
+                adaptive_reason=adaptive.reason,
+                w2e_proxy_score=monetization.score,
             )
         except Exception as exc:
             logger.warning("Could not record publication analytics metadata: %s", exc)
@@ -1325,6 +1364,9 @@ def _run_once() -> int:
             quality_score=quality_report.score,
             w2e_market_score=monetization.score,
             opportunity_score=opportunity.score,
+            adaptive_total=adaptive.total,
+            ticker_affinity=adaptive.ticker_affinity,
+            hour_affinity=adaptive.hour_affinity,
             audience_demand=opportunity.audience_demand,
             event_class=opportunity.event_class,
             micro_freshness=micro.score,

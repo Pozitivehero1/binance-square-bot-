@@ -10,7 +10,7 @@
 <body>
   <div class="shell">
     <aside class="sidebar">
-      <div class="brand"><span class="brand-mark">S</span><div><b>Square Lab</b><small>Shadow Learning</small></div></div>
+      <div class="brand"><span class="brand-mark">S</span><div><b>Square Lab</b><small>Adaptive W2E Proxy</small></div></div>
       <nav>
         <button class="nav active" data-tab="overview">Обзор</button>
         <button class="nav" data-tab="posts">Посты</button>
@@ -30,9 +30,9 @@
         <div class="kpis" id="kpis"></div>
         <div class="grid two">
           <article class="panel"><div class="panel-head"><h2>Последние публикации</h2><span>реальные данные Square</span></div><div id="recentPosts" class="post-list"></div></article>
-          <article class="panel"><div class="panel-head"><h2>Сильные тикеры</h2><span>24h/current affinity</span></div><div id="topSymbols" class="bar-list"></div></article>
+          <article class="panel"><div class="panel-head"><h2>Сильные тикеры</h2><span>adaptive ticker affinity</span></div><div id="topSymbols" class="bar-list"></div></article>
         </div>
-        <article class="panel"><div class="panel-head"><h2>Лучшие часы</h2><span>UTC+3 · пока только наблюдение</span></div><div id="hourStrip" class="hour-strip"></div></article>
+        <article class="panel"><div class="panel-head"><h2>Лучшие часы</h2><span>UTC+3 · используется в ranking</span></div><div id="hourStrip" class="hour-strip"></div></article>
       </section>
 
       <section class="tab" id="posts">
@@ -43,7 +43,7 @@
       </section>
 
       <section class="tab" id="symbols">
-        <article class="panel"><div class="panel-head"><h2>ACCOUNT_TICKER_AFFINITY</h2><span>с confidence shrinkage к 50 при малой выборке</span></div><div class="table-wrap"><table><thead><tr><th>Тикер</th><th>Постов</th><th>Median</th><th>Average</th><th>Breakout rate</th><th>Affinity</th></tr></thead><tbody id="symbolsBody"></tbody></table></div></article>
+        <article class="panel"><div class="panel-head"><h2>ACCOUNT_TICKER_AFFINITY</h2><span>с confidence shrinkage к 50 при малой выборке</span></div><div class="table-wrap"><table><thead><tr><th>Тикер</th><th>Постов</th><th>Median</th><th>Average</th><th>Relative breakout</th><th>300+ rate</th><th>Affinity</th></tr></thead><tbody id="symbolsBody"></tbody></table></div></article>
       </section>
 
       <section class="tab" id="timing">
@@ -52,9 +52,10 @@
 
       <section class="tab" id="learning">
         <div class="grid two">
-          <article class="panel"><div class="panel-head"><h2>Shadow Learning</h2><span>не влияет на публикации</span></div><div id="learningStats" class="learning-card"></div></article>
+          <article class="panel"><div class="panel-head"><h2>Adaptive Learning</h2><span>история мягко корректирует ranking</span></div><div id="learningStats" class="learning-card"></div></article>
           <article class="panel"><div class="panel-head"><h2>TRADE vs EVENT</h2><span>сравнение зрелых постов</span></div><div id="laneStats" class="bar-list"></div></article>
         </div>
+        <article class="panel"><div class="panel-head"><h2>AI авторы</h2><span>DeepSeek primary · Mistral fallback</span></div><div id="authorStats" class="bar-list"></div></article>
         <article class="panel"><div class="panel-head"><h2>Что собирается</h2></div><div class="feature-grid"><div><b>Пост</b><span>тикер, lane, текст, формат</span></div><div><b>Рынок</b><span>freshness, volume, opportunity</span></div><div><b>Охват</b><span>30m, 2h, 6h, 24h</span></div><div><b>Реакции</b><span>likes, comments, quotes, shares</span></div></div></article>
       </section>
     </main>

@@ -61,8 +61,10 @@ def main() -> int:
     errors: list[str] = []
     warnings: list[str] = []
 
+    orca_key = bool((os.getenv("ORCAROUTER_API_KEY") or os.getenv("ORCA_API_KEY") or "").strip())
     mistral_key = bool((os.getenv("MISTRAL_API") or os.getenv("MISTRAL_API_KEY") or "").strip())
-    default_content_mode = "ai_author" if mistral_key else "deterministic"
+    ai_key = orca_key or mistral_key
+    default_content_mode = "ai_author" if ai_key else "deterministic"
     content_mode = os.getenv("CONTENT_MODE", default_content_mode).strip().lower()
     media_mode = os.getenv("PUBLISH_MEDIA_MODE", "chart").strip().lower()
     author_voice = os.getenv("AUTHOR_VOICE", "direct").strip().lower()
@@ -112,6 +114,14 @@ def main() -> int:
     max_daily = _number("MAX_POSTS_PER_DAY", "72", int, 1, 72, errors)
     min_reach = _number("MIN_REACH_SCORE", "68", float, 0, 100, errors)
     cooldown = _number("COOLDOWN_MIN", "240", int, 20, 10080, errors)
+    adaptive_max = _number("ADAPTIVE_MAX_TOTAL", "14", float, 0, 25, errors)
+    adaptive_ticker = _number("ADAPTIVE_TICKER_MAX", "10", float, 0, 15, errors)
+    adaptive_hour = _number("ADAPTIVE_HOUR_MAX", "5", float, 0, 10, errors)
+    adaptive_lane = _number("ADAPTIVE_LANE_MAX", "2.5", float, 0, 6, errors)
+    adaptive_explore = _number("ADAPTIVE_EXPLORATION_MAX", "2.5", float, 0, 5, errors)
+    adaptive_saturation = _number("ADAPTIVE_SATURATION_MAX", "5", float, 0, 10, errors)
+    w2e_proxy_bonus = _number("W2E_PROXY_MAX_BONUS", "5", float, 0, 10, errors)
+    w2e_proxy_penalty = _number("W2E_PROXY_MAX_PENALTY", "3", float, 0, 10, errors)
     if post_min is not None and post_max is not None and post_min >= post_max:
         errors.append("POST_MIN_CHARS должен быть меньше POST_MAX_CHARS")
     if None not in (hot_w2e, soft_w2e, min_w2e) and not (hot_w2e <= soft_w2e <= min_w2e):
@@ -132,8 +142,10 @@ def main() -> int:
     if os.getenv("PUBLISH_WINDOWS", "").strip() and not guard.windows:
         errors.append("PUBLISH_WINDOWS: не удалось распознать ни одного окна HH:MM-HH:MM")
 
-    if content_mode != "deterministic" and not mistral_key:
-        warnings.append("AI-режим выбран без Mistral-ключа: генератор автоматически использует human-first fallback")
+    if content_mode != "deterministic" and not ai_key:
+        warnings.append("AI-режим выбран без OrcaRouter/Mistral ключа: генератор автоматически использует deterministic fallback")
+    if content_mode != "deterministic" and not orca_key and mistral_key:
+        warnings.append("ORCAROUTER_API_KEY не задан: Mistral станет основным автором вместо резервного")
     if not publish_images and media_mode != "none":
         warnings.append("PUBLISH_IMAGES=0: режим медиа будет проигнорирован")
     if min_interval is not None and min_interval < 20:
@@ -153,7 +165,8 @@ def main() -> int:
     print("CONFIGURATION")
     print(f"  project={PROJECT_DIR}")
     print(f"  cron command=python {PROJECT_DIR / 'run_bot.py'}")
-    print(f"  CONTENT_MODE={content_mode} | Mistral key={'yes' if mistral_key else 'no'}")
+    primary = "DeepSeek V4 Pro / OrcaRouter" if orca_key else ("Mistral fallback-as-primary" if mistral_key else "deterministic")
+    print(f"  CONTENT_MODE={content_mode} | AI primary={primary} | Mistral fallback={'yes' if mistral_key else 'no'}")
     print(f"  AUTHOR_VOICE={author_voice} | ALLOW_TECHNICAL_FORMATS={int(allow_technical)}")
     print(
         f"  POST_VARIANTS={post_variants} | MIN_POST_QUALITY={min_quality} | "
@@ -177,6 +190,11 @@ def main() -> int:
         f"  ENABLE_PACING_LIMITS={int(enable_pacing)} | MIN_GLOBAL_INTERVAL_MIN={min_interval} | "
         f"MAX_POSTS_PER_DAY={max_daily} | ENABLE_REACH_GATE={int(enable_reach_gate)} | "
         f"MIN_REACH_SCORE={min_reach} | COOLDOWN_MIN={cooldown}"
+    )
+    print(
+        f"  ADAPTIVE enabled={int(_bool('ENABLE_ADAPTIVE_RANKING', '1'))} | learning_only={int(_bool('LEARNING_ONLY', '0'))} | "
+        f"max={adaptive_max} ticker={adaptive_ticker} hour={adaptive_hour} lane={adaptive_lane} "
+        f"explore={adaptive_explore} saturation={adaptive_saturation} | W2E proxy={w2e_proxy_bonus}/-{w2e_proxy_penalty}"
     )
     print(f"  PUBLISH_MEDIA_MODE={media_mode} | PUBLISH_IMAGES={int(publish_images)}")
     print(

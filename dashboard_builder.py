@@ -1,4 +1,4 @@
-"""Build dashboard/data.json from the shadow-learning performance store."""
+"""Build dashboard/data.json from the adaptive performance store."""
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -65,6 +65,8 @@ def build_dashboard_payload() -> dict:
                 "milestones": item.get("milestones") or {},
                 "scores": item.get("scores") or {},
                 "market": item.get("market") or {},
+                "adaptive": item.get("adaptive") or {},
+                "writer_source": str(item.get("writer_source") or ""),
                 "content_format": str(item.get("content_format") or ""),
                 "event_class": str(item.get("event_class") or ""),
                 "tracked_from_publish": bool(item.get("tracked_from_publish")),

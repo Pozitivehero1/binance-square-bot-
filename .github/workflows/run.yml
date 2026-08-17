@@ -19,16 +19,30 @@ jobs:
       PYTHONUNBUFFERED: "1"
 
       SQUARE_API: ${{ secrets.SQUARE_API }}
+      ORCAROUTER_API_KEY: ${{ secrets.ORCAROUTER_API_KEY }}
       MISTRAL_API: ${{ secrets.MISTRAL_API }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
       DRY_RUN: "0"
       SQUARE_SKILL_DIR: ${{ github.workspace }}/.agents/skills/square-post
 
-      # v10 Shadow Learning: collect real public post performance, but do not
-      # let affinity alter candidate ranking yet.
+      # v10.1 Adaptive W2E Proxy: real Square performance now softly nudges ranking.
+      # The market engine and hard quality/risk gates still remain authoritative.
       SQUARE_PROFILE_UID: "6w3LNrVCJ9O4VGhRSf6oug"
-      LEARNING_ONLY: "1"
+      LEARNING_ONLY: "0"
+      ENABLE_ADAPTIVE_RANKING: "1"
+      ADAPTIVE_MIN_MATURE_SAMPLES: "80"
+      ADAPTIVE_LOOKBACK_DAYS: "14"
+      ADAPTIVE_HALF_LIFE_DAYS: "7"
+      ADAPTIVE_MAX_TOTAL: "14"
+      ADAPTIVE_TICKER_MAX: "10"
+      ADAPTIVE_HOUR_MAX: "5"
+      ADAPTIVE_LANE_MAX: "2.5"
+      ADAPTIVE_BREAKOUT_MAX: "3"
+      ADAPTIVE_EXPLORATION_MAX: "2.5"
+      ADAPTIVE_SATURATION_MAX: "5"
+      W2E_PROXY_MAX_BONUS: "5"
+      W2E_PROXY_MAX_PENALTY: "3"
       STATS_REFRESH_PAGES: "4"
       ANALYTICS_TZ_OFFSET: "3"
 
@@ -39,8 +53,11 @@ jobs:
       MIN_REACH_SCORE: "68"
       COOLDOWN_MIN: "240"
 
-      # Audience Author v9.1: dual-lane TRADE + EVENT. Mistral writes from Python-locked facts.
+      # AI author: DeepSeek V4 Pro through OrcaRouter is primary. Mistral is used only
+      # when the primary API is unavailable/unusable. Python owns and validates facts.
       CONTENT_MODE: "ai_author"
+      ORCAROUTER_BASE_URL: "https://api.orcarouter.ai/v1"
+      ORCAROUTER_MODEL: "deepseek/deepseek-v4-pro-free"
       MISTRAL_MODEL: "mistral-small-latest"
       AI_VARIANTS: "6"
       AI_RETRIES: "2"

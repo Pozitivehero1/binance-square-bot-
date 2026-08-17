@@ -1,4 +1,4 @@
-"""Persistent shadow-learning store for real Binance Square post performance."""
+"""Persistent adaptive-learning store for real Binance Square post performance."""
 from __future__ import annotations
 
 from collections import defaultdict
@@ -14,7 +14,7 @@ from square_public_stats import PublicPostStats
 
 logger = logging.getLogger(__name__)
 ANALYTICS_FILE = resolve_state_file("ANALYTICS_FILE", "performance_history.json")
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 MAX_POSTS = max(100, int(os.getenv("ANALYTICS_MAX_POSTS", "1200")))
 LOCAL_TZ_OFFSET_HOURS = int(os.getenv("ANALYTICS_TZ_OFFSET", "3"))
 
@@ -118,6 +118,12 @@ def record_publication(
     volume_15m: float = 0.0,
     public_rr: Optional[float] = None,
     decision_mode: str = "",
+    adaptive_total: float = 0.0,
+    ticker_affinity: float = 50.0,
+    hour_affinity: float = 50.0,
+    lane_affinity: float = 50.0,
+    adaptive_reason: str = "",
+    w2e_proxy_score: float = 0.0,
 ) -> None:
     store = load_store()
     posts = store.setdefault("posts", {})
@@ -155,6 +161,14 @@ def record_publication(
                 "volume_15m": round(float(volume_15m or 0.0), 4),
                 "public_rr": round(float(public_rr), 3) if public_rr is not None else None,
                 "decision_mode": str(decision_mode or ""),
+            },
+            "adaptive": {
+                "total": round(float(adaptive_total or 0.0), 2),
+                "ticker_affinity": round(float(ticker_affinity or 50.0), 2),
+                "hour_affinity": round(float(hour_affinity or 50.0), 2),
+                "lane_affinity": round(float(lane_affinity or 50.0), 2),
+                "reason": str(adaptive_reason or ""),
+                "w2e_proxy": round(float(w2e_proxy_score or 0.0), 2),
             },
             "stats": previous.get("stats") or {},
             "milestones": previous.get("milestones") or {},
@@ -234,6 +248,7 @@ def merge_public_stats(rows: Iterable[PublicPostStats], profile_uid: str = "") -
                 "signal_type": "",
                 "scores": {},
                 "market": {},
+                "adaptive": {},
                 "milestones": {},
             }
             posts[row.post_id] = item
@@ -274,7 +289,7 @@ def _metric_views(item: dict) -> Optional[int]:
 def _affinity(rows: list[dict], account_median: float) -> dict:
     values = [v for item in rows if (v := _metric_views(item)) is not None]
     if not values:
-        return {"posts": 0, "median_views": 0, "avg_views": 0, "breakout_rate": 0, "affinity": 50}
+        return {"posts": 0, "median_views": 0, "avg_views": 0, "breakout_rate": 0, "absolute_300_rate": 0, "affinity": 50}
     med = float(median(values))
     avg = sum(values) / len(values)
     baseline = max(1.0, account_median)
@@ -283,11 +298,13 @@ def _affinity(rows: list[dict], account_median: float) -> dict:
     confidence = min(1.0, len(values) / 8.0)
     score = 50.0 + (raw - 50.0) * confidence
     breakout = sum(1 for v in values if v >= baseline * 2.0) / len(values) * 100.0
+    absolute_300 = sum(1 for v in values if v >= 300.0) / len(values) * 100.0
     return {
         "posts": len(values),
         "median_views": round(med, 1),
         "avg_views": round(avg, 1),
         "breakout_rate": round(breakout, 1),
+        "absolute_300_rate": round(absolute_300, 1),
         "affinity": round(score, 1),
     }
 
@@ -301,10 +318,12 @@ def build_learning_summary(store: Optional[dict] = None) -> dict:
     by_symbol: dict[str, list[dict]] = defaultdict(list)
     by_lane: dict[str, list[dict]] = defaultdict(list)
     by_hour: dict[int, list[dict]] = defaultdict(list)
+    by_author: dict[str, list[dict]] = defaultdict(list)
     for item in posts:
         symbol = _normalize_symbol(item.get("symbol", "")) or "UNKNOWN"
         by_symbol[symbol].append(item)
         by_lane[str(item.get("lane") or "UNKNOWN").upper()].append(item)
+        by_author[str(item.get("writer_source") or "UNKNOWN")].append(item)
         published = _parse_dt(item.get("published_at", ""))
         if published:
             local_hour = (published.hour + LOCAL_TZ_OFFSET_HOURS) % 24
@@ -319,11 +338,14 @@ def build_learning_summary(store: Optional[dict] = None) -> dict:
     lanes = [{"lane": lane, **_affinity(rows, account_median)} for lane, rows in by_lane.items()]
     lanes.sort(key=lambda row: row["affinity"], reverse=True)
     hours = [{"hour": hour, **_affinity(rows, account_median)} for hour, rows in sorted(by_hour.items())]
+    authors = [{"author": author, **_affinity(rows, account_median)} for author, rows in by_author.items()]
+    authors.sort(key=lambda row: (row["posts"], row["affinity"]), reverse=True)
     return {
-        "learning_only": str(os.getenv("LEARNING_ONLY", "1")).lower() in {"1", "true", "yes"},
+        "learning_only": str(os.getenv("LEARNING_ONLY", "0")).lower() in {"1", "true", "yes"},
         "account_median_24h": round(account_median, 1),
         "mature_samples": len(mature),
         "tickers": tickers,
         "lanes": lanes,
         "hours": hours,
+        "authors": authors,
     }
