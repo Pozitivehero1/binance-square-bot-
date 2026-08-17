@@ -15,3 +15,5 @@
 - DeepSeek OrcaRouter now retries transient 429/5xx with Retry-After/backoff before Mistral fallback.
 - PUBLIC PLAN R/R log precision increased to 3 decimals.
 - Automatic dashboard schedule remains hourly at minute 17.
+
+> Superseded by v11.1. The v11 historical bootstrap described above is disabled in v11.1 because it could associate an old same-ticker plan with a newer post. See `CHANGES_V11_1.md`.

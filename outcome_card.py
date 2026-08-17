@@ -1,4 +1,4 @@
-"""Render outcome cards with the user's avatar as a dark cinematic background."""
+"""Render v11.1 outcome cards from one fact-locked outcome object."""
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
@@ -70,6 +70,13 @@ def generate_outcome_card(
     original_post_id: str = "",
     event_time: str = "",
 ) -> str:
+    event_kind = str(event_kind or "")
+    target_name = str(target_name or "").lower()
+    if event_kind == "target_complete" and target_name != "tp3":
+        raise ValueError("target_complete card requires TP3 as the reached target")
+    if event_kind == "target" and target_name not in {"tp1", "tp2", "tp3"}:
+        raise ValueError("partial target card requires TP1/TP2/TP3")
+
     width, height = 1080, 1350
     avatar_path = _avatar_path()
     if not avatar_path.is_file():
@@ -125,7 +132,7 @@ def generate_outcome_card(
     draw.text((margin, y + 82), direction.upper(), font=_font(33, True), fill=accent)
 
     if success:
-        status = "ALL TARGETS HIT" if event_kind == "target_complete" else f"{target_name.upper()} HIT"
+        status = "TP3 · ALL TARGETS HIT" if event_kind == "target_complete" else f"{target_name.upper()} HIT"
         big_value = f"+{abs(rr):.2f}R"
         sub_value = f"{abs(move_pct):.2f}% move from entry"
     else:

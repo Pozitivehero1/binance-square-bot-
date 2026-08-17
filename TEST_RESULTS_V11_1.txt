@@ -1,0 +1,32 @@
+Binance Square Bot v11.1 — Outcome Integrity + Full Public Plan
+Offline regression result: PASS
+
+Standard suite:
+- attention / micro-attention / opportunity / W2E proxy
+- TRADE + EVENT dual-lane selection
+- mandatory public Direction + Entry/zone + Stop + TP1 + TP2 + TP3 contract
+- final pre-publication full-plan hard gate
+- human copy / emoji / presentation / visuals / repetition guards
+- public trade-plan geometry and R/R validation
+- adaptive ticker/hour/lane ranking, exploration and saturation
+- DeepSeek V4 Pro primary through OrcaRouter
+- 429/5xx retry/backoff before Mistral fallback
+- Outcome source_post_id + setup fingerprint integrity
+- legacy v11 journal quarantine (no historical outcome backfill)
+- LONG/SHORT target and stop state machine
+- same-1m target+stop ambiguity -> manual review/no claim
+- partial target vs TP3/full-target consistency
+- avatar-backed 1080x1350 outcome card
+- dashboard Outcomes payload and hourly workflow
+- core self-test / publisher command safety
+
+Stress suite (run separately after standard suite):
+- TRADE repetition: 150 cycles, max similarity 0.449 < 0.46 gate
+- EVENT repetition: 40 cycles, max similarity 0.243
+
+Integration checks:
+- Python sources compile successfully
+- dashboard JavaScript syntax OK
+- GitHub Actions YAML parses successfully
+- config_check.py: OK, warnings=0 in offline configuration check
+- no real Binance Square publication was attempted during tests

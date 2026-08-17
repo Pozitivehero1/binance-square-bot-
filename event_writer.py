@@ -1,4 +1,4 @@
-"""Fact-locked Binance Square EVENT writer — v11 Outcome Adaptive Engine.
+"""Fact-locked Binance Square EVENT writer — v11.1 Outcome Integrity Engine.
 
 Python decides whether an audience event is worth discussing and owns any
 optional trade plan. DeepSeek V4 Pro is the primary prose author; Mistral is
@@ -21,7 +21,7 @@ from ai_provider import has_ai_provider, request_candidates
 from engagement import FeedAppealEvaluator
 from memory import PostMemory
 from quality import QualityReport
-from writer import GeneratedPost, _fmt_pct, _fmt_price, _fmt_x, phrase_family_penalty
+from writer import GeneratedPost, _enforce_full_plan_block, _fmt_pct, _fmt_price, _fmt_x, phrase_family_penalty
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +55,7 @@ EVENT_FORMAT_SPECS: Dict[str, Dict[str, str]] = {
         "visual": "clean_chart",
     },
     "event_trade_bridge": {
-        "brief": "Начни с события. Если optional_trade_plan.available=true, можно естественно дать часть готового плана. Если false — никаких входов/TP/стопа.",
+        "brief": "Начни с события. Если optional_trade_plan.available=true, обязательно дай полный готовый план: direction, entry/zone, stop, TP1/TP2/TP3. Если false — никаких входов/TP/стопа.",
         "visual": "scenario_chart",
     },
 }
@@ -295,8 +295,8 @@ def _request_ai_candidates(
             f"Длина каждого поста {POST_MIN_CHARS}-{POST_MAX_CHARS} символов.",
         ],
         "trade_rule": (
-            "optional_trade_plan.available=true: торговый план уже рассчитан Python. Можешь использовать часть или весь план, "
-            "если это естественно для выбранного формата; никогда не меняй direction/entry/stop/TP."
+            "optional_trade_plan.available=true: торговый план уже рассчитан Python. В КАЖДОМ кандидате обязательно покажи "
+            "direction, entry/entry_zone, stop_loss и TP1, TP2, TP3. Ничего не меняй и не скрывай; компактный блок в конце приветствуется."
             if plan_available else
             "optional_trade_plan.available=false: это observation-only пост. Запрещены LONG/SHORT, вход, стоп и TP. "
             "Не выдумывай сделку ради призыва к торговле."
@@ -387,8 +387,24 @@ def _validate_event_post(
     opposite = ("short", "шорт") if direction == "long" else ("long", "лонг")
     has_direction = any(re.search(rf"\b{term}\b", lowered) for term in expected + opposite)
     if plan_available:
+        if not any(re.search(rf"\b{term}\b", lowered) for term in expected):
+            reasons.append("missing direction")
         if any(re.search(rf"\b{term}\b", lowered) for term in opposite):
             reasons.append("opposite direction")
+        plan = package.get("optional_trade_plan", {})
+        normalized_text = text.replace(",", ".")
+        entry_values = [str(plan.get("entry") or "")] + [str(v) for v in (plan.get("entry_zone") or [])]
+        if not any(value and value.replace(",", ".") in normalized_text for value in entry_values):
+            reasons.append("missing entry context")
+        stop_value = str(plan.get("stop_loss") or "")
+        if not stop_value or stop_value.replace(",", ".") not in normalized_text:
+            reasons.append("missing stop")
+        if not re.search(r"(?:\bстоп\b|\bstop(?:-loss)?\b|\bsl\b|отмен\w*|закрываю|закрыт)", lowered, re.IGNORECASE):
+            reasons.append("missing stop rule")
+        for name in ("tp1", "tp2", "tp3"):
+            value = str(plan.get(name) or "")
+            if not value or value.replace(",", ".") not in normalized_text:
+                reasons.append(f"missing {name.upper()}")
     else:
         # No clean plan = no manufactured call to trade.  The post may still
         # discuss price/volume/levels from the factual package.
@@ -483,12 +499,8 @@ def _deterministic_event_candidate(
         )
 
     text = heads[variant] + "\n\n" + bodies[variant]
-    if plan_available and format_id == "event_trade_bridge" and levels is not None:
-        entry = _fmt_price(levels["plan_entry"])
-        tp1 = _fmt_price(levels["tp1"])
-        stop = _fmt_price(levels["stop"])
-        side = "LONG" if direction == "long" else "SHORT"
-        text += f"\n\nЕсли захочу перевести наблюдение в {side}, готовый план у меня уже есть: вход около {entry}, TP1 {tp1}, стоп {stop}."
+    if plan_available and levels is not None:
+        text = _enforce_full_plan_block(text, levels, direction, seed=f"event|{format_id}|{index}")
     return text
 
 
@@ -510,6 +522,12 @@ def generate_event_candidates(
         return []
     count = max(4, min(int(variant_count), 18))
     formats = _format_rotation(memory, count)
+    plan_available = bool(levels and levels.get("plan_valid", False))
+    if plan_available:
+        # A plan-valid EVENT must never use copy whose premise is "no trade".
+        formats = [fmt for fmt in formats if fmt != "event_no_trade"]
+        if not formats:
+            formats = ["event_trade_bridge"]
     package = _semantic_package(
         basic=basic,
         mtf=mtf,
@@ -543,6 +561,8 @@ def generate_event_candidates(
                 if fmt not in ai_formats or fmt not in EVENT_FORMAT_SPECS:
                     continue
                 text = re.sub(r"\n{3,}", "\n\n", str(raw.get("text", "") or "").strip())
+                if plan_available and levels is not None:
+                    text = _enforce_full_plan_block(text, levels, direction, seed=f"ai-event|{fmt}|{len(drafts)}")
                 valid, reasons = _validate_event_post(
                     text,
                     basic=basic,

@@ -301,7 +301,7 @@ def main() -> None:
     _test_mistral_full_author_and_fact_lock()
     _test_balanced_fallback()
     _test_publisher_command()
-    print("All v11 core offline tests passed. No publication was attempted.")
+    print("All v11.1 core offline tests passed. No publication was attempted.")
 
 
 if __name__ == "__main__":

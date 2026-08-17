@@ -62,17 +62,25 @@ def main() -> None:
     # A human event post is allowed to use the full Python-owned plan.
     entry = _fmt_price(levels["plan_entry"])
     tp1 = _fmt_price(levels["tp1"])
+    tp2 = _fmt_price(levels["tp2"])
+    tp3 = _fmt_price(levels["tp3"])
     stop = _fmt_price(levels["stop"])
     text = (
         f"$BICO стал заметно активнее — но сама свеча для меня ещё не причина входить\n\n"
-        f"Если рынок даст нормальное исполнение, мой LONG-план уже готов: вход около {entry}, "
-        f"TP1 {tp1}, стоп {stop}.\n\n"
+        f"Если рынок даст нормальное исполнение, мой LONG-план уже готов: вход около {entry}, стоп {stop}.\n"
+        f"TP1 {tp1} | TP2 {tp2} | TP3 {tp3}.\n\n"
         "До этого момента я просто смотрю, сохраняется ли свежая активность, а не догоняю движение."
     )
     valid, reasons = _validate_event_post(
         text, basic="BICO", direction=score.direction, package=package,
     )
     assert valid, reasons
+
+    partial = text.replace(f" | TP2 {tp2} | TP3 {tp3}", "")
+    partial_ok, partial_reasons = _validate_event_post(
+        partial, basic="BICO", direction=score.direction, package=package,
+    )
+    assert not partial_ok and "missing TP2" in partial_reasons and "missing TP3" in partial_reasons
 
     fabricated = text.replace("свежая активность", "свежая активность x99")
     valid_bad, reasons_bad = _validate_event_post(
@@ -91,7 +99,7 @@ def main() -> None:
     assert not invalid_trade
     assert any("direction forbidden" in reason or "trade targets forbidden" in reason for reason in invalid_reasons)
 
-    print("EVENT AUTHOR: OK | full optional trade plan | observation-only trade invention blocked | fabricated x99 blocked")
+    print("EVENT AUTHOR: OK | full plan mandatory | partial plan blocked | observation-only trade invention blocked | fabricated x99 blocked")
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-"""Fact-locked copywriter for trade outcome follow-ups."""
+"""Fact-locked v11.1 copywriter for exact trade outcome follow-ups."""
 from __future__ import annotations
 
 import logging
@@ -72,8 +72,21 @@ def _valid(text: str, facts: dict) -> bool:
         return False
     if not _numbers_ok(clean, facts):
         return False
-    if facts["event_kind"] in {"target", "target_complete"}:
+    event_kind = str(facts.get("event_kind") or "")
+    reached = _fmt_price(float(facts["reached_price"]))
+    normalized = clean.replace(",", ".")
+    if reached.replace(",", ".") not in normalized:
+        return False
+    if event_kind == "target":
+        target_name = str(facts.get("target_name") or "").upper()
+        if target_name not in {"TP1", "TP2", "TP3"} or target_name not in clean.upper():
+            return False
         if not re.search(r"достиг|дош[её]л|отработ|цель|target|tp", clean, re.IGNORECASE):
+            return False
+    elif event_kind == "target_complete":
+        if str(facts.get("target_name") or "").lower() != "tp3":
+            return False
+        if not re.search(r"(?:tp3|финальн|все\s+(?:публичн\w+\s+)?цели|весь\s+план)", clean, re.IGNORECASE):
             return False
     else:
         if not re.search(r"стоп|отмен|инвалид|границ[ау]\s+риска", clean, re.IGNORECASE):
@@ -125,6 +138,7 @@ def build_outcome_post(facts: Dict, memory: Optional[PostMemory] = None) -> tupl
             "facts": facts,
             "hard_rules": [
                 "use only supplied numeric facts",
+                "event_kind and target_name are exact: never call TP1 a final/all-target result",
                 "say target reached / setup invalidated, not guaranteed profit",
                 "no donation/engagement solicitation",
                 "do not invent leverage or USDT PnL",

@@ -1,4 +1,4 @@
-"""Main orchestration for Binance Square Bot v11 Outcome Adaptive Engine.
+"""Main orchestration for Binance Square Bot v11.1 Outcome Integrity Engine.
 
 Pipeline:
 1. Scan a broad liquid USDT universe on 5m/15m/1h.
@@ -52,7 +52,7 @@ from event_writer import (
 )
 from performance_store import record_publication
 from adaptive import AdaptiveAdjustment, score_adaptive
-from trade_journal import bootstrap_recent_setups, record_trade_setup
+from trade_journal import record_trade_setup, validate_public_plan_text
 from outcome_engine import process_outcomes
 
 logger = setup_logging()
@@ -90,6 +90,8 @@ EVENT_MIN_CONVERSION = float(os.getenv("EVENT_MIN_CONVERSION", "72"))
 PRELIM_MIN_SCORE = float(os.getenv("PRELIM_MIN_SCORE", "38"))
 W2E_PROXY_MAX_BONUS = float(os.getenv("W2E_PROXY_MAX_BONUS", "5.0"))
 W2E_PROXY_MAX_PENALTY = float(os.getenv("W2E_PROXY_MAX_PENALTY", "3.0"))
+VALID_PLAN_EVENT_BONUS = float(os.getenv("VALID_PLAN_EVENT_BONUS", "4.0"))
+OBSERVATION_ONLY_EVENT_PENALTY = float(os.getenv("OBSERVATION_ONLY_EVENT_PENALTY", "1.5"))
 STRICT_BTC_FILTER = os.getenv("STRICT_BTC_FILTER", "0").lower() in {"1", "true", "yes"}
 DRY_RUN = os.getenv("DRY_RUN", "1").lower() in {"1", "true", "yes"}
 PUBLISH_IMAGES = os.getenv("PUBLISH_IMAGES", "1").lower() in {"1", "true", "yes"}
@@ -239,7 +241,9 @@ def _w2e_proxy_adjustment(monetization: MarketMonetizationSnapshot, *, plan_vali
     """Small revenue-proxy nudge; market opportunity and factual safety still dominate."""
     centered = (float(monetization.score) - 50.0) * 0.055
     actionable = (float(monetization.actionability_score) - 50.0) * 0.035
-    plan = 0.8 if plan_valid else -0.8
+    # W2E cannot be learned directly from the web account view, so this is only
+    # a bounded proxy: actionable, fully publishable plans get a modest preference.
+    plan = 1.5 if plan_valid else -1.2
     value = centered + actionable + plan
     return max(-W2E_PROXY_MAX_PENALTY, min(W2E_PROXY_MAX_BONUS, value))
 
@@ -622,7 +626,7 @@ def _choose_event_candidate(
             "stale_event": -8.0,
         }.get(opportunity.event_class, 0.0)
         demand_bonus = min(5.0, max(0.0, (opportunity.audience_demand - 65.0) / 7.0))
-        plan_bonus = 1.5 if plan_valid else 0.0
+        plan_bonus = VALID_PLAN_EVENT_BONUS if plan_valid else -OBSERVATION_ONLY_EVENT_PENALTY
         rotation_adjustment = 0.0
         if recent_event_count >= 2:
             rotation_adjustment -= 7.0
@@ -969,14 +973,7 @@ def _run_once() -> int:
             return 0
         logger.info("Publication guard: %s", pacing.reason)
 
-    # v11 can import still-live setups from the recent v10.x memory/analytics cache
-    # once, so an upgrade does not lose a setup published shortly before deployment.
-    try:
-        bootstrap_recent_setups(memory.items)
-    except Exception as exc:
-        logger.warning("Outcome bootstrap skipped: %s", exc)
-
-    # v11 Outcome Engine runs before the fresh-market scan. At most one verified
+    # v11.1 Outcome Engine runs before the fresh-market scan. At most one verified
     # follow-up is published per cron cycle; if it publishes, this run stops here
     # so the account never emits an outcome and a fresh setup at the same moment.
     try:
@@ -1186,6 +1183,24 @@ def _run_once() -> int:
     )
     logger.debug("Post preview:\n%s", post_text)
 
+    # Final pre-publication safety contract. Writers already enforce this, but the
+    # orchestrator independently blocks any valid-plan post that loses Entry/SL/TP1-3.
+    if plan_valid:
+        public_ok, public_reasons = validate_public_plan_text(post_text, levels, best_score.direction)
+        if not public_ok:
+            logger.error(
+                "HARD BLOCK %s: valid plan is not fully public in text (%s)",
+                symbol, "; ".join(public_reasons),
+            )
+            write_status(
+                "skipped", "full public trade plan contract failed",
+                symbol=symbol, lane=lane, reasons=list(public_reasons),
+            )
+            return 0
+        logger.info(
+            "PUBLIC TEXT CONTRACT PASS %s: direction + entry + SL + TP1/TP2/TP3 are explicit", symbol
+        )
+
     reach = guard.evaluate_candidate(
         market_score=opportunity.score,
         quality_score=quality_report.score,
@@ -1353,19 +1368,12 @@ def _run_once() -> int:
         except Exception as exc:
             logger.warning("Could not record publication analytics metadata: %s", exc)
 
-        # Track only targets that were actually visible in the published text/media.
-        # This prevents any after-the-fact target claims. EVENT posts with a valid
-        # internal plan but no explicit public target remain untracked by Outcome Engine.
+        # v11.1 Outcome Engine tracks only exact post_id-bound plans whose full
+        # Entry/SL/TP1/TP2/TP3 ladder is explicit in the published text. Media never
+        # substitutes for missing text, and no historical backfill is attempted.
         if plan_valid:
             try:
-                media_targets = []
-                if card_path and card_path in images:
-                    media_targets = ["tp1", "tp2", "tp3"]
-                elif chart_path and chart_path in images:
-                    # Every plan chart shows TP1. trade_map explicitly renders the
-                    # complete TP1/TP2/TP3 ladder in the image.
-                    media_targets = ["tp1", "tp2", "tp3"] if selected_post.visual_style == "trade_map" else ["tp1"]
-                record_trade_setup(
+                tracked = record_trade_setup(
                     post_id=published.post_id,
                     symbol=basic,
                     market_symbol=symbol,
@@ -1374,8 +1382,12 @@ def _run_once() -> int:
                     text=post_text,
                     levels=levels,
                     writer_source=selected_post.source,
-                    additional_public_targets=media_targets,
                 )
+                if tracked is None:
+                    logger.error(
+                        "Outcome tracking refused for published post %s; publication remains valid but no follow-up will be generated",
+                        published.post_id,
+                    )
             except Exception as exc:
                 logger.warning("Could not record trade setup for Outcome Engine: %s", exc)
 

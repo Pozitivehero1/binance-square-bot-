@@ -101,15 +101,14 @@ def main() -> None:
     assert "$BICO" in draft.text
     assert "LONG" in draft.text.upper()
     assert _fmt_price(levels["tp1"]) in draft.text
+    assert _fmt_price(levels["tp2"]) in draft.text
+    assert _fmt_price(levels["tp3"]) in draft.text
     assert _fmt_price(levels["stop"]) in draft.text
     assert not any(item in lowered for item in BANNED), draft.text
     assert draft.text.count("?") <= 1
 
-    # The author is allowed to choose which market facts are worth mentioning;
-    # it is not allowed to alter the locked trade facts.
-    if draft.content_format in {"trade_map", "risk_first"}:
-        assert _fmt_price(levels["tp2"]) in draft.text
-        assert _fmt_price(levels["tp3"]) in draft.text
+    # The author may choose market context, but the complete Python-owned plan
+    # is mandatory in every plan-valid publication.
 
     print(
         f"HUMAN COPY: OK | source={draft.source} | format={draft.content_format} | "

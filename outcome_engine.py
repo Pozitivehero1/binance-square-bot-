@@ -1,4 +1,4 @@
-"""Outcome Engine: verify public trade targets and publish factual follow-ups.
+"""Outcome Engine v11.1: verify exact post-bound public trade plans and publish factual follow-ups.
 
 The engine uses closed 1-minute Binance candles and is deliberately conservative:
 if a single candle touches both an unhit target and the stop, ordering is ambiguous
@@ -24,7 +24,7 @@ from outcome_writer import build_outcome_post
 from performance_store import record_publication
 from publication_guard import PublicationGuard
 from publisher import publish
-from trade_journal import load_journal, save_journal
+from trade_journal import load_journal, save_journal, verify_trade_integrity
 
 logger = logging.getLogger(__name__)
 ENABLED = os.getenv("ENABLE_OUTCOME_ENGINE", "1").strip().lower() in {"1", "true", "yes", "on"}
@@ -162,7 +162,8 @@ def _target_index(name: str) -> int:
 
 
 def _event_for_target(trade: dict, name: str, when: str) -> dict:
-    exposed = list(trade.get("exposed_targets") or [])
+    # v11.1 tracks only full public ladders, so "complete" can only mean TP1+TP2+TP3.
+    exposed = ["tp1", "tp2", "tp3"]
     complete = all(bool((trade.get("hits") or {}).get(item)) for item in exposed)
     next_target = None
     for item in exposed:
@@ -273,6 +274,19 @@ def process_trade_candles(trade: dict, candles: Iterable[dict]) -> None:
 
 
 def _refresh_trade(trade: dict, now: datetime) -> None:
+    if trade.get("status") == "legacy_disabled":
+        return
+    integrity_ok, integrity_reason = verify_trade_integrity(trade)
+    if not integrity_ok:
+        trade["status"] = "manual_review"
+        trade["close_reason"] = f"integrity_guard:{integrity_reason}"
+        trade["closed_at"] = now.isoformat()
+        trade["pending_followup"] = None
+        logger.error(
+            "Outcome integrity guard blocked %s source_post_id=%s: %s",
+            trade.get("market_symbol"), trade.get("source_post_id") or trade.get("post_id"), integrity_reason,
+        )
+        return
     published = _parse_dt(trade.get("published_at", ""))
     if not published:
         trade["status"] = "manual_review"
@@ -340,7 +354,9 @@ def _facts(trade: dict, event: dict) -> dict:
         "move_pct": float(event.get("move_pct") or 0.0),
         "next_target": event.get("next_target"),
         "prior_targets": str(event.get("prior_targets") or ""),
-        "original_post_id": str(trade.get("post_id") or ""),
+        "original_post_id": str(trade.get("source_post_id") or trade.get("post_id") or ""),
+        "source_post_id": str(trade.get("source_post_id") or trade.get("post_id") or ""),
+        "setup_id": str(trade.get("setup_id") or trade.get("trade_id") or ""),
         "event_at": str(event.get("event_at") or ""),
     }
 
@@ -430,7 +446,7 @@ def process_outcomes(*, memory: PostMemory, guard: PublicationGuard, dry_run: bo
             logger.warning("Could not record outcome analytics: %s", exc)
         logger.info(
             "OUTCOME PUBLISHED %s kind=%s target=%s followup_post_id=%s original_post_id=%s",
-            trade.get("market_symbol"), event.get("kind"), event.get("target_name"), published.post_id or "n/a", trade.get("post_id"),
+            trade.get("market_symbol"), event.get("kind"), event.get("target_name"), published.post_id or "n/a", trade.get("source_post_id") or trade.get("post_id"),
         )
         return True
     finally:

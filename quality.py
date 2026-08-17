@@ -1,4 +1,4 @@
-"""Editorial and factual quality gates for Audience Author v9."""
+"""Editorial and factual quality gates for v11.1 public-plan content."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -133,7 +133,9 @@ class PostQualityEvaluator:
                 reasons.append("missing TP1")
             if stop is not None and _fmt_price(stop) not in text:
                 reasons.append("missing stop")
-            if content_format in FULL_PLAN_FORMATS:
+            # v11.1: every plan-valid publication exposes the complete ladder,
+            # independent of prose format.
+            if levels.get("plan_valid") is not False:
                 for target_name in ("tp2", "tp3"):
                     value = levels.get(target_name)
                     if value is not None and _fmt_price(value) not in text:
@@ -145,7 +147,7 @@ class PostQualityEvaluator:
             # stop, cancellation or line where the idea closes. No need for one
             # canned sentence in every post.
             invalidation_words = (
-                "стоп", "отмена", "отменяется", "закрываю", "закрыт", "ломает идею",
+                "стоп", " sl ", "sl:", "sl ", "отмена", "отменяется", "закрываю", "закрыт", "ломает идею",
                 "не открываю", "пропускаю", "не актуален", "сценарий снимаю",
             )
             if stop is not None and not any(marker in lowered for marker in invalidation_words):

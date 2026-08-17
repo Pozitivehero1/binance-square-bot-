@@ -1,4 +1,4 @@
-"""Fact-locked Binance Square trade writer — v11 Outcome Adaptive Engine.
+"""Fact-locked Binance Square trade writer — v11.1 Outcome Integrity Engine.
 
 Architecture:
     Python = analyst + risk manager
@@ -41,8 +41,8 @@ AI_RETRIES = max(1, min(int(os.getenv("AI_RETRIES", "2")), 3))
 AI_TIMEOUT = max(10, min(int(os.getenv("AI_TIMEOUT", "55")), 120))
 AI_TEMPERATURE = max(0.15, min(float(os.getenv("AI_TEMPERATURE", "0.72")), 0.85))
 
-# Formats where showing the whole ladder is expected rather than optional.
-FULL_PLAN_FORMATS: set[str] = {"trade_map", "risk_first"}
+# Legacy style hint only. In v11.1 every valid public trade plan carries the full ladder.
+FULL_PLAN_FORMATS: set[str] = set(FORMAT_SPECS) if False else {"trade_map", "risk_first"}
 
 FORMAT_SPECS: Dict[str, Dict[str, str]] = {
     "hot_take": {
@@ -141,6 +141,72 @@ def _ticker(basic: str) -> str:
 def _ticker_count(text: str, basic: str) -> int:
     pattern = rf"(?<![A-Za-z0-9_])\${re.escape(str(basic).upper())}(?![A-Za-z0-9_])"
     return len(re.findall(pattern, text.upper()))
+
+
+def _price_in_text(text: str, value: float) -> bool:
+    normalized = str(text or "").replace(",", ".")
+    return _fmt_price(value).replace(",", ".") in normalized
+
+
+def _full_plan_is_present(text: str, levels: Dict[str, Any], direction: str) -> bool:
+    # Use the same strict contract as the Outcome journal so publication and
+    # follow-up tracking can never disagree about what was visible to readers.
+    try:
+        from trade_journal import validate_public_plan_text
+        return bool(validate_public_plan_text(text, levels, direction)[0])
+    except Exception:
+        return False
+
+
+def _plan_block(levels: Dict[str, Any], direction: str, seed: str = "") -> str:
+    side = direction.upper()
+    low = _fmt_price(levels["entry_zone_low"])
+    high = _fmt_price(levels["entry_zone_high"])
+    stop = _fmt_price(levels["stop"])
+    tp1 = _fmt_price(levels["tp1"])
+    tp2 = _fmt_price(levels["tp2"])
+    tp3 = _fmt_price(levels["tp3"])
+    variants = (
+        f"План {side}: вход {low}–{high} | стоп {stop}\nTP1 {tp1} | TP2 {tp2} | TP3 {tp3}",
+        f"{side}-план: зона {low}–{high}, стоп {stop}\nЦели: TP1 {tp1} → TP2 {tp2} → TP3 {tp3}",
+        f"Вход {side}: {low}–{high} · стоп {stop}\nФиксация: TP1 {tp1} / TP2 {tp2} / TP3 {tp3}",
+        f"{side} только в зоне {low}–{high}; отмена на {stop}\nTP1 {tp1} · TP2 {tp2} · TP3 {tp3}",
+    )
+    token = hashlib.sha1(f"{seed}|{side}|{low}|{high}|{stop}".encode("utf-8")).hexdigest()
+    return variants[int(token[:8], 16) % len(variants)]
+
+
+def _fit_narrative_with_plan(text: str, block: str) -> str:
+    base = re.sub(r"\n{3,}", "\n\n", str(text or "").strip())
+    if len(base) + 2 + len(block) <= POST_MAX_CHARS:
+        return f"{base}\n\n{block}".strip()
+    budget = max(70, POST_MAX_CHARS - len(block) - 2)
+    paragraphs = [part.strip() for part in base.split("\n\n") if part.strip()]
+    kept: List[str] = []
+    for paragraph in paragraphs:
+        candidate = "\n\n".join([*kept, paragraph]) if kept else paragraph
+        if len(candidate) <= budget:
+            kept.append(paragraph)
+        else:
+            break
+    narrative = "\n\n".join(kept).strip()
+    if not narrative:
+        cut = base[:budget].rstrip()
+        for marker in (". ", "! ", "? ", "; ", ", "):
+            pos = cut.rfind(marker)
+            if pos >= max(35, budget // 2):
+                cut = cut[: pos + 1]
+                break
+        narrative = cut.rstrip(" ,;:-") + "."
+    return f"{narrative}\n\n{block}".strip()
+
+
+def _enforce_full_plan_block(text: str, levels: Dict[str, Any], direction: str, *, seed: str = "") -> str:
+    """Hard W2E/public-contract guard: every valid plan exposes entry, SL and TP1/2/3."""
+    clean = re.sub(r"\n{3,}", "\n\n", str(text or "").strip())
+    if _full_plan_is_present(clean, levels, direction):
+        return clean
+    return _fit_narrative_with_plan(clean, _plan_block(levels, direction, seed or clean[:80]))
 
 
 def _levels(ind, direction: str) -> Dict[str, Any]:
@@ -462,8 +528,8 @@ def _validate_ai_post(
     if any(re.search(rf"\b{term}\b", lowered) for term in opposite):
         reasons.append("opposite direction")
 
-    # W2E contract: every post has actionable entry context, TP1 and stop.  The
-    # full ladder is mandatory only in formats designed for it.
+    # v11.1 hard public-plan contract: if Python marks a plan valid, the reader
+    # must see direction + entry context + stop + all three targets in the text.
     entry_values = {
         _fmt_price(levels["plan_entry"]),
         _fmt_price(levels["entry_zone_low"]),
@@ -472,14 +538,11 @@ def _validate_ai_post(
     normalized_text = text.replace(",", ".")
     if not any(value.replace(",", ".") in normalized_text for value in entry_values):
         reasons.append("missing entry context")
-    if _fmt_price(levels["tp1"]).replace(",", ".") not in normalized_text:
-        reasons.append("missing TP1")
     if _fmt_price(levels["stop"]).replace(",", ".") not in normalized_text:
         reasons.append("missing stop")
-    if format_id in FULL_PLAN_FORMATS:
-        for name in ("tp2", "tp3"):
-            if _fmt_price(levels[name]).replace(",", ".") not in normalized_text:
-                reasons.append(f"missing {name.upper()}")
+    for name in ("tp1", "tp2", "tp3"):
+        if _fmt_price(levels[name]).replace(",", ".") not in normalized_text:
+            reasons.append(f"missing {name.upper()}")
 
     if text.count("?") > 1:
         reasons.append("too many questions")
@@ -562,8 +625,8 @@ def _request_ai_candidates(
             "Первая строка — самостоятельный хук и обязательно содержит основной cashtag.",
             "Используй только числа из semantic_package и не пересчитывай их. Можно использовать запятую вместо точки в десятичной дроби.",
             "Направление, entry, entry_zone, stop_loss, TP1/TP2/TP3 заданы Python и не могут быть изменены.",
-            "В каждом посте естественно дай контекст входа, TP1 и stop. Для trade_map и risk_first обязательно упомяни TP1, TP2 и TP3.",
-            "Не обязан перечислять все рыночные показатели. Обычно достаточно одного события и 3-6 торговых чисел.",
+            "Каждый пост с valid trade_plan ОБЯЗАТЕЛЬНО содержит направление, вход/зону входа, stop_loss и TP1, TP2, TP3. Нельзя выбрасывать TP2/TP3 ради красивого текста.",
+            "Лучше вынести план в компактные 2 строки в конце. Не обязан перечислять все рыночные показатели: обычно достаточно одного события и полного торгового плана.",
             "Не утверждай будущее. Только условия: если/пока/при закреплении/при потере уровня.",
             "Следуй trade_plan.state_rule. Если цена уже у уровня, не обещай будущий ретест этого же уровня.",
             "Не используй штампы: 'направление идеи', 'граница ошибки', 'диапазон контроля', 'параметры сценария'.",
@@ -861,7 +924,8 @@ def _deterministic_candidate(
             "Здесь для вас важнее шанс продолжения или цена ошибки?",
         )
         body.append(questions[variant])
-    return "\n\n".join([headline, *body])
+    raw = "\n\n".join([headline, *body])
+    return _enforce_full_plan_block(raw, levels, direction, seed=f"det|{format_id}|{index}")
 
 def _build_generated(
     *,
@@ -880,6 +944,7 @@ def _build_generated(
 ) -> Optional[GeneratedPost]:
     text = re.sub(r"[ \t]+\n", "\n", str(raw_text or "").strip())
     text = re.sub(r"\n{3,}", "\n\n", text)
+    text = _enforce_full_plan_block(text, levels, direction, seed=f"{source}|{format_id}|{index}")
     valid, reasons = _validate_ai_post(
         text,
         basic=basic,

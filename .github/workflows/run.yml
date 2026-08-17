@@ -26,7 +26,7 @@ jobs:
       DRY_RUN: "0"
       SQUARE_SKILL_DIR: ${{ github.workspace }}/.agents/skills/square-post
 
-      # v11 Outcome Adaptive Engine: real Square performance softly nudges ranking.
+      # v11.1 Outcome Integrity Engine: real Square performance softly nudges ranking.
       # The market engine and hard quality/risk gates still remain authoritative.
       SQUARE_PROFILE_UID: "6w3LNrVCJ9O4VGhRSf6oug"
       LEARNING_ONLY: "0"
@@ -94,12 +94,14 @@ jobs:
       EVENT_MIN_POST_QUALITY: "80"
       EVENT_MIN_FEED_APPEAL: "74"
       EVENT_MIN_CONVERSION: "72"
+      VALID_PLAN_EVENT_BONUS: "4.0"
+      OBSERVATION_ONLY_EVENT_PENALTY: "1.5"
       MIN_W2E_MARKET_SCORE: "56"
       W2E_SOFT_FLOOR: "40"
       HOT_W2E_FLOOR: "34"
       STRICT_BTC_FILTER: "0"
 
-      # Public trade plan. Python owns entry zone, stop, TP1/TP2/TP3.
+      # Public trade plan. Every plan_valid post must expose direction + entry zone + stop + TP1/TP2/TP3 in text.
       MIN_PUBLIC_TP3_RR: "1.55"
       MIN_PUBLIC_PLAN_RR: "1.30"
       MAX_PUBLIC_RISK_PCT: "8.0"
@@ -111,8 +113,8 @@ jobs:
       ENTRY_ZONE_ATR: "0.16"
       ENTRY_ZONE_MAX_PCT: "0.35"
 
-      # v11 Outcome Engine. Only price targets explicitly present in the original
-      # published text are tracked for automatic result follow-ups.
+      # v11.1 Outcome Engine. Only new source_post_id-bound posts with the complete
+      # Entry/SL/TP1/TP2/TP3 text contract are tracked. Legacy v11 rows are quarantined.
       ENABLE_OUTCOME_ENGINE: "1"
       OUTCOME_AVATAR_PATH: "assets/pozitivehero_avatar.png"
       OUTCOME_AI: "1"
@@ -122,7 +124,6 @@ jobs:
       OUTCOME_MIN_FOLLOWUP_GAP_MIN: "45"
       OUTCOME_MAX_FOLLOWUPS_PER_TRADE: "2"
       OUTCOME_MAX_KLINE_PAGES: "7"
-      OUTCOME_BOOTSTRAP_HOURS: "24"
 
       # Broad scan: 5m freshness + 15m/1h setup; 4h/1d only for shortlist.
       TOP_SYMBOLS: "120"

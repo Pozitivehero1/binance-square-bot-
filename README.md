@@ -1,93 +1,44 @@
-# Binance Square Bot — v11 Outcome Adaptive Engine
+# Binance Square Bot — v11.1 Outcome Integrity + Full Plan
 
-Production-oriented bot for `PozitiveHero`: adaptive market selection, fact-locked AI copy, automatic public-performance learning, and now a **verified Trade Outcome Engine** that follows explicitly published targets after the original setup.
+Production-oriented bot for `PozitiveHero`: adaptive market selection, fact-locked AI copy, automatic public-performance learning, a **hard full-plan publication contract**, and an exact post-bound Trade Outcome Engine.
 
-> No bot can guarantee views or a fixed W2E payout. v11 optimizes the measurable funnel and refuses to fabricate market facts, targets, profits, leverage or outcomes.
+> No bot can guarantee views or a fixed W2E payout. v11.1 optimizes the measurable funnel and refuses to fabricate market facts, targets, profits, leverage or outcomes.
 
-## v11: what is new
+## v11.1: what is new
 
-### 1. Trade Outcome Engine
+### 1. Full public plan is mandatory
 
-When a published post contains a **real target price in the public text**, v11 stores that setup in:
+Every `plan_valid=true` TRADE or EVENT post must expose **LONG/SHORT + entry/entry zone + stop + TP1 + TP2 + TP3 in the text itself**. AI cannot silently drop TP2/TP3. Python appends a compact exact plan block if needed, validates it again, and the orchestrator performs a final independent hard check before publication.
 
-```text
-state/trade_journal.json
-```
+Observation-only EVENT posts remain valid but cannot invent a trade.
 
-Every normal cron run checks the active journal before scanning for a new setup.
+### 2. Outcome Engine is bound to the exact source post
 
-- closed Binance 1-minute candles are used for verification;
-- LONG/SHORT direction, entry, stop and targets come from the original Python trade plan;
-- only TP prices that were actually visible in the original post text or published plan image are eligible for a follow-up;
-- `decision_now` plans become active immediately;
-- breakout/retest plans must first trigger before any target can count;
-- if target and stop touch inside the same 1-minute candle, ordering is ambiguous and the bot posts **nothing** automatically;
-- at most one outcome post is published per cron run;
-- a run that publishes an outcome does not also publish a fresh setup at the same timestamp.
+New setups are stored in `state/trade_journal.json` only after the full public text contract passes and Binance returns the source post ID. Each setup stores `source_post_id`, a deterministic `setup_id` fingerprint, and a hash of the exact published text.
 
-Default follow-up policy is intentionally anti-spam: first meaningful partial result, then final target or stop. Intermediate TP2 updates are suppressed if TP1 already had a follow-up, reserving the second slot for the actual conclusion.
+**Historical/backfilled v11 setups are not trusted anymore.** On first v11.1 load, old journal rows are automatically quarantined as `legacy_disabled`; they cannot generate follow-ups.
 
-### 2. Avatar-backed result cards
+Every normal cron run checks only v11.1-tracked setups before scanning for a new post. Closed Binance 1-minute candles are used for verification. Breakout/retest entries must trigger first. If target and stop touch in the same 1m candle, ordering is ambiguous and the bot publishes nothing automatically.
 
-The supplied PozitiveHero avatar is bundled as:
+Default follow-up policy remains anti-spam: first meaningful partial result, then final target or stop.
 
-```text
-assets/pozitivehero_avatar.png
-```
+### 3. Outcome text/card consistency
 
-Verified outcomes get a 1080×1350 card with the avatar as a dark background. The card shows:
+Outcome copy and image are generated from one fact object. A partial TP1 result cannot produce an `ALL TARGETS HIT` card. `target_complete` is valid only after TP1+TP2+TP3 are all hit and the final card shows `TP3 · ALL TARGETS HIT`.
 
-- ticker and direction;
-- `TP1/TP2/TP3 HIT` or `ALL TARGETS HIT`;
-- R reached;
-- percentage move from the published entry;
-- entry / reached level / risk boundary;
-- original setup reference and `@PozitiveHero`.
+The bundled avatar remains `assets/pozitivehero_avatar.png`; cards show exact market-plan facts but never invent position size, leverage or USDT PnL.
 
-It deliberately **does not invent USDT profit or leverage**, because the bot does not know the real account position size. There is also no referral, donation or engagement CTA on the result card.
+### 4. DeepSeek retry before Mistral fallback
 
-A sample is included at `docs/outcome_card_preview.png`.
+Primary author remains `deepseek/deepseek-v4-pro-free` through `https://api.orcarouter.ai/v1`. Transient 429/5xx/timeout responses get bounded retries with `Retry-After`/backoff; Mistral is called only after primary attempts are exhausted.
 
-### 3. DeepSeek retry before Mistral fallback
+### 5. Adaptive W2E proxy
 
-Primary author remains:
+Live opportunity remains dominant. Ticker/hour/lane affinity, recency, exploration and saturation still provide bounded corrections. v11.1 adds a modest preference for a valid actionable plan over an otherwise similar observation-only event. Outcome posts remain excluded from adaptive market learning.
 
-```env
-ORCAROUTER_BASE_URL=https://api.orcarouter.ai/v1
-ORCAROUTER_MODEL=deepseek/deepseek-v4-pro-free
-```
+### 6. Dashboard
 
-v11 no longer abandons DeepSeek on the first transient `429`/`5xx`. It now:
-
-1. retries DeepSeek up to 4 times;
-2. respects `Retry-After` when OrcaRouter sends it;
-3. uses bounded exponential backoff;
-4. logs a sanitized OrcaRouter error body;
-5. only then calls Mistral.
-
-Mistral remains the outage fallback, not a parallel writer.
-
-### 4. Adaptive ranking remains ON
-
-The current live opportunity remains the main signal. Historical Square performance is only a bounded correction:
-
-- ticker affinity;
-- hour affinity (UTC+3);
-- EVENT/TRADE lane affinity;
-- breakout history;
-- recency decay;
-- exploration;
-- saturation protection.
-
-Outcome posts are tracked for their own views in the dashboard but are marked `learning_eligible=false`, so they **cannot distort** ticker/hour/lane priors used to choose fresh setups.
-
-### 5. W2E proxy stays conservative
-
-Without per-post W2E revenue API data, the bot does not pretend it can learn directly from USDC. It still scores observable proxies: liquidity, audience demand, freshness, actionability, valid public plan and entry quality.
-
-### 6. Public trade-plan logs are clearer
-
-R/R values in `PUBLIC PLAN` are logged to 3 decimals, avoiding confusing messages such as rounded `1.55 < 1.55` when the real value was slightly below the threshold.
+GitHub Pages still auto-refreshes hourly at minute 17 and can be run manually. The `Результаты` tab now represents only v11.1 integrity-verified setups and reports any quarantined legacy rows separately.
 
 ## Outcome settings
 
@@ -101,7 +52,7 @@ OUTCOME_MAX_AGE_HOURS=96
 OUTCOME_MIN_FOLLOWUP_GAP_MIN=45
 OUTCOME_MAX_FOLLOWUPS_PER_TRADE=2
 OUTCOME_MAX_KLINE_PAGES=7
-OUTCOME_BOOTSTRAP_HOURS=24
+OUTCOME_MAX_JOURNAL_TRADES=600
 ```
 
 ## AI provider settings
@@ -119,57 +70,28 @@ MISTRAL_API=...
 MISTRAL_MODEL=mistral-small-latest
 ```
 
-Required GitHub Secrets remain:
+Required GitHub Secrets remain `SQUARE_API`, `ORCAROUTER_API_KEY`, `MISTRAL_API`.
 
-```text
-SQUARE_API
-ORCAROUTER_API_KEY
-MISTRAL_API
+## W2E-oriented selection knobs
+
+```env
+VALID_PLAN_EVENT_BONUS=4.0
+OBSERVATION_ONLY_EVENT_PENALTY=1.5
+W2E_PROXY_MAX_BONUS=5
+W2E_PROXY_MAX_PENALTY=3
 ```
 
-No new secret is required for v11.
-
-## Dashboard
-
-The GitHub Pages dashboard still auto-refreshes **hourly at minute 17** and can also be run manually.
-
-v11 adds a **Результаты** tab with:
-
-- tracked/active/closed setups;
-- TP1 / TP3 hit rates;
-- stops;
-- generated follow-ups;
-- per-setup target status.
-
-Public Square views for `OUTCOME` posts remain visible under Posts, while adaptive learning excludes them.
+These are bounded selection nudges, not a revenue model.
 
 ## Workflows
 
-Publishing:
+Publishing: `.github/workflows/run.yml`
 
-```text
-.github/workflows/run.yml
-```
-
-Your external cron can keep triggering it roughly every 20 minutes. That is a scan/check cadence, not a forced publication cadence.
-
-Automatic dashboard:
-
-```text
-.github/workflows/dashboard.yml
-```
+Automatic dashboard: `.github/workflows/dashboard.yml` (`17 * * * *`).
 
 ## Safety / anti-fabrication
 
-The author and outcome modules reject or avoid:
-
-- invented prices, TP/SL, reasons, whales/news/liquidations;
-- invented USDT PnL or leverage;
-- guaranteed profit language;
-- donation/tip begging;
-- like/comment/follow solicitation;
-- target-result claims for levels that were never public;
-- automatic claims when 1m candle ordering is ambiguous.
+The author and outcome modules reject or avoid invented prices/TP/SL, fabricated reasons/news/whales, invented USDT PnL/leverage, guaranteed-profit language, donation/tip begging, like/comment/follow solicitation, incomplete plan-valid posts, historical outcome reconstruction, fingerprint mismatches, and ambiguous target+stop 1m candles.
 
 ## Local validation
 
@@ -179,22 +101,11 @@ python config_check.py
 python run_tests.py
 ```
 
-Long repetition stress suite:
+Long stress tests:
 
 ```bash
-RUN_STRESS_TESTS=1 python run_tests.py
+python repetition_test.py
+python event_repetition_test.py
 ```
 
-## Important v11 files
-
-- `outcome_engine.py` — 1m verification and follow-up orchestration;
-- `trade_journal.py` — persistent public-setup journal;
-- `outcome_writer.py` — fact-locked result post copy;
-- `outcome_card.py` — avatar result-card renderer;
-- `assets/pozitivehero_avatar.png` — supplied avatar;
-- `ai_provider.py` — DeepSeek retries + Mistral fallback;
-- `adaptive.py` — account-specific adaptive ranking;
-- `performance_store.py` — Square reach history and learning exclusions;
-- `dashboard_builder.py` — dashboard data including outcomes.
-
-See `CHANGES_V11.md` and `V11_SETUP.md`.
+See `CHANGES_V11_1.md` and `V11_1_SETUP.md`.
