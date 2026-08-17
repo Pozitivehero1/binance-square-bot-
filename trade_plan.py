@@ -242,9 +242,9 @@ def plan_summary(levels: Dict[str, Any]) -> str:
     return (
         f"state={levels.get('trade_state', 'n/a')} mode={levels.get('decision_mode', 'n/a')} "
         f"source={levels.get('decision_source', 'n/a')} "
-        f"R1={float(levels.get('rr_tp1', 0.0)):.2f} "
-        f"R2={float(levels.get('rr_tp2', 0.0)):.2f} "
-        f"R3={float(levels.get('rr_tp3', levels.get('public_rr', 0.0))):.2f} "
+        f"R1={float(levels.get('rr_tp1', 0.0)):.3f} "
+        f"R2={float(levels.get('rr_tp2', 0.0)):.3f} "
+        f"R3={float(levels.get('rr_tp3', levels.get('public_rr', 0.0))):.3f} "
         f"risk={float(levels.get('public_risk_pct', 0.0)):.2f}% "
         f"valid={bool(levels.get('plan_valid', False))} ({reasons})"
     )

@@ -72,6 +72,7 @@ def main() -> int:
     enable_pacing = _bool("ENABLE_PACING_LIMITS", "0")
     enable_reach_gate = _bool("ENABLE_REACH_GATE", "1")
     publish_images = _bool("PUBLISH_IMAGES", "1")
+    outcome_enabled = _bool("ENABLE_OUTCOME_ENGINE", "1")
     allow_technical = _bool("ALLOW_TECHNICAL_FORMATS", "0")
     square_key = bool((os.getenv("SQUARE_API") or os.getenv("BINANCE_SQUARE_OPENAPI_KEY") or "").strip())
     skill_dir = find_skill_dir()
@@ -122,6 +123,11 @@ def main() -> int:
     adaptive_saturation = _number("ADAPTIVE_SATURATION_MAX", "5", float, 0, 10, errors)
     w2e_proxy_bonus = _number("W2E_PROXY_MAX_BONUS", "5", float, 0, 10, errors)
     w2e_proxy_penalty = _number("W2E_PROXY_MAX_PENALTY", "3", float, 0, 10, errors)
+    orca_retries = _number("ORCAROUTER_RETRIES", "4", int, 1, 6, errors)
+    outcome_gap = _number("OUTCOME_MIN_FOLLOWUP_GAP_MIN", "45", float, 20, 720, errors)
+    outcome_pending = _number("OUTCOME_PENDING_ENTRY_HOURS", "36", float, 2, 168, errors)
+    outcome_max_age = _number("OUTCOME_MAX_AGE_HOURS", "96", float, 4, 336, errors)
+    outcome_max_followups = _number("OUTCOME_MAX_FOLLOWUPS_PER_TRADE", "2", int, 1, 3, errors)
     if post_min is not None and post_max is not None and post_min >= post_max:
         errors.append("POST_MIN_CHARS должен быть меньше POST_MAX_CHARS")
     if None not in (hot_w2e, soft_w2e, min_w2e) and not (hot_w2e <= soft_w2e <= min_w2e):
@@ -133,6 +139,7 @@ def main() -> int:
         "PUBLICATION_STATE_FILE": resolve_state_file("PUBLICATION_STATE_FILE", "publication_state.json"),
         "BOT_STATUS_FILE": resolve_state_file("BOT_STATUS_FILE", "status.json"),
         "RUN_LOCK_FILE": resolve_state_file("RUN_LOCK_FILE", "bot.lock"),
+        "TRADE_JOURNAL_FILE": resolve_state_file("TRADE_JOURNAL_FILE", "trade_journal.json"),
         "LOG_FILE": resolve_project_file("LOG_FILE", "logs/bot.log"),
     }
     for label, path in paths.items():
@@ -148,6 +155,14 @@ def main() -> int:
         warnings.append("ORCAROUTER_API_KEY не задан: Mistral станет основным автором вместо резервного")
     if not publish_images and media_mode != "none":
         warnings.append("PUBLISH_IMAGES=0: режим медиа будет проигнорирован")
+    avatar_raw = (os.getenv("OUTCOME_AVATAR_PATH") or "assets/pozitivehero_avatar.png").strip()
+    avatar_path = Path(avatar_raw).expanduser()
+    if not avatar_path.is_absolute():
+        avatar_path = PROJECT_DIR / avatar_path
+    if outcome_enabled and not avatar_path.is_file():
+        warnings.append(f"Outcome Engine: avatar не найден ({avatar_path}); follow-up сможет выйти без карточки")
+    if outcome_max_age is not None and outcome_pending is not None and outcome_max_age < outcome_pending:
+        errors.append("OUTCOME_MAX_AGE_HOURS должен быть >= OUTCOME_PENDING_ENTRY_HOURS")
     if min_interval is not None and min_interval < 20:
         warnings.append("Интервал ниже 20 минут не поддерживается защитой параллельных запусков")
     if cooldown is not None and cooldown < min_interval:
@@ -197,6 +212,10 @@ def main() -> int:
         f"explore={adaptive_explore} saturation={adaptive_saturation} | W2E proxy={w2e_proxy_bonus}/-{w2e_proxy_penalty}"
     )
     print(f"  PUBLISH_MEDIA_MODE={media_mode} | PUBLISH_IMAGES={int(publish_images)}")
+    print(
+        f"  OUTCOME_ENGINE={int(outcome_enabled)} | gap={outcome_gap}m | pending={outcome_pending}h | "
+        f"max_age={outcome_max_age}h | max_followups={outcome_max_followups} | ORCA_RETRIES={orca_retries}"
+    )
     print(
         f"  DRY_RUN={int(dry_run)} | Square key={'yes' if square_key else 'no'} | "
         f"skill={'found' if skill_dir else 'not found'}"

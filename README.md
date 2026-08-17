@@ -1,169 +1,125 @@
-# Binance Square Bot — v10.1 Adaptive W2E Proxy
+# Binance Square Bot — v11 Outcome Adaptive Engine
 
-Production-oriented Binance Square bot for `PozitiveHero`. The objective is not raw posting volume: it is to publish **fresh, useful, tradable content** that has a better chance to earn reach and to lead readers into a qualified market interaction.
+Production-oriented bot for `PozitiveHero`: adaptive market selection, fact-locked AI copy, automatic public-performance learning, and now a **verified Trade Outcome Engine** that follows explicitly published targets after the original setup.
 
-> Important: the bot cannot guarantee a specific number of views or a fixed W2E payout. It optimizes the measurable funnel and keeps hard factual/risk gates.
+> No bot can guarantee views or a fixed W2E payout. v11 optimizes the measurable funnel and refuses to fabricate market facts, targets, profits, leverage or outcomes.
 
-## What changed in v10.1
+## v11: what is new
 
-### 1. Adaptive ranking is ON
+### 1. Trade Outcome Engine
 
-v10 collected real public Square performance in `state/performance_history.json`. v10.1 now uses that history as a **bounded nudge** on top of the live market engine.
+When a published post contains a **real target price in the public text**, v11 stores that setup in:
 
-The adaptive layer learns:
-
-- ticker affinity — which symbols historically perform better on this account;
-- hour affinity — which UTC+3 publishing hours historically perform better;
-- lane affinity — EVENT vs TRADE performance;
-- relative breakout rate;
-- recency decay — recent performance weighs more than old performance;
-- exploration — strong new tickers still get a chance;
-- saturation — repeatedly posting the same winner is penalized.
-
-Historical performance cannot invent a setup or bypass technical, factual, liquidity, risk, quality or reach gates. Total adaptive influence is capped.
-
-Default controls:
-
-```env
-LEARNING_ONLY=0
-ENABLE_ADAPTIVE_RANKING=1
-ADAPTIVE_MIN_MATURE_SAMPLES=80
-ADAPTIVE_LOOKBACK_DAYS=14
-ADAPTIVE_HALF_LIFE_DAYS=7
-ADAPTIVE_MAX_TOTAL=14
-ADAPTIVE_TICKER_MAX=10
-ADAPTIVE_HOUR_MAX=5
-ADAPTIVE_LANE_MAX=2.5
-ADAPTIVE_BREAKOUT_MAX=3
-ADAPTIVE_EXPLORATION_MAX=2.5
-ADAPTIVE_SATURATION_MAX=5
+```text
+state/trade_journal.json
 ```
 
-If the analytics cache disappears or there are fewer than 80 mature samples, adaptive ranking automatically disables itself until enough data returns.
+Every normal cron run checks the active journal before scanning for a new setup.
 
-### 2. W2E Proxy ranking
+- closed Binance 1-minute candles are used for verification;
+- LONG/SHORT direction, entry, stop and targets come from the original Python trade plan;
+- only TP prices that were actually visible in the original post text or published plan image are eligible for a follow-up;
+- `decision_now` plans become active immediately;
+- breakout/retest plans must first trigger before any target can count;
+- if target and stop touch inside the same 1-minute candle, ordering is ambiguous and the bot posts **nothing** automatically;
+- at most one outcome post is published per cron run;
+- a run that publishes an outcome does not also publish a fresh setup at the same timestamp.
 
-We do not have an automated per-post W2E-revenue feed, so v10.1 **does not pretend it can learn directly from USDC**. Instead it adds a small, capped W2E proxy based on observable market qualities:
+Default follow-up policy is intentionally anti-spam: first meaningful partial result, then final target or stop. Intermediate TP2 updates are suppressed if TP1 already had a follow-up, reserving the second slot for the actual conclusion.
 
-- liquidity and trading activity;
-- current audience demand;
-- event freshness;
-- actionability;
-- valid public trade plan when one exists;
-- non-overextended entry quality.
+### 2. Avatar-backed result cards
 
-This proxy is deliberately smaller than the live market opportunity score.
+The supplied PozitiveHero avatar is bundled as:
 
-```env
-W2E_PROXY_MAX_BONUS=5
-W2E_PROXY_MAX_PENALTY=3
+```text
+assets/pozitivehero_avatar.png
 ```
 
-### 3. DeepSeek V4 Pro primary, Mistral fallback
+Verified outcomes get a 1080×1350 card with the avatar as a dark background. The card shows:
 
-Python remains the analyst and risk manager. The LLM only writes prose from Python-locked facts.
+- ticker and direction;
+- `TP1/TP2/TP3 HIT` or `ALL TARGETS HIT`;
+- R reached;
+- percentage move from the published entry;
+- entry / reached level / risk boundary;
+- original setup reference and `@PozitiveHero`.
 
-Primary author:
+It deliberately **does not invent USDT profit or leverage**, because the bot does not know the real account position size. There is also no referral, donation or engagement CTA on the result card.
+
+A sample is included at `docs/outcome_card_preview.png`.
+
+### 3. DeepSeek retry before Mistral fallback
+
+Primary author remains:
 
 ```env
 ORCAROUTER_BASE_URL=https://api.orcarouter.ai/v1
 ORCAROUTER_MODEL=deepseek/deepseek-v4-pro-free
-ORCAROUTER_API_KEY=...
 ```
 
-Fallback:
+v11 no longer abandons DeepSeek on the first transient `429`/`5xx`. It now:
+
+1. retries DeepSeek up to 4 times;
+2. respects `Retry-After` when OrcaRouter sends it;
+3. uses bounded exponential backoff;
+4. logs a sanitized OrcaRouter error body;
+5. only then calls Mistral.
+
+Mistral remains the outage fallback, not a parallel writer.
+
+### 4. Adaptive ranking remains ON
+
+The current live opportunity remains the main signal. Historical Square performance is only a bounded correction:
+
+- ticker affinity;
+- hour affinity (UTC+3);
+- EVENT/TRADE lane affinity;
+- breakout history;
+- recency decay;
+- exploration;
+- saturation protection.
+
+Outcome posts are tracked for their own views in the dashboard but are marked `learning_eligible=false`, so they **cannot distort** ticker/hour/lane priors used to choose fresh setups.
+
+### 5. W2E proxy stays conservative
+
+Without per-post W2E revenue API data, the bot does not pretend it can learn directly from USDC. It still scores observable proxies: liquidity, audience demand, freshness, actionability, valid public plan and entry quality.
+
+### 6. Public trade-plan logs are clearer
+
+R/R values in `PUBLIC PLAN` are logged to 3 decimals, avoiding confusing messages such as rounded `1.55 < 1.55` when the real value was slightly below the threshold.
+
+## Outcome settings
 
 ```env
+ENABLE_OUTCOME_ENGINE=1
+OUTCOME_AVATAR_PATH=assets/pozitivehero_avatar.png
+OUTCOME_AI=1
+OUTCOME_POST_STOPS=1
+OUTCOME_PENDING_ENTRY_HOURS=36
+OUTCOME_MAX_AGE_HOURS=96
+OUTCOME_MIN_FOLLOWUP_GAP_MIN=45
+OUTCOME_MAX_FOLLOWUPS_PER_TRADE=2
+OUTCOME_MAX_KLINE_PAGES=7
+OUTCOME_BOOTSTRAP_HOURS=24
+```
+
+## AI provider settings
+
+```env
+ORCAROUTER_API_KEY=...
+ORCAROUTER_BASE_URL=https://api.orcarouter.ai/v1
+ORCAROUTER_MODEL=deepseek/deepseek-v4-pro-free
+ORCAROUTER_RETRIES=4
+ORCAROUTER_RETRY_BASE_SECONDS=3
+ORCAROUTER_RETRY_CAP_SECONDS=15
+ORCAROUTER_MAX_RETRY_AFTER=30
+
 MISTRAL_API=...
 MISTRAL_MODEL=mistral-small-latest
 ```
 
-Routing is strict:
-
-1. DeepSeek through OrcaRouter is tried first.
-2. If the primary API is unavailable/unusable (timeout, HTTP error, malformed API response), Mistral is called.
-3. If DeepSeek responds normally but its prose fails the factual/content validator, the bot retries the primary author rather than silently using Mistral as a style substitute.
-4. Deterministic copy remains the last outage-safe fallback.
-
-### 4. No direct engagement/tip begging
-
-The writer prompt and validator reject direct solicitation such as requests for likes, comments, follows, donations/tips or author rewards. The bot can benefit from Binance creator monetization features naturally, but it does not turn posts into donation or engagement bait.
-
-### 5. TRADE + EVENT dual lane stays
-
-#### TRADE lane
-
-Python owns and validates:
-
-- LONG/SHORT direction;
-- entry and entry zone;
-- stop loss;
-- TP1 / TP2 / TP3;
-- R/R;
-- risk percentage;
-- state of the setup (`decision_now`, retest/breakout/breakdown states).
-
-The author cannot change those values.
-
-#### EVENT lane
-
-A fresh audience event is evaluated independently from strict ADX/R/R gates. If there is no valid public trade plan, the post becomes `OBSERVATION_ONLY`; the writer may not manufacture LONG/SHORT, entry, SL or targets.
-
-This keeps discovery broad without turning every market event into a fake signal.
-
-## AI fact lock
-
-Every AI candidate is checked for:
-
-- correct cashtag in the headline;
-- no fabricated numbers;
-- correct direction;
-- correct entry/stop/TP values;
-- no future guarantees;
-- no invented news, whales, liquidations or reasons for movement;
-- state coherence (for example, no “wait for retest” if price is already at the level);
-- no hashtags by default;
-- no direct donation/like/comment/follow solicitation;
-- similarity to recent posts;
-- feed appeal / quality / conversion intent.
-
-## Audience-first market selection
-
-The broad scan uses 5m freshness plus 15m/1h context. The shortlist reserves room for:
-
-- liquid/high-demand tickers;
-- fresh events;
-- technically strong setups.
-
-Huge volume anomalies saturate instead of dominating the score. A stale `x30` volume spike is not automatically better than a fresh `x4` event.
-
-## Dashboard / analytics
-
-`collect_stats.py` reads public Square post metrics and stores them in:
-
-```text
-state/performance_history.json
-```
-
-The dashboard shows:
-
-- views and engagement;
-- 30m / 2h / 6h / 24h milestones;
-- ticker affinity;
-- hour affinity;
-- EVENT vs TRADE;
-- relative breakout rate;
-- absolute 300+ rate;
-- adaptive mode status;
-- AI author performance (DeepSeek / Mistral / deterministic).
-
-The dashboard never receives `SQUARE_API`, `ORCAROUTER_API_KEY` or `MISTRAL_API`.
-
-## GitHub setup
-
-Replace the current repository contents with this archive. Keep the same repository/branch so the existing GitHub Actions cache can restore the accumulated analytics state.
-
-Required GitHub Secrets:
+Required GitHub Secrets remain:
 
 ```text
 SQUARE_API
@@ -171,23 +127,49 @@ ORCAROUTER_API_KEY
 MISTRAL_API
 ```
 
-`MISTRAL_API` remains the fallback key. `OPENAI_API_KEY` is optional and not required for the author chain.
+No new secret is required for v11.
 
-The publishing workflow is already in:
+## Dashboard
+
+The GitHub Pages dashboard still auto-refreshes **hourly at minute 17** and can also be run manually.
+
+v11 adds a **Результаты** tab with:
+
+- tracked/active/closed setups;
+- TP1 / TP3 hit rates;
+- stops;
+- generated follow-ups;
+- per-setup target status.
+
+Public Square views for `OUTCOME` posts remain visible under Posts, while adaptive learning excludes them.
+
+## Workflows
+
+Publishing:
 
 ```text
 .github/workflows/run.yml
 ```
 
-Your external cron can keep triggering `workflow_dispatch` at the same cadence as before. The cadence is a **market scan frequency**, not a promise to publish every run.
+Your external cron can keep triggering it roughly every 20 minutes. That is a scan/check cadence, not a forced publication cadence.
 
-The dashboard workflow is:
+Automatic dashboard:
 
 ```text
 .github/workflows/dashboard.yml
 ```
 
-It can be run manually whenever you want fresh GitHub Pages data.
+## Safety / anti-fabrication
+
+The author and outcome modules reject or avoid:
+
+- invented prices, TP/SL, reasons, whales/news/liquidations;
+- invented USDT PnL or leverage;
+- guaranteed profit language;
+- donation/tip begging;
+- like/comment/follow solicitation;
+- target-result claims for levels that were never public;
+- automatic claims when 1m candle ordering is ambiguous.
 
 ## Local validation
 
@@ -197,26 +179,22 @@ python config_check.py
 python run_tests.py
 ```
 
-Optional longer repetition tests:
+Long repetition stress suite:
 
 ```bash
 RUN_STRESS_TESTS=1 python run_tests.py
 ```
 
-Local default stays safe with `DRY_RUN=1`.
+## Important v11 files
 
-## Important files
+- `outcome_engine.py` — 1m verification and follow-up orchestration;
+- `trade_journal.py` — persistent public-setup journal;
+- `outcome_writer.py` — fact-locked result post copy;
+- `outcome_card.py` — avatar result-card renderer;
+- `assets/pozitivehero_avatar.png` — supplied avatar;
+- `ai_provider.py` — DeepSeek retries + Mistral fallback;
+- `adaptive.py` — account-specific adaptive ranking;
+- `performance_store.py` — Square reach history and learning exclusions;
+- `dashboard_builder.py` — dashboard data including outcomes.
 
-- `main.py` — dual-lane selection + adaptive/W2E-proxy final ranking;
-- `adaptive.py` — ticker/hour/lane affinity, decay, exploration, saturation;
-- `ai_provider.py` — DeepSeek primary / Mistral fallback routing;
-- `writer.py` — fact-locked TRADE author/validator;
-- `event_writer.py` — fact-locked EVENT author/validator;
-- `trade_plan.py` — entry/zone/SL/TP1-3;
-- `opportunity.py` — live market/audience opportunity;
-- `monetization.py` — W2E proxy and conversion-intent scoring;
-- `performance_store.py` — analytics history and learning summaries;
-- `dashboard_builder.py` — static dashboard export;
-- `.github/workflows/run.yml` — production workflow.
-
-See `CHANGES_V10_1.md` and `V10_1_SETUP.md` for the short upgrade guide.
+See `CHANGES_V11.md` and `V11_SETUP.md`.

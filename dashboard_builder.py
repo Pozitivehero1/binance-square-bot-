@@ -8,6 +8,7 @@ from statistics import median
 from typing import Optional
 
 from performance_store import build_learning_summary, load_store
+from trade_journal import summarize_journal
 from runtime import PROJECT_DIR, atomic_write_json
 
 DASHBOARD_DIR = PROJECT_DIR / "dashboard"
@@ -70,10 +71,12 @@ def build_dashboard_payload() -> dict:
                 "content_format": str(item.get("content_format") or ""),
                 "event_class": str(item.get("event_class") or ""),
                 "tracked_from_publish": bool(item.get("tracked_from_publish")),
+                "learning_eligible": bool(item.get("learning_eligible", True)),
             }
         )
 
     learning = build_learning_summary(store)
+    outcomes = summarize_journal()
     mature_med = float(median(mature_views)) if mature_views else 0.0
     best = max(posts, key=lambda post: post["views"], default=None)
     overview = {
@@ -95,6 +98,7 @@ def build_dashboard_payload() -> dict:
         },
         "overview": overview,
         "learning": learning,
+        "outcomes": outcomes,
         "posts": posts[:500],
     }
 

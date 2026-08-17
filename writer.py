@@ -1,4 +1,4 @@
-"""Fact-locked Binance Square trade writer — v10.1 Adaptive W2E Proxy.
+"""Fact-locked Binance Square trade writer — v11 Outcome Adaptive Engine.
 
 Architecture:
     Python = analyst + risk manager

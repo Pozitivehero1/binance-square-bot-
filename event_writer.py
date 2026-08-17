@@ -1,4 +1,4 @@
-"""Fact-locked Binance Square EVENT writer — v10.1 Adaptive W2E Proxy.
+"""Fact-locked Binance Square EVENT writer — v11 Outcome Adaptive Engine.
 
 Python decides whether an audience event is worth discussing and owns any
 optional trade plan. DeepSeek V4 Pro is the primary prose author; Mistral is

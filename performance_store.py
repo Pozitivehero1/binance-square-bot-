@@ -124,6 +124,7 @@ def record_publication(
     lane_affinity: float = 50.0,
     adaptive_reason: str = "",
     w2e_proxy_score: float = 0.0,
+    learning_eligible: bool = True,
 ) -> None:
     store = load_store()
     posts = store.setdefault("posts", {})
@@ -147,6 +148,7 @@ def record_publication(
             "event_class": str(event_class or ""),
             "writer_source": str(writer_source or ""),
             "signal_type": str(signal_type or ""),
+            "learning_eligible": bool(learning_eligible),
             "scores": {
                 "opportunity": round(float(opportunity_score or 0.0), 2),
                 "audience_demand": round(float(audience_demand or 0.0), 2),
@@ -246,6 +248,7 @@ def merge_public_stats(rows: Iterable[PublicPostStats], profile_uid: str = "") -
                 "event_class": "",
                 "writer_source": "",
                 "signal_type": "",
+                "learning_eligible": True,
                 "scores": {},
                 "market": {},
                 "adaptive": {},
@@ -311,7 +314,10 @@ def _affinity(rows: list[dict], account_median: float) -> dict:
 
 def build_learning_summary(store: Optional[dict] = None) -> dict:
     store = store or load_store()
-    posts = [item for item in store.get("posts", {}).values() if isinstance(item, dict)]
+    all_posts = [item for item in store.get("posts", {}).values() if isinstance(item, dict)]
+    # Outcome follow-ups are tracked for reach in the dashboard, but they must not
+    # contaminate ticker/hour/lane priors used to choose fresh market setups.
+    posts = [item for item in all_posts if item.get("learning_eligible", True)]
     mature = [v for item in posts if (v := _metric_views(item)) is not None]
     account_median = float(median(mature)) if mature else 0.0
 

@@ -1,8 +1,9 @@
 """Resilient AI author provider chain.
 
 Primary: DeepSeek V4 Pro through OrcaRouter (OpenAI-compatible API).
-Fallback: Mistral, but only when the primary provider is unavailable or returns
-an unusable API response. Content/fact validation remains in writer modules.
+Fallback: Mistral, but only after the primary provider is genuinely unavailable
+or returns unusable API responses. OrcaRouter 429/5xx/transient failures get a
+bounded retry/backoff sequence first; Retry-After is respected when present.
 """
 from __future__ import annotations
 
@@ -10,7 +11,9 @@ from dataclasses import dataclass
 import json
 import logging
 import os
+import random
 import re
+import time
 from typing import Any, Dict, List, Optional
 
 import requests
@@ -69,6 +72,19 @@ def _parse_candidates(payload: dict) -> List[dict]:
     return [item for item in rows if isinstance(item, dict)]
 
 
+def _safe_error_body(response: Optional[requests.Response]) -> str:
+    if response is None:
+        return ""
+    try:
+        text = str(response.text or "").strip().replace("\n", " ")
+    except Exception:
+        return ""
+    # Do not risk echoing a token if an upstream error happens to reflect headers.
+    text = re.sub(r"(?i)(bearer\s+)[A-Za-z0-9._~-]+", r"\1<redacted>", text)
+    text = re.sub(r"(?i)(api[_-]?key[\"'=:\s]+)[A-Za-z0-9._~-]+", r"\1<redacted>", text)
+    return text[:600]
+
+
 def _request(
     *,
     url: str,
@@ -105,6 +121,36 @@ def _request(
     return payload
 
 
+def _retry_delay(exc: Exception, attempt: int) -> tuple[bool, float, str]:
+    """Return (retryable, delay_seconds, diagnostic)."""
+    base = max(0.2, float(os.getenv("ORCAROUTER_RETRY_BASE_SECONDS", "3")))
+    cap = max(base, float(os.getenv("ORCAROUTER_RETRY_CAP_SECONDS", "15")))
+    max_retry_after = max(cap, float(os.getenv("ORCAROUTER_MAX_RETRY_AFTER", "30")))
+    delay = min(cap, base * (2 ** max(0, attempt - 1))) + random.uniform(0.0, 0.45)
+    diagnostic = str(exc)
+    if isinstance(exc, requests.HTTPError):
+        response = exc.response
+        status = int(response.status_code) if response is not None else 0
+        body = _safe_error_body(response)
+        diagnostic = f"HTTP {status}" + (f" body={body}" if body else "")
+        retryable = status in {408, 409, 425, 429, 500, 502, 503, 504}
+        if retryable and response is not None:
+            retry_after = response.headers.get("Retry-After")
+            if retry_after:
+                try:
+                    delay = min(max_retry_after, max(0.2, float(retry_after)))
+                except ValueError:
+                    pass
+        return retryable, delay, diagnostic
+    if isinstance(exc, (requests.Timeout, requests.ConnectionError)):
+        return True, delay, f"{type(exc).__name__}: {exc}"
+    if isinstance(exc, (ValueError, KeyError, TypeError, json.JSONDecodeError)):
+        # A gateway can occasionally return an empty/truncated body. One or more
+        # bounded retries are safer than immediately burning the fallback model.
+        return True, delay, f"{type(exc).__name__}: {exc}"
+    return False, delay, diagnostic
+
+
 def request_candidates(
     *,
     system_prompt: str,
@@ -117,9 +163,9 @@ def request_candidates(
 ) -> ProviderResult:
     """Return AI candidates using DeepSeek primary and Mistral fallback.
 
-    Mistral is contacted only if OrcaRouter is absent/unavailable/unparseable.
-    If DeepSeek responds successfully but downstream content validation rejects
-    its prose, writer.py retries DeepSeek rather than silently switching models.
+    Mistral is contacted only after OrcaRouter is absent or all configured primary
+    API attempts fail. Downstream copy validation still retries the same chosen
+    provider rather than silently changing models for stylistic reasons.
     """
     messages = [
         {"role": "system", "content": system_prompt},
@@ -138,26 +184,47 @@ def request_candidates(
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
-        try:
-            payload = _request(
-                url=f"{base}/chat/completions",
-                key=orca_key,
-                body=body,
-                timeout=timeout,
-                provider="OrcaRouter/DeepSeek",
-                retry_without_response_format=True,
-            )
-            candidates = _parse_candidates(payload)
-            if not candidates:
-                raise ValueError("DeepSeek returned no candidate objects")
-            for row in candidates:
-                row["_provider"] = "deepseek_v4_pro"
-                row["_model"] = model
-            logger.info("AI author provider=deepseek_v4_pro model=%s candidates=%s", model, len(candidates))
-            return ProviderResult(candidates, "deepseek_v4_pro", model)
-        except (requests.RequestException, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
-            failures.append(f"deepseek:{type(exc).__name__}:{exc}")
-            logger.warning("DeepSeek primary unavailable/unusable: %s; trying Mistral fallback", exc)
+        attempts = max(1, min(6, int(os.getenv("ORCAROUTER_RETRIES", "4"))))
+        last_exc: Optional[Exception] = None
+        for attempt in range(1, attempts + 1):
+            try:
+                payload = _request(
+                    url=f"{base}/chat/completions",
+                    key=orca_key,
+                    body=body,
+                    timeout=timeout,
+                    provider="OrcaRouter/DeepSeek",
+                    retry_without_response_format=True,
+                )
+                candidates = _parse_candidates(payload)
+                if not candidates:
+                    raise ValueError("DeepSeek returned no candidate objects")
+                for row in candidates:
+                    row["_provider"] = "deepseek_v4_pro"
+                    row["_model"] = model
+                logger.info(
+                    "AI author provider=deepseek_v4_pro model=%s candidates=%s attempt=%s/%s",
+                    model, len(candidates), attempt, attempts,
+                )
+                return ProviderResult(candidates, "deepseek_v4_pro", model)
+            except (requests.RequestException, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
+                last_exc = exc
+                retryable, delay, diagnostic = _retry_delay(exc, attempt)
+                failures.append(f"deepseek:{diagnostic}")
+                if retryable and attempt < attempts:
+                    logger.warning(
+                        "DeepSeek attempt %s/%s failed: %s; retrying in %.1fs",
+                        attempt, attempts, diagnostic, delay,
+                    )
+                    time.sleep(delay)
+                    continue
+                logger.warning(
+                    "DeepSeek primary unavailable/unusable after %s/%s attempt(s): %s; trying Mistral fallback",
+                    attempt, attempts, diagnostic,
+                )
+                break
+        if last_exc is not None:
+            logger.debug("DeepSeek final exception type=%s", type(last_exc).__name__)
 
     mistral_key = _mistral_key()
     if mistral_key:
@@ -193,5 +260,5 @@ def request_candidates(
             failures.append(f"mistral:{type(exc).__name__}:{exc}")
             logger.warning("Mistral fallback unavailable/unusable: %s", exc)
 
-    reason = " | ".join(failures) if failures else "no AI provider key configured"
+    reason = " | ".join(failures[-8:]) if failures else "no AI provider key configured"
     raise RuntimeError(reason)

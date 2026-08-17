@@ -1,4 +1,4 @@
-"""Main orchestration for Binance Square Bot v10.1 Adaptive W2E Proxy.
+"""Main orchestration for Binance Square Bot v11 Outcome Adaptive Engine.
 
 Pipeline:
 1. Scan a broad liquid USDT universe on 5m/15m/1h.
@@ -7,6 +7,7 @@ Pipeline:
 4. Build a Python-owned entry zone / stop / TP1 / TP2 / TP3 plan when valid.
 5. Let DeepSeek V4 Pro write from locked facts; use Mistral only if the primary API is unavailable.
 6. Fact-check, anti-template rank, render a chart and publish.
+7. Track explicitly published trade targets and post verified outcome follow-ups.
 """
 from __future__ import annotations
 
@@ -51,6 +52,8 @@ from event_writer import (
 )
 from performance_store import record_publication
 from adaptive import AdaptiveAdjustment, score_adaptive
+from trade_journal import bootstrap_recent_setups, record_trade_setup
+from outcome_engine import process_outcomes
 
 logger = setup_logging()
 
@@ -966,6 +969,25 @@ def _run_once() -> int:
             return 0
         logger.info("Publication guard: %s", pacing.reason)
 
+    # v11 can import still-live setups from the recent v10.x memory/analytics cache
+    # once, so an upgrade does not lose a setup published shortly before deployment.
+    try:
+        bootstrap_recent_setups(memory.items)
+    except Exception as exc:
+        logger.warning("Outcome bootstrap skipped: %s", exc)
+
+    # v11 Outcome Engine runs before the fresh-market scan. At most one verified
+    # follow-up is published per cron cycle; if it publishes, this run stops here
+    # so the account never emits an outcome and a fresh setup at the same moment.
+    try:
+        if process_outcomes(memory=memory, guard=guard, dry_run=DRY_RUN):
+            write_status("published", "verified trade outcome follow-up published", lane="outcome")
+            return 0
+    except Exception as exc:
+        # Outcome tracking is additive. A transient market-data/card failure must
+        # never block the normal Square publishing pipeline.
+        logger.warning("Outcome Engine cycle failed; continuing fresh scan: %s", exc)
+
     trending_market = get_trending_market(limit=TOP_SYMBOLS)
     if not trending_market:
         logger.error("No trending symbols found")
@@ -1330,6 +1352,32 @@ def _run_once() -> int:
             )
         except Exception as exc:
             logger.warning("Could not record publication analytics metadata: %s", exc)
+
+        # Track only targets that were actually visible in the published text/media.
+        # This prevents any after-the-fact target claims. EVENT posts with a valid
+        # internal plan but no explicit public target remain untracked by Outcome Engine.
+        if plan_valid:
+            try:
+                media_targets = []
+                if card_path and card_path in images:
+                    media_targets = ["tp1", "tp2", "tp3"]
+                elif chart_path and chart_path in images:
+                    # Every plan chart shows TP1. trade_map explicitly renders the
+                    # complete TP1/TP2/TP3 ladder in the image.
+                    media_targets = ["tp1", "tp2", "tp3"] if selected_post.visual_style == "trade_map" else ["tp1"]
+                record_trade_setup(
+                    post_id=published.post_id,
+                    symbol=basic,
+                    market_symbol=symbol,
+                    direction=best_score.direction,
+                    lane=lane,
+                    text=post_text,
+                    levels=levels,
+                    writer_source=selected_post.source,
+                    additional_public_targets=media_targets,
+                )
+            except Exception as exc:
+                logger.warning("Could not record trade setup for Outcome Engine: %s", exc)
 
         add_published(symbol)
         memory.add_post(

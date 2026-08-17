@@ -26,7 +26,7 @@ jobs:
       DRY_RUN: "0"
       SQUARE_SKILL_DIR: ${{ github.workspace }}/.agents/skills/square-post
 
-      # v10.1 Adaptive W2E Proxy: real Square performance now softly nudges ranking.
+      # v11 Outcome Adaptive Engine: real Square performance softly nudges ranking.
       # The market engine and hard quality/risk gates still remain authoritative.
       SQUARE_PROFILE_UID: "6w3LNrVCJ9O4VGhRSf6oug"
       LEARNING_ONLY: "0"
@@ -58,6 +58,10 @@ jobs:
       CONTENT_MODE: "ai_author"
       ORCAROUTER_BASE_URL: "https://api.orcarouter.ai/v1"
       ORCAROUTER_MODEL: "deepseek/deepseek-v4-pro-free"
+      ORCAROUTER_RETRIES: "4"
+      ORCAROUTER_RETRY_BASE_SECONDS: "3"
+      ORCAROUTER_RETRY_CAP_SECONDS: "15"
+      ORCAROUTER_MAX_RETRY_AFTER: "30"
       MISTRAL_MODEL: "mistral-small-latest"
       AI_VARIANTS: "6"
       AI_RETRIES: "2"
@@ -106,6 +110,19 @@ jobs:
       PUBLIC_STOP_BUFFER_ATR: "0.75"
       ENTRY_ZONE_ATR: "0.16"
       ENTRY_ZONE_MAX_PCT: "0.35"
+
+      # v11 Outcome Engine. Only price targets explicitly present in the original
+      # published text are tracked for automatic result follow-ups.
+      ENABLE_OUTCOME_ENGINE: "1"
+      OUTCOME_AVATAR_PATH: "assets/pozitivehero_avatar.png"
+      OUTCOME_AI: "1"
+      OUTCOME_POST_STOPS: "1"
+      OUTCOME_PENDING_ENTRY_HOURS: "36"
+      OUTCOME_MAX_AGE_HOURS: "96"
+      OUTCOME_MIN_FOLLOWUP_GAP_MIN: "45"
+      OUTCOME_MAX_FOLLOWUPS_PER_TRADE: "2"
+      OUTCOME_MAX_KLINE_PAGES: "7"
+      OUTCOME_BOOTSTRAP_HOURS: "24"
 
       # Broad scan: 5m freshness + 15m/1h setup; 4h/1d only for shortlist.
       TOP_SYMBOLS: "120"

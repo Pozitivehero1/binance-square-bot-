@@ -1,0 +1,23 @@
+Binance Square Bot v11 Outcome Adaptive Engine
+Offline regression result: PASS
+
+Standard suite:
+- attention / micro attention / opportunity
+- dual lane / event author / event visuals
+- trade plan / W2E proxy / human copy / emoji / presentation / visuals
+- cron safety / analytics / adaptive ranking
+- DeepSeek primary + 429/5xx retry + Mistral fallback
+- Outcome Engine public-target state machine
+- avatar-backed 1080x1350 outcome card
+- core self-test / publisher command
+
+Stress suite:
+- TRADE repetition: 150 cycles, max similarity 0.410 < 0.46 gate
+- EVENT repetition: 40 cycles, max similarity 0.243
+
+Additional integration checks:
+- recent pre-v11 journal bootstrap is idempotent
+- dashboard data builds with Outcomes payload
+- dashboard JavaScript syntax OK
+- GitHub workflow YAML parses successfully
+- no real Binance Square publication was attempted during tests
