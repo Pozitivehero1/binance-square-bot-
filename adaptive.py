@@ -13,6 +13,7 @@ from statistics import median
 from typing import Iterable, Optional
 
 from performance_store import load_store
+from trade_journal import load_journal
 
 
 def _bool(name: str, default: str = "1") -> bool:
@@ -29,6 +30,9 @@ MAX_LANE = max(0.5, min(float(os.getenv("ADAPTIVE_LANE_MAX", "2.5")), 6.0))
 MAX_BREAKOUT = max(0.0, min(float(os.getenv("ADAPTIVE_BREAKOUT_MAX", "3")), 6.0))
 MAX_EXPLORATION = max(0.0, min(float(os.getenv("ADAPTIVE_EXPLORATION_MAX", "2.5")), 5.0))
 MAX_SATURATION = max(0.0, min(float(os.getenv("ADAPTIVE_SATURATION_MAX", "5")), 10.0))
+MAX_OUTCOME = max(0.0, min(float(os.getenv("ADAPTIVE_OUTCOME_MAX", "5")), 8.0))
+OUTCOME_PRIOR = max(2.0, min(float(os.getenv("ADAPTIVE_OUTCOME_PRIOR", "6")), 20.0))
+OUTCOME_MIN_CLOSED = max(1, min(int(os.getenv("ADAPTIVE_OUTCOME_MIN_CLOSED", "3")), 20))
 
 
 @dataclass(frozen=True)
@@ -142,6 +146,84 @@ def _symbol(item: dict) -> str:
     return value[:-4] if value.endswith("USDT") and len(value) > 4 else value
 
 
+def _outcome_value(trade: dict) -> Optional[float]:
+    """Map a verified closed public setup to a bounded quality value.
+
+    Full TP3 completion is strongest; reaching TP1/TP2 before a later stop still
+    earns partial credit. Pure stops earn zero. Expired/manual-review rows are not
+    treated as wins or losses because they do not prove a tradable outcome.
+    """
+    if not isinstance(trade, dict) or int(trade.get("tracking_version") or 0) < 2:
+        return None
+    if not bool(trade.get("public_plan_complete")):
+        return None
+    status = str(trade.get("status") or "")
+    close_reason = str(trade.get("close_reason") or "")
+    if status != "closed" or close_reason not in {"stop", "public_targets_complete"}:
+        return None
+    hits = trade.get("hits") if isinstance(trade.get("hits"), dict) else {}
+    if hits.get("tp3"):
+        return 1.0
+    if hits.get("tp2"):
+        return 0.70
+    if hits.get("tp1"):
+        return 0.40
+    if hits.get("stop"):
+        return 0.0
+    return None
+
+
+def _outcome_quality(target: str, *, plan_valid: bool, now: datetime) -> tuple[float, float, int, int]:
+    """Return (quality affinity, component, symbol_n, global_n).
+
+    Reach and trade quality stay separate. This component is applied only when
+    the candidate actually exposes a tradable plan; observation-only EVENT posts
+    keep their reach score untouched. A Bayesian-style prior prevents a few early
+    outcomes from blacklisting a ticker.
+    """
+    if not plan_valid or MAX_OUTCOME <= 0:
+        return 50.0, 0.0, 0, 0
+    try:
+        journal = load_journal()
+    except Exception:
+        return 50.0, 0.0, 0, 0
+    rows = []
+    cutoff = now - timedelta(days=LOOKBACK_DAYS)
+    for trade in (journal.get("trades") or {}).values():
+        value = _outcome_value(trade)
+        if value is None:
+            continue
+        published = _parse_dt(trade.get("published_at", ""))
+        if not published or published < cutoff:
+            continue
+        sym = _symbol(trade)
+        rows.append((sym, value, _decay_weight(published, now)))
+    if len(rows) < OUTCOME_MIN_CLOSED:
+        return 50.0, 0.0, 0, len(rows)
+
+    def weighted_mean(items: list[tuple[str, float, float]]) -> float:
+        denom = sum(weight for _, _, weight in items)
+        return sum(value * weight for _, value, weight in items) / max(denom, 1e-9)
+
+    global_mean = weighted_mean(rows)
+    symbol_rows = [row for row in rows if row[0] == target]
+    symbol_n = len(symbol_rows)
+    if symbol_rows:
+        symbol_mean = weighted_mean(symbol_rows)
+        confidence = symbol_n / (symbol_n + OUTCOME_PRIOR)
+        mean = global_mean + (symbol_mean - global_mean) * confidence
+    else:
+        mean = global_mean
+
+    # 0.45 is deliberately not a required win rate. Partial TP progress has value,
+    # and the component is a soft nudge rather than a hard profitability claim.
+    raw_affinity = 50.0 + (mean - 0.45) * 90.0
+    global_confidence = len(rows) / (len(rows) + 12.0)
+    affinity = 50.0 + (max(10.0, min(90.0, raw_affinity)) - 50.0) * global_confidence
+    component = max(-MAX_OUTCOME, min(MAX_OUTCOME, (affinity - 50.0) / 40.0 * MAX_OUTCOME))
+    return round(affinity, 2), round(component, 2), symbol_n, len(rows)
+
+
 def score_adaptive(
     *,
     symbol: str,
@@ -149,6 +231,7 @@ def score_adaptive(
     live_score: float,
     event_class: str = "",
     micro_score: float = 50.0,
+    plan_valid: Optional[bool] = None,
     now: Optional[datetime] = None,
 ) -> AdaptiveAdjustment:
     now = now or datetime.now(timezone.utc)
@@ -198,13 +281,22 @@ def score_adaptive(
             recent_symbol_posts += 1
     saturation = -min(MAX_SATURATION, max(0, recent_symbol_posts - 2) * 1.15)
 
-    total = ticker_comp + hour_comp + lane_comp + breakout_comp + exploration + saturation
+    # Existing callers do not all pass plan_valid yet. TRADE lane is always a
+    # validated public plan by construction; EVENT defaults to reach-only unless
+    # a caller explicitly marks its plan valid. This preserves EVENT reach.
+    effective_plan_valid = (lane_name == "TRADE") if plan_valid is None else bool(plan_valid)
+    outcome_aff, outcome_comp, outcome_n, outcome_global_n = _outcome_quality(
+        target, plan_valid=effective_plan_valid, now=now
+    )
+
+    total = ticker_comp + hour_comp + lane_comp + breakout_comp + exploration + saturation + outcome_comp
     total = max(-MAX_TOTAL, min(MAX_TOTAL, total))
     reason = (
         f"ticker={ticker_aff:.1f}/n{ticker_n} ({ticker_comp:+.1f}), "
         f"hour{local_hour}={hour_aff:.1f}/n{hour_n} ({hour_comp:+.1f}), "
         f"lane={lane_aff:.1f}/n{lane_n} ({lane_comp:+.1f}), breakout={breakout_comp:+.1f}, "
-        f"explore={exploration:+.1f}, saturation={saturation:+.1f}, baseline={baseline:.1f}"
+        f"explore={exploration:+.1f}, saturation={saturation:+.1f}, "
+        f"outcome={outcome_aff:.1f}/n{outcome_n}/g{outcome_global_n} ({outcome_comp:+.1f}), baseline={baseline:.1f}"
     )
     return AdaptiveAdjustment(
         True,

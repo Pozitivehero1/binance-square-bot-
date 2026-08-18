@@ -303,8 +303,18 @@ def record_trade_setup(
     setup_id = build_setup_id(
         source_post_id=source_post_id, market_symbol=market_symbol, direction=direction, levels=levels,
     )
-    decision_mode = str(levels.get("decision_mode") or "at_level")
-    immediate = decision_mode == "at_level" or str(levels.get("trade_state")) == "decision_now"
+    public_decision_mode = str(levels.get("decision_mode") or "at_level")
+    require_near_confirmation = os.getenv("REQUIRE_NEAR_LEVEL_CONFIRMATION", "1").strip().lower() in {
+        "1", "true", "yes", "on"
+    }
+    # Keep the published semantics unchanged (the writer may correctly say price
+    # is already at the zone), but track a real entry only after a closed candle
+    # confirms through the outer edge of that zone. Outcome Engine already knows
+    # breakout_confirm / breakdown_confirm, so this is conservative and backward-compatible.
+    tracking_decision_mode = public_decision_mode
+    if require_near_confirmation and public_decision_mode == "at_level":
+        tracking_decision_mode = "breakout_confirm" if direction == "long" else "breakdown_confirm"
+    immediate = public_decision_mode == "at_level" and not require_near_confirmation
     entry = _num(levels, "plan_entry", _num(levels, "entry"))
 
     trade = {
@@ -322,7 +332,8 @@ def record_trade_setup(
         "published_at": timestamp,
         "writer_source": str(writer_source or ""),
         "status": "active" if immediate else "pending_entry",
-        "decision_mode": decision_mode,
+        "decision_mode": tracking_decision_mode,
+        "public_decision_mode": public_decision_mode,
         "trade_state": str(levels.get("trade_state") or ""),
         "entry": entry,
         "entry_zone_low": _num(levels, "entry_zone_low", entry),

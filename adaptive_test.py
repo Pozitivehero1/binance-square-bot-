@@ -48,8 +48,28 @@ def main() -> None:
         "ADAPTIVE_MIN_MATURE_SAMPLES": "80",
         "ANALYTICS_TZ_OFFSET": "3",
     }
-    with patch.dict(os.environ, env, clear=False), patch("adaptive.load_store", return_value=store):
+    # Outcome journal: TUT has several verified stops while other symbols provide
+    # enough global history to activate the soft signal-quality component.
+    trades = {}
+    for j in range(4):
+        trades[f"tut{j}"] = {
+            "tracking_version": 2, "public_plan_complete": True, "status": "closed",
+            "close_reason": "stop", "symbol": "TUT",
+            "published_at": (now - timedelta(hours=6 + j)).isoformat(),
+            "hits": {"tp1": False, "tp2": False, "tp3": False, "stop": True},
+        }
+    for j in range(4):
+        trades[f"win{j}"] = {
+            "tracking_version": 2, "public_plan_complete": True, "status": "closed",
+            "close_reason": "public_targets_complete", "symbol": f"WIN{j}",
+            "published_at": (now - timedelta(hours=8 + j)).isoformat(),
+            "hits": {"tp1": True, "tp2": True, "tp3": True, "stop": False},
+        }
+    journal = {"schema_version": 2, "trades": trades}
+
+    with patch.dict(os.environ, env, clear=False), patch("adaptive.load_store", return_value=store), patch("adaptive.load_journal", return_value=journal):
         tut = score_adaptive(symbol="TUT", lane="EVENT", live_score=75, micro_score=76, now=now)
+        tut_plan = score_adaptive(symbol="TUT", lane="EVENT", live_score=75, micro_score=76, plan_valid=True, now=now)
         btc = score_adaptive(symbol="BTC", lane="EVENT", live_score=75, micro_score=76, now=now)
         new = score_adaptive(symbol="NEWCOIN", lane="EVENT", live_score=82, micro_score=84, event_class="fresh_event", now=now)
 
@@ -57,9 +77,11 @@ def main() -> None:
     assert tut.ticker_component > 0, tut
     assert btc.ticker_component < 0, btc
     assert tut.hour_component > 0, tut
+    assert tut_plan.total < tut.total, (tut_plan, tut)
+    assert "outcome=" in tut_plan.reason
     assert 0 < new.exploration_component <= 2.5, new
     assert abs(tut.total) <= 14 and abs(btc.total) <= 14
-    print(f"ADAPTIVE: OK | TUT {tut.total:+.1f} | BTC {btc.total:+.1f} | explore {new.exploration_component:+.1f}")
+    print(f"ADAPTIVE: OK | TUT reach {tut.total:+.1f} plan {tut_plan.total:+.1f} | BTC {btc.total:+.1f} | explore {new.exploration_component:+.1f}")
 
 
 if __name__ == "__main__":
