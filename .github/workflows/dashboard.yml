@@ -6,7 +6,7 @@ on:
     - cron: "17 * * * *"
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -54,6 +54,18 @@ jobs:
       - name: Refresh public Square analytics
         run: |
           python collect_stats.py --pages "$STATS_REFRESH_PAGES" --build-dashboard
+
+      - name: Persist live dashboard data
+        run: |
+          if git diff --quiet -- dashboard/data.json; then
+            echo "dashboard/data.json unchanged"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add dashboard/data.json
+            git commit -m "Update live dashboard analytics [skip ci]"
+            git push
+          fi
 
       - name: Setup GitHub Pages
         uses: actions/configure-pages@v5
