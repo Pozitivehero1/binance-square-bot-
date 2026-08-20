@@ -1,3 +1,4 @@
+# trigger: v11.3
 name: One-time v11.3 hotfix
 
 on:
@@ -36,7 +37,6 @@ jobs:
                   raise SystemExit(f"{path}: expected exactly one match, got {count}")
               p.write_text(text.replace(old, new, 1), encoding="utf-8")
 
-          # 1) Outcome policy: TP1/TP2 remain internal, only TP3 completion may publish.
           replace_once(
               "outcome_engine.py",
               'POST_STOPS = os.getenv("OUTCOME_POST_STOPS", "1").strip().lower() in {"1", "true", "yes", "on"}\n',
@@ -56,11 +56,10 @@ jobs:
               '''        if not isinstance(event, dict):\n            continue\n        # Purge stale partial/stop events left in cache before this policy change.\n        kind = str(event.get("kind") or "")\n        if kind == "target" and not POST_PARTIAL_TARGETS:\n            trade["pending_followup"] = None\n            continue\n        if kind in {"stop", "stop_after_target"} and not POST_STOPS:\n            trade["pending_followup"] = None\n            continue\n        if len(trade.get("followups") or []) >= MAX_FOLLOWUPS:\n''',
           )
 
-          # 2) Global Square cashtag sanitizer at the final publishing boundary.
           replace_once(
               "publisher.py",
               '''def publish(text: str, image_path: ImageInput = None) -> PublishResult:\n''',
-              '''def normalize_square_cashtags(text: str) -> str:\n    """Keep Binance Square cashtags isolated from punctuation so they stay clickable."""\n    value = str(text or "")\n    # Binance may fail to linkify forms such as "$BTC:". A separated dash keeps\n    # the heading natural while guaranteeing whitespace after the cashtag token.\n    value = re.sub(r"(\\$[A-Za-z][A-Za-z0-9]{0,19})\\s*:", r"\\1 —", value)\n    # Be conservative with other common sentence punctuation too.\n    value = re.sub(r"(\\$[A-Za-z][A-Za-z0-9]{0,19})(?=[,;.!?])", r"\\1 ", value)\n    return value\n\n\ndef publish(text: str, image_path: ImageInput = None) -> PublishResult:\n''',
+              '''def normalize_square_cashtags(text: str) -> str:\n    """Keep Binance Square cashtags isolated from punctuation so they stay clickable."""\n    value = str(text or "")\n    value = re.sub(r"(\\$[A-Za-z][A-Za-z0-9]{0,19})\\s*:", r"\\1 —", value)\n    value = re.sub(r"(\\$[A-Za-z][A-Za-z0-9]{0,19})(?=[,;.!?])", r"\\1 ", value)\n    return value\n\n\ndef publish(text: str, image_path: ImageInput = None) -> PublishResult:\n''',
           )
 
           replace_once(
@@ -69,14 +68,12 @@ jobs:
               '''    if not text or not text.strip():\n        logger.error("Refusing to publish an empty post")\n        return PublishResult(False, stderr="empty post")\n\n    normalized = normalize_square_cashtags(text)\n    if normalized != text:\n        logger.info("Normalized Square cashtag punctuation before publish")\n    text = normalized\n\n    skill_dir = find_skill_dir()\n''',
           )
 
-          # 3) Update the offline outcome regression to the new final-only policy.
           replace_once(
               "outcome_test.py",
               '''    assert t["hits"]["tp1"] and not t["hits"]["tp2"]\n    assert t["pending_followup"]["kind"] == "target"\n    assert t["pending_followup"]["target_name"] == "tp1"\n\n    t["followups"] = [{"kind": "target", "target_name": "tp1"}]\n    t["pending_followup"] = None\n    process_trade_candles(t, [candle(70_000, 102, 104.3, 101.5, 103.8)])\n    assert t["hits"]["tp2"] and t.get("pending_followup") is None, "TP2 partial must be suppressed after TP1 follow-up"\n''',
               '''    assert t["hits"]["tp1"] and not t["hits"]["tp2"]\n    assert t.get("pending_followup") is None, "TP1 must remain journal-only"\n\n    process_trade_candles(t, [candle(70_000, 102, 104.3, 101.5, 103.8)])\n    assert t["hits"]["tp2"] and t.get("pending_followup") is None, "TP2 must remain journal-only"\n''',
           )
 
-          # 4) Make the policy explicit in runtime configuration.
           replace_once(
               ".github/workflows/run.yml",
               '      OUTCOME_POST_STOPS: "0"\n',
@@ -89,8 +86,8 @@ jobs:
               "- TP1 and TP2 are still tracked internally but no longer generate public follow-up posts.\n"
               "- Only a verified full TP3 completion can generate a public success outcome by default.\n"
               "- Existing queued partial/stop follow-ups are purged under the disabled policies.\n"
-              "- A final publisher guard rewrites cashtags attached to punctuation (for example `$BTC:`) so the cashtag is separated and remains clickable on Binance Square.\n"
-              "- The sanitizer applies to AI, deterministic, EVENT, TRADE, and OUTCOME posts because it runs at the final publish boundary.\n",
+              "- Final publisher guard separates cashtags from punctuation (for example `$BTC:`) so Binance Square can linkify them.\n"
+              "- Applies to AI, deterministic, EVENT, TRADE, and OUTCOME posts at the final publish boundary.\n",
               encoding="utf-8",
           )
           PY
