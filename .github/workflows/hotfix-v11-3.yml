@@ -1,0 +1,119 @@
+name: One-time v11.3 hotfix
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/hotfix-v11-3.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Apply v11.3 hotfix
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              p = Path(path)
+              text = p.read_text(encoding="utf-8")
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected exactly one match, got {count}")
+              p.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          # 1) Outcome policy: TP1/TP2 remain internal, only TP3 completion may publish.
+          replace_once(
+              "outcome_engine.py",
+              'POST_STOPS = os.getenv("OUTCOME_POST_STOPS", "1").strip().lower() in {"1", "true", "yes", "on"}\n',
+              'POST_STOPS = os.getenv("OUTCOME_POST_STOPS", "1").strip().lower() in {"1", "true", "yes", "on"}\n'
+              'POST_PARTIAL_TARGETS = os.getenv("OUTCOME_POST_PARTIAL_TARGETS", "0").strip().lower() in {"1", "true", "yes", "on"}\n',
+          )
+
+          replace_once(
+              "outcome_engine.py",
+              '''            # If a partial target follow-up has already been sent, suppress further\n            # partial updates and reserve the second slot for final/stop outcome.\n            sent_target = any((f.get("kind") == "target") for f in (trade.get("followups") or []))\n            if event["kind"] == "target_complete" or not sent_target:\n                _queue_event(trade, event)\n''',
+              '''            # v11.3: TP1/TP2 are journal-only by default. Public outcome posts are\n            # reserved for the fully completed TP3 ladder, unless explicitly re-enabled.\n            if event["kind"] == "target_complete" or POST_PARTIAL_TARGETS:\n                _queue_event(trade, event)\n''',
+          )
+
+          replace_once(
+              "outcome_engine.py",
+              '''        if not isinstance(event, dict):\n            continue\n        if len(trade.get("followups") or []) >= MAX_FOLLOWUPS:\n''',
+              '''        if not isinstance(event, dict):\n            continue\n        # Purge stale partial/stop events left in cache before this policy change.\n        kind = str(event.get("kind") or "")\n        if kind == "target" and not POST_PARTIAL_TARGETS:\n            trade["pending_followup"] = None\n            continue\n        if kind in {"stop", "stop_after_target"} and not POST_STOPS:\n            trade["pending_followup"] = None\n            continue\n        if len(trade.get("followups") or []) >= MAX_FOLLOWUPS:\n''',
+          )
+
+          # 2) Global Square cashtag sanitizer at the final publishing boundary.
+          replace_once(
+              "publisher.py",
+              '''def publish(text: str, image_path: ImageInput = None) -> PublishResult:\n''',
+              '''def normalize_square_cashtags(text: str) -> str:\n    """Keep Binance Square cashtags isolated from punctuation so they stay clickable."""\n    value = str(text or "")\n    # Binance may fail to linkify forms such as "$BTC:". A separated dash keeps\n    # the heading natural while guaranteeing whitespace after the cashtag token.\n    value = re.sub(r"(\\$[A-Za-z][A-Za-z0-9]{0,19})\\s*:", r"\\1 —", value)\n    # Be conservative with other common sentence punctuation too.\n    value = re.sub(r"(\\$[A-Za-z][A-Za-z0-9]{0,19})(?=[,;.!?])", r"\\1 ", value)\n    return value\n\n\ndef publish(text: str, image_path: ImageInput = None) -> PublishResult:\n''',
+          )
+
+          replace_once(
+              "publisher.py",
+              '''    if not text or not text.strip():\n        logger.error("Refusing to publish an empty post")\n        return PublishResult(False, stderr="empty post")\n\n    skill_dir = find_skill_dir()\n''',
+              '''    if not text or not text.strip():\n        logger.error("Refusing to publish an empty post")\n        return PublishResult(False, stderr="empty post")\n\n    normalized = normalize_square_cashtags(text)\n    if normalized != text:\n        logger.info("Normalized Square cashtag punctuation before publish")\n    text = normalized\n\n    skill_dir = find_skill_dir()\n''',
+          )
+
+          # 3) Update the offline outcome regression to the new final-only policy.
+          replace_once(
+              "outcome_test.py",
+              '''    assert t["hits"]["tp1"] and not t["hits"]["tp2"]\n    assert t["pending_followup"]["kind"] == "target"\n    assert t["pending_followup"]["target_name"] == "tp1"\n\n    t["followups"] = [{"kind": "target", "target_name": "tp1"}]\n    t["pending_followup"] = None\n    process_trade_candles(t, [candle(70_000, 102, 104.3, 101.5, 103.8)])\n    assert t["hits"]["tp2"] and t.get("pending_followup") is None, "TP2 partial must be suppressed after TP1 follow-up"\n''',
+              '''    assert t["hits"]["tp1"] and not t["hits"]["tp2"]\n    assert t.get("pending_followup") is None, "TP1 must remain journal-only"\n\n    process_trade_candles(t, [candle(70_000, 102, 104.3, 101.5, 103.8)])\n    assert t["hits"]["tp2"] and t.get("pending_followup") is None, "TP2 must remain journal-only"\n''',
+          )
+
+          # 4) Make the policy explicit in runtime configuration.
+          replace_once(
+              ".github/workflows/run.yml",
+              '      OUTCOME_POST_STOPS: "0"\n',
+              '      OUTCOME_POST_STOPS: "0"\n      OUTCOME_POST_PARTIAL_TARGETS: "0"\n',
+          )
+
+          Path("VERSION.txt").write_text("v11.3 Final-Only Outcomes + Clickable Cashtags\n", encoding="utf-8")
+          Path("CHANGES_V11_3.md").write_text(
+              "# v11.3 — Final-Only Outcomes + Clickable Cashtags\n\n"
+              "- TP1 and TP2 are still tracked internally but no longer generate public follow-up posts.\n"
+              "- Only a verified full TP3 completion can generate a public success outcome by default.\n"
+              "- Existing queued partial/stop follow-ups are purged under the disabled policies.\n"
+              "- A final publisher guard rewrites cashtags attached to punctuation (for example `$BTC:`) so the cashtag is separated and remains clickable on Binance Square.\n"
+              "- The sanitizer applies to AI, deterministic, EVENT, TRADE, and OUTCOME posts because it runs at the final publish boundary.\n",
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Regression checks
+        run: |
+          python -m py_compile outcome_engine.py publisher.py outcome_test.py
+          python outcome_test.py
+          python - <<'PY'
+          from publisher import normalize_square_cashtags
+          assert normalize_square_cashtags("$BTC: импульс") == "$BTC — импульс"
+          assert normalize_square_cashtags("По $ETH, смотрю уровень") == "По $ETH , смотрю уровень"
+          assert normalize_square_cashtags("$ACE LONG без знака") == "$ACE LONG без знака"
+          print("CASHTAG SANITIZER: OK")
+          PY
+
+      - name: Commit hotfix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add outcome_engine.py publisher.py outcome_test.py .github/workflows/run.yml VERSION.txt CHANGES_V11_3.md
+          git commit -m "v11.3: final-only outcomes and clickable cashtags [skip ci]"
+          git push
