@@ -6,6 +6,7 @@ the same changes are already present in the source tree.
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from runtime import PROJECT_DIR
@@ -122,6 +123,9 @@ def publish(text: str, image_path: ImageInput = None) -> PublishResult:
 
 
 def apply_v113_hotfix() -> None:
+    # Production policy is explicit: no stop posts and no TP1/TP2 public updates.
+    os.environ["OUTCOME_POST_STOPS"] = "0"
+    os.environ["OUTCOME_POST_PARTIAL_TARGETS"] = "0"
     changed = _patch_outcomes() | _patch_publisher()
     if changed:
         print("[v11.3 hotfix] final-only outcomes + clickable cashtags applied")
