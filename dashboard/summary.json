@@ -1,6 +1,6 @@
 {
   "meta": {
-    "generated_at": "2026-08-23T01:58:53.399321+00:00",
+    "generated_at": "2026-08-23T03:14:38.010499+00:00",
     "profile_uid": "6w3LNrVCJ9O4VGhRSf6oug",
     "learning_only": false,
     "timezone": "UTC+3",
@@ -10,10 +10,10 @@
   },
   "overview": {
     "posts_24h": 70,
-    "views_on_24h_posts": 9893,
+    "views_on_24h_posts": 9197,
     "median_views_6h_plus": 88.0,
-    "tracked_posts": 677,
-    "posts_300_plus": 13,
+    "tracked_posts": 681,
+    "posts_300_plus": 14,
     "posts_500_plus": 0,
     "posts_1000_plus": 0,
     "best_post": {
@@ -22,7 +22,7 @@
       "lane": "TRADE",
       "direction": "LONG",
       "published_at": "2026-08-21T00:25:27.088418+00:00",
-      "age_hours": 49.56,
+      "age_hours": 50.82,
       "text": "⚡ По $DOGE активность выросла примерно до x0,72 нормы; одной этой цифры мне мало\n\nСначала цена, потом объём: Сейчас цена уже у 0.08071; мне важна реакция покупателей здесь.\n\nЕсли план LONG активируется: вход около 0.08071, TP1 0.08202, стоп 0.07971.\n\nПлан LONG: вход 0.08062–0.0808 | стоп 0.07971\nTP1 0.08202 | TP2 0.08275 | TP3 0.08355",
       "views": 459,
       "likes": 1,
@@ -68,19 +68,138 @@
   },
   "recent_posts": [
     {
-      "post_id": "358638332200216",
-      "symbol": "SOL",
-      "lane": "EVENT",
-      "direction": "OBSERVATION",
-      "published_at": "2026-08-23T01:43:06.700117+00:00",
-      "age_hours": 0.26,
-      "text": "$SOL: событие есть, но чистой сделки пока нет.\nРынок всё ещё балансирует между поддержкой 92.58 и сопротивлением 97.21 — без явного преимущества одной из сторон индикаторы остаются нейтральными.",
-      "views": 30,
+      "post_id": "358658520965117",
+      "symbol": "RE",
+      "lane": "TRADE",
+      "direction": "LONG",
+      "published_at": "2026-08-23T03:05:15.584264+00:00",
+      "age_hours": 0.16,
+      "text": "$RE: повышенный объём есть, а вывод я делаю только вместе с ценой\n\nДля меня это лишь фон сделки. Сейчас цена уже у 0.5128; мне важна реакция покупателей здесь.\n\nЕсли план LONG активируется: вход около 0.5128, TP1 0.5253, стоп 0.5003.\n\nВход LONG: 0.5117–0.5139 · стоп 0.5003\nФиксация: TP1 0.5253 / TP2 0.5307 / TP3 0.5376",
+      "views": 16,
       "likes": 0,
       "comments": 0,
       "quotes": 0,
       "shares": 0,
       "milestones": {},
+      "writer_source": "deterministic",
+      "content_format": "volume_read",
+      "event_class": "high_demand_active",
+      "tracked_from_publish": true,
+      "learning_eligible": true
+    },
+    {
+      "post_id": "358653484079095",
+      "symbol": "TUT",
+      "lane": "EVENT",
+      "direction": "OBSERVATION",
+      "published_at": "2026-08-23T02:44:45.891731+00:00",
+      "age_hours": 0.5,
+      "text": "В $TUT активность выросла, но свеча пока не рассказывает всю историю\n\n15-минутное изменение +8.9%, объём около x0.92 обычного.\n\nДля меня это повод открыть график, а не автоматически открыть позицию. Район 0.06013 сейчас полезнее любого поспешного ярлыка сделки.",
+      "views": 29,
+      "likes": 0,
+      "comments": 0,
+      "quotes": 0,
+      "shares": 0,
+      "milestones": {
+        "30m": {
+          "views": 29,
+          "likes": 0,
+          "comments": 0,
+          "quotes": 0,
+          "shares": 0
+        }
+      },
+      "writer_source": "deterministic_event",
+      "content_format": "event_price_volume",
+      "event_class": "high_demand_active",
+      "tracked_from_publish": true,
+      "learning_eligible": true
+    },
+    {
+      "post_id": "358648633839822",
+      "symbol": "ONDO",
+      "lane": "TRADE",
+      "direction": "SHORT",
+      "published_at": "2026-08-23T02:25:01.744203+00:00",
+      "age_hours": 0.83,
+      "text": "$ONDO может повести себя двояко прямо сейчас:\nПервый путь — классический отбой от рабочей зоны по сценарию retest_reject с фиксацией хотя бы на первой цели (TP1). Тогда весь план работает как часы: вход отбился → продажа состоялась → риск ограничен строго по стопу.\n\nSHORT-план: зона 0.3619–0.3631, стоп 0.3652\nЦели: TP1 0.3571 → TP2 0.3541 → TP3 0.3508",
+      "views": 60,
+      "likes": 0,
+      "comments": 0,
+      "quotes": 0,
+      "shares": 0,
+      "milestones": {
+        "30m": {
+          "views": 58,
+          "likes": 0,
+          "comments": 0,
+          "quotes": 0,
+          "shares": 0
+        }
+      },
+      "writer_source": "mistral",
+      "content_format": "two_paths",
+      "event_class": "high_demand_active",
+      "tracked_from_publish": true,
+      "learning_eligible": true
+    },
+    {
+      "post_id": "358643895112991",
+      "symbol": "KAITO",
+      "lane": "TRADE",
+      "direction": "SHORT",
+      "published_at": "2026-08-23T02:05:44.836677+00:00",
+      "age_hours": 1.15,
+      "text": "👀 В $KAITO сейчас вся моя идея помещается в одну цену — 0.343\n\nЦена ниже 0.343; на возврате к зоне хочу увидеть продавцов.\n\nЕсли условие для SHORT сработает, TP1 у меня 0.3387; стоп 0.3449.\n\nSHORT только в зоне 0.3426–0.3434; отмена на 0.3449\nTP1 0.3387 · TP2 0.3363 · TP3 0.3337",
+      "views": 55,
+      "likes": 0,
+      "comments": 0,
+      "quotes": 0,
+      "shares": 0,
+      "milestones": {
+        "30m": {
+          "views": 47,
+          "likes": 0,
+          "comments": 0,
+          "quotes": 0,
+          "shares": 0
+        }
+      },
+      "writer_source": "deterministic",
+      "content_format": "one_level",
+      "event_class": "active_market",
+      "tracked_from_publish": true,
+      "learning_eligible": true
+    },
+    {
+      "post_id": "358638332200216",
+      "symbol": "SOL",
+      "lane": "EVENT",
+      "direction": "OBSERVATION",
+      "published_at": "2026-08-23T01:43:06.700117+00:00",
+      "age_hours": 1.53,
+      "text": "$SOL: событие есть, но чистой сделки пока нет.\nРынок всё ещё балансирует между поддержкой 92.58 и сопротивлением 97.21 — без явного преимущества одной из сторон индикаторы остаются нейтральными.",
+      "views": 32,
+      "likes": 0,
+      "comments": 0,
+      "quotes": 0,
+      "shares": 0,
+      "milestones": {
+        "30m": {
+          "views": 32,
+          "likes": 0,
+          "comments": 0,
+          "quotes": 0,
+          "shares": 0
+        },
+        "2h": {
+          "views": 32,
+          "likes": 0,
+          "comments": 0,
+          "quotes": 0,
+          "shares": 0
+        }
+      },
       "writer_source": "mistral_event",
       "content_format": "event_no_trade",
       "event_class": "ordinary",
@@ -93,16 +212,23 @@
       "lane": "EVENT",
       "direction": "OBSERVATION",
       "published_at": "2026-08-23T01:24:26.565364+00:00",
-      "age_hours": 0.57,
+      "age_hours": 1.84,
       "text": "$ENA: весь интерес сейчас к одной отметке — 0.1631.\n\nЭто одновременно сопротивление и ключевой уровень из пакета. Цена после +2.3% за 45 минут подошла к нему, но пятиминутка уже -1.1% — без настойчивости. Пока актив торгуется выше VWAP (0.1554), этот рубеж остаётся главным фильтром: либо цена начинает регулярно закрываться выше, либо откатывается в зону поддержки 0.1476. Другие уровни вторичны.",
-      "views": 140,
+      "views": 322,
       "likes": 0,
       "comments": 0,
       "quotes": 0,
       "shares": 0,
       "milestones": {
         "30m": {
-          "views": 140,
+          "views": 150,
+          "likes": 0,
+          "comments": 0,
+          "quotes": 0,
+          "shares": 0
+        },
+        "2h": {
+          "views": 317,
           "likes": 0,
           "comments": 0,
           "quotes": 0,
@@ -121,9 +247,9 @@
       "lane": "EVENT",
       "direction": "OBSERVATION",
       "published_at": "2026-08-23T01:02:56.083610+00:00",
-      "age_hours": 0.93,
+      "age_hours": 2.19,
       "text": "$XLM пытается переломить ситуацию после вялого движения: за полчаса +1.8%, но без явного тренда.\n\nРаньше рынок топтался возле VWAP (0.1973), а теперь цена уверенно выше и тянется к сопротивлению 0.2023 при скромном ADX (18.6). Значит ли это, что покупатели наконец взяли инициативу?\n\nПока история не ясна — всё зависит от того, удержит ли цена текущие позиции под давлением продавцов.",
-      "views": 126,
+      "views": 181,
       "likes": 0,
       "comments": 0,
       "quotes": 0,
@@ -131,6 +257,13 @@
       "milestones": {
         "30m": {
           "views": 101,
+          "likes": 0,
+          "comments": 0,
+          "quotes": 0,
+          "shares": 0
+        },
+        "2h": {
+          "views": 180,
           "likes": 0,
           "comments": 0,
           "quotes": 0,
@@ -149,9 +282,9 @@
       "lane": "TRADE",
       "direction": "LONG",
       "published_at": "2026-08-23T00:45:17.807117+00:00",
-      "age_hours": 1.23,
+      "age_hours": 2.49,
       "text": "$TRUMP: хороший вход для меня начинается со стопа, а не с красивой цели\n\nВход рассматриваю в 2.401–2.417; стоп 2.301 — точка, где я перестаю спорить с рынком.\n\nФиксацию по LONG раскладываю на TP1 2.567, TP2 2.656 и TP3 2.752.",
-      "views": 47,
+      "views": 59,
       "likes": 0,
       "comments": 0,
       "quotes": 0,
@@ -159,6 +292,13 @@
       "milestones": {
         "30m": {
           "views": 22,
+          "likes": 0,
+          "comments": 0,
+          "quotes": 0,
+          "shares": 0
+        },
+        "2h": {
+          "views": 59,
           "likes": 0,
           "comments": 0,
           "quotes": 0,
@@ -177,9 +317,9 @@
       "lane": "TRADE",
       "direction": "LONG",
       "published_at": "2026-08-23T00:24:53.044526+00:00",
-      "age_hours": 1.57,
+      "age_hours": 2.83,
       "text": "$XRP: объём вырос до x3.29 за 5 минут — это не просто шум, а сигнал о том, что кто-то пытается сдвинуть рынок.\n\nЦена уже у зоны входа 1,473–1,477 и держится выше VWAP. Если покупатели не отдадут инициативу, возможен импульс к первой цели 1,501.\n\nНо если на уровне стоп-лосса 1,449 пробьют без сопротивления — игра сразу теряет смысл. Слишком много вопросов пока остаётся без ответов.\n\nLONG-план: зона 1.473–1.477, стоп 1.449\nЦели: TP1 1.501 → TP2 1.514 → TP3 1.53",
-      "views": 271,
+      "views": 297,
       "likes": 1,
       "comments": 0,
       "quotes": 0,
@@ -193,7 +333,7 @@
           "shares": 0
         },
         "2h": {
-          "views": 271,
+          "views": 278,
           "likes": 1,
           "comments": 0,
           "quotes": 0,
@@ -212,9 +352,9 @@
       "lane": "TRADE",
       "direction": "LONG",
       "published_at": "2026-08-23T00:05:30.537540+00:00",
-      "age_hours": 1.89,
+      "age_hours": 3.15,
       "text": "$ZEC сегодня работает против стереотипа: объём вырос до x1.56 нормы, но цена почти стоит на месте.\n\nЭто значит, что либо инвесторы копили позиции тихо, либо маркет-мейкеры балансируют ликвидность перед новым движением.\nПока цена ниже VWAP и RSI не перегрета — шанс на рост сохраняется даже при слабом тренде.\n\nLONG только в зоне 800.2–804; отмена на 780.8\nTP1 826.8 · TP2 840.8 · TP3 855.8",
-      "views": 153,
+      "views": 154,
       "likes": 0,
       "comments": 0,
       "quotes": 0,
@@ -247,7 +387,7 @@
       "lane": "EVENT",
       "direction": "OBSERVATION",
       "published_at": "2026-08-22T23:41:40.327768+00:00",
-      "age_hours": 2.29,
+      "age_hours": 3.55,
       "text": "По $PYTH объём заметен, но решение пока больше в поведении цены\n\nЗа 15 минут -0.61%, объём около x1.09 нормы.\n\nСобытие есть, но чистой сделки из одного всплеска объёма я не делаю. Смотрю, как поведёт себя 0.0519.",
       "views": 24,
       "likes": 0,
@@ -282,7 +422,7 @@
       "lane": "TRADE",
       "direction": "LONG",
       "published_at": "2026-08-22T23:21:55.983004+00:00",
-      "age_hours": 2.62,
+      "age_hours": 3.88,
       "text": "$ONG сейчас решает судьбу текущего движения возле уровня сопротивления VWAP.\n\nЕсли цена удержит текущие позиции без отката ниже минорной поддержки (рубеж ~_stop_loss_), краткосрочный LONG может быть оправдан. Иначе — лучше пропустить этот импульс.\n\nСтоп ставим строго под контрольным уровнем: уровень _entry_zone_ уже активирован рынком.\n\nLONG-план: зона 0.07153–0.07191, стоп 0.06957\nЦели: TP1 0.07387 → TP2 0.07462 → TP3 0.07575",
       "views": 72,
       "likes": 0,
@@ -317,7 +457,7 @@
       "lane": "EVENT",
       "direction": "LONG",
       "published_at": "2026-08-22T23:02:07.567048+00:00",
-      "age_hours": 2.95,
+      "age_hours": 4.21,
       "text": "$DASH: событие — попытка покупателей переломить ситуацию после минусового импульса.\n\nПлан LONG готов: вход в зоне 40.86–41.1 при подтверждении интереса; стоп ниже ключевого уровня поддержки и три цели для фиксации разной глубины.\n\nПлан LONG: вход 40.86–41.1 | стоп 39.65\nTP1 42.62 | TP2 43.55 | TP3 44.55",
       "views": 53,
       "likes": 0,
@@ -352,9 +492,9 @@
       "lane": "EVENT",
       "direction": "OBSERVATION",
       "published_at": "2026-08-22T22:41:52.354467+00:00",
-      "age_hours": 3.28,
+      "age_hours": 4.55,
       "text": "$RE перешёл от вялой консолидации к попыткам движения с усилением объёма.\n\nРаньше рынок тихо топтался возле VWAP (0.5275), а теперь за 45 минут +0.37% при высоком относительном объёме — значит, кто-то пытается переломить ситуацию.\n\nНо если покупатели не пробивают сопротивление и возвращаются к поддержке (0.5037) с безразличием со стороны индикаторов, трейдеры могут быстро потерять интерес.",
-      "views": 86,
+      "views": 87,
       "likes": 0,
       "comments": 0,
       "quotes": 0,
@@ -387,9 +527,9 @@
       "lane": "TRADE",
       "direction": "LONG",
       "published_at": "2026-08-22T22:22:01.665742+00:00",
-      "age_hours": 3.61,
+      "age_hours": 4.88,
       "text": "$ZRO может пойти двумя путями из текущей точки:\nПервый сценарий: цена уверенно закроется выше текущего уровня (>_current_price_) с усилением объёма — тогда LONG сработает по плану со стопом ниже ключевого уровня и тремя целями:\nВход _entry_zone_, TP _tp_list_.\nВторой сценарий: возврат ниже _entry_zone_ без сопротивления продавцов — тогда идея LONG отменяется до тех пор, пока ситуация не прояснится на старших таймфреймах.\n\nLONG-план: зона 1.145–1.153, стоп 1.13\nЦели: TP1 1.213 → TP2 1.249 → TP3 1.288",
-      "views": 34,
+      "views": 35,
       "likes": 0,
       "comments": 0,
       "quotes": 0,
@@ -422,7 +562,7 @@
       "lane": "EVENT",
       "direction": "OBSERVATION",
       "published_at": "2026-08-22T22:01:53.492376+00:00",
-      "age_hours": 3.95,
+      "age_hours": 5.21,
       "text": "$SUI: пока только фиксирую движение у ключевого уровня 0.8076 с невыразительным RSI и вялым ADX.\n\nНикакого чистого триггера для открытия позиции — просто наблюдаю за реакцией цены при возврате к зоне поддержки или прорыве сопротивления.",
       "views": 59,
       "likes": 0,
@@ -443,6 +583,13 @@
           "comments": 0,
           "quotes": 0,
           "shares": 0
+        },
+        "6h": {
+          "views": 59,
+          "likes": 0,
+          "comments": 0,
+          "quotes": 0,
+          "shares": 0
         }
       },
       "writer_source": "mistral_event",
@@ -457,9 +604,9 @@
       "lane": "EVENT",
       "direction": "OBSERVATION",
       "published_at": "2026-08-22T21:41:59.496477+00:00",
-      "age_hours": 4.28,
+      "age_hours": 5.54,
       "text": "⚡ В $UNI вся короткая история для меня свелась к 4.291\n\nНа 5 минутах -1.0%, активность около x5.64 обычной.\n\nЭтот уровень сейчас даёт больше контекста, чем попытка угадать следующую свечу. Если рынок уйдёт от него без структуры, просто пропущу.",
-      "views": 67,
+      "views": 68,
       "likes": 0,
       "comments": 0,
       "quotes": 0,
@@ -478,6 +625,13 @@
           "comments": 0,
           "quotes": 0,
           "shares": 0
+        },
+        "6h": {
+          "views": 68,
+          "likes": 0,
+          "comments": 0,
+          "quotes": 0,
+          "shares": 0
         }
       },
       "writer_source": "deterministic_event",
@@ -492,9 +646,9 @@
       "lane": "TRADE",
       "direction": "LONG",
       "published_at": "2026-08-22T21:22:02.343042+00:00",
-      "age_hours": 4.61,
+      "age_hours": 5.88,
       "text": "$ADA вернулся к старому сценарию: после слабого импульса рынок снова топчется на месте.\nНа старших таймфреймах всё ещё «за», но локально цена выдохлась — RSI ниже середины (45), ADX вялый (множитель тренда слабый).\nИнтерес покупателей пока сохраняется около уровня поддержки; если удастся его удержать — возможен тест сопротивления до конца дня.\n\nLONG-план: зона 0.2264–0.2272, стоп 0.2226\nЦели: TP1 0.231 → TP2 0.2321 → TP3 0.2342",
-      "views": 79,
+      "views": 80,
       "likes": 0,
       "comments": 0,
       "quotes": 0,
@@ -513,6 +667,13 @@
           "comments": 0,
           "quotes": 0,
           "shares": 0
+        },
+        "6h": {
+          "views": 80,
+          "likes": 0,
+          "comments": 0,
+          "quotes": 0,
+          "shares": 0
         }
       },
       "writer_source": "mistral",
@@ -527,9 +688,9 @@
       "lane": "EVENT",
       "direction": "LONG",
       "published_at": "2026-08-22T21:02:13.111432+00:00",
-      "age_hours": 4.94,
+      "age_hours": 6.21,
       "text": "$ETHFI прямо сейчас тестирует зону вокруг VWAP (0.5864) после резкого отката с верхов сопротивления 0.6123.\n\nЕсли цена уверенно закроется выше этого уровня хотя бы одной пятиминутной свечой, шансы на отскок к 0.601 повышаются. Пока же давление сохраняется со стороны продавцов.\n\nLONG-план: зона 0.5859–0.5883, стоп 0.5732\nЦели: TP1 0.601 → TP2 0.6052 → TP3 0.6123",
-      "views": 88,
+      "views": 0,
       "likes": 0,
       "comments": 0,
       "quotes": 0,
@@ -548,6 +709,13 @@
           "comments": 0,
           "quotes": 0,
           "shares": 0
+        },
+        "6h": {
+          "views": 88,
+          "likes": 0,
+          "comments": 0,
+          "quotes": 0,
+          "shares": 0
         }
       },
       "writer_source": "mistral_event",
@@ -562,9 +730,9 @@
       "lane": "EVENT",
       "direction": "OBSERVATION",
       "published_at": "2026-08-22T20:41:36.659327+00:00",
-      "age_hours": 5.29,
+      "age_hours": 6.55,
       "text": "$PUMP сменил темп — пока это повод открыть график, а не нажать кнопку\n\nЗа 5 минут +1.2%, за 15 — +0.53%; объём около x1.12 нормы.\n\nСмотрю, сохранится ли этот темп возле 0.004993. Если нет — событие быстро потеряет для меня ценность.",
-      "views": 64,
+      "views": 0,
       "likes": 0,
       "comments": 0,
       "quotes": 0,
@@ -597,180 +765,12 @@
       "event_class": "audience_breakout",
       "tracked_from_publish": true,
       "learning_eligible": true
-    },
-    {
-      "post_id": "358559422230780",
-      "symbol": "DOGE",
-      "lane": "TRADE",
-      "direction": "LONG",
-      "published_at": "2026-08-22T20:22:01.600309+00:00",
-      "age_hours": 5.61,
-      "text": "$DOGE упёрся в лимит риска: вход только при возврате к зоне 0.09376–_vzryvna_.\nЕсли цена уверенно закроется выше этих значений — LONG со стопом ниже ключевого уровня и тремя целями:\nTP1 _vzryvna_, TP2 _vzryvna_, TP3 _aime_.\n\nLONG только в зоне 0.09376–0.09408; отмена на 0.09318\nTP1 0.09627 · TP2 0.09759 · TP3 0.09902",
-      "views": 56,
-      "likes": 0,
-      "comments": 0,
-      "quotes": 0,
-      "shares": 0,
-      "milestones": {
-        "30m": {
-          "views": 52,
-          "likes": 0,
-          "comments": 0,
-          "quotes": 0,
-          "shares": 0
-        },
-        "2h": {
-          "views": 55,
-          "likes": 0,
-          "comments": 0,
-          "quotes": 0,
-          "shares": 0
-        },
-        "6h": {
-          "views": 56,
-          "likes": 0,
-          "comments": 0,
-          "quotes": 0,
-          "shares": 0
-        }
-      },
-      "writer_source": "mistral",
-      "content_format": "micro_note",
-      "event_class": "high_demand_active",
-      "tracked_from_publish": true,
-      "learning_eligible": true
-    },
-    {
-      "post_id": "358554466014233",
-      "symbol": "ENA",
-      "lane": "EVENT",
-      "direction": "OBSERVATION",
-      "published_at": "2026-08-22T20:01:51.570163+00:00",
-      "age_hours": 5.95,
-      "text": "$ENA: цена у VWAP, но пока не делаю ставку на прорыв или отскок.\n\nДвижение в последние 15 минут — +1.4% от минимумов, объём снизился до x1.44 нормы. Пока только фиксирую активность: рынок тестирует зону интереса без явного давления.\n\nЕсли цена уверенно закрепится выше 0.1612 — посмотрим на реакцию. Если вернётся под VWAP (0.1526) с усилением объёма — другой сценарий.\n\nСейчас чистого триггера нет.",
-      "views": 196,
-      "likes": 0,
-      "comments": 0,
-      "quotes": 0,
-      "shares": 0,
-      "milestones": {
-        "30m": {
-          "views": 183,
-          "likes": 0,
-          "comments": 0,
-          "quotes": 0,
-          "shares": 0
-        },
-        "2h": {
-          "views": 193,
-          "likes": 0,
-          "comments": 0,
-          "quotes": 0,
-          "shares": 0
-        },
-        "6h": {
-          "views": 196,
-          "likes": 0,
-          "comments": 0,
-          "quotes": 0,
-          "shares": 0
-        }
-      },
-      "writer_source": "mistral_event",
-      "content_format": "event_no_trade",
-      "event_class": "high_demand_active",
-      "tracked_from_publish": true,
-      "learning_eligible": true
-    },
-    {
-      "post_id": "358549572931610",
-      "symbol": "PEPE",
-      "lane": "TRADE",
-      "direction": "LONG",
-      "published_at": "2026-08-22T19:41:56.972545+00:00",
-      "age_hours": 6.28,
-      "text": "В $PEPE мне нравится только сценарий, который понятен ещё до нажатия кнопки\n\nНа коротком участке цена изменилась на +0.24%; активность около x0,43 нормы. Сейчас цена уже у 0.00000411; мне важна реакция покупателей здесь.\n\nВход мне нужен в районе 0.0000041–0.00000412; если цена дойдёт до 0.000004, план закрыт.\n\nПлан фиксации по LONG: TP1 0.00000422; TP2 0.00000425; TP3 0.0000043.",
-      "views": 160,
-      "likes": 0,
-      "comments": 0,
-      "quotes": 0,
-      "shares": 0,
-      "milestones": {
-        "30m": {
-          "views": 144,
-          "likes": 0,
-          "comments": 0,
-          "quotes": 0,
-          "shares": 0
-        },
-        "2h": {
-          "views": 159,
-          "likes": 0,
-          "comments": 0,
-          "quotes": 0,
-          "shares": 0
-        },
-        "6h": {
-          "views": 160,
-          "likes": 0,
-          "comments": 0,
-          "quotes": 0,
-          "shares": 0
-        }
-      },
-      "writer_source": "deterministic",
-      "content_format": "trade_map",
-      "event_class": "ordinary",
-      "tracked_from_publish": true,
-      "learning_eligible": true
-    },
-    {
-      "post_id": "358544649919520",
-      "symbol": "ZEC",
-      "lane": "TRADE",
-      "direction": "LONG",
-      "published_at": "2026-08-22T19:21:55.123316+00:00",
-      "age_hours": 6.62,
-      "text": "$ZEC: на графике появилось событие, но мне важнее, во что оно превратится у уровня\n\nСвежий участок дал +0.76%, а объём держится примерно на x1,50 от обычного.\n\nЦена выше 839.6; на возврате к зоне хочу увидеть покупателей.\n\nПо плану LONG: сначала 862.7; на 831 сценарий для меня закрыт.\n\nПлан LONG: вход 837.7–841.4 | стоп 831\nTP1 862.7 | TP2 875.8 | TP3 889.8",
-      "views": 117,
-      "likes": 0,
-      "comments": 0,
-      "quotes": 0,
-      "shares": 0,
-      "milestones": {
-        "30m": {
-          "views": 114,
-          "likes": 0,
-          "comments": 0,
-          "quotes": 0,
-          "shares": 0
-        },
-        "2h": {
-          "views": 115,
-          "likes": 0,
-          "comments": 0,
-          "quotes": 0,
-          "shares": 0
-        },
-        "6h": {
-          "views": 117,
-          "likes": 0,
-          "comments": 0,
-          "quotes": 0,
-          "shares": 0
-        }
-      },
-      "writer_source": "deterministic",
-      "content_format": "market_story",
-      "event_class": "high_demand_active",
-      "tracked_from_publish": true,
-      "learning_eligible": true
     }
   ],
   "learning": {
     "learning_only": false,
-    "account_median_24h": 84.5,
-    "mature_samples": 536,
+    "account_median_24h": 85.0,
+    "mature_samples": 539,
     "tickers_top": [
       {
         "symbol": "ADA",
@@ -779,7 +779,16 @@
         "avg_views": 323.7,
         "breakout_rate": 100.0,
         "absolute_300_rate": 66.7,
-        "affinity": 66.7
+        "affinity": 66.6
+      },
+      {
+        "symbol": "XRP",
+        "posts": 16,
+        "median_views": 132.0,
+        "avg_views": 139.6,
+        "breakout_rate": 25.0,
+        "absolute_300_rate": 6.2,
+        "affinity": 64.0
       },
       {
         "symbol": "TRUMP",
@@ -788,16 +797,7 @@
         "avg_views": 192.5,
         "breakout_rate": 50.0,
         "absolute_300_rate": 0.0,
-        "affinity": 62.2
-      },
-      {
-        "symbol": "XRP",
-        "posts": 15,
-        "median_views": 122.0,
-        "avg_views": 126.3,
-        "breakout_rate": 20.0,
-        "absolute_300_rate": 0.0,
-        "affinity": 61.7
+        "affinity": 62.1
       },
       {
         "symbol": "SUI",
@@ -806,7 +806,7 @@
         "avg_views": 128.2,
         "breakout_rate": 0.0,
         "absolute_300_rate": 0.0,
-        "affinity": 60.9
+        "affinity": 60.7
       },
       {
         "symbol": "TUT",
@@ -815,7 +815,7 @@
         "avg_views": 122.9,
         "breakout_rate": 14.7,
         "absolute_300_rate": 2.9,
-        "affinity": 59.9
+        "affinity": 59.7
       },
       {
         "symbol": "ACE",
@@ -824,7 +824,7 @@
         "avg_views": 122.0,
         "breakout_rate": 14.3,
         "absolute_300_rate": 0.0,
-        "affinity": 59.4
+        "affinity": 59.2
       },
       {
         "symbol": "CRV",
@@ -842,7 +842,7 @@
         "avg_views": 139.0,
         "breakout_rate": 40.0,
         "absolute_300_rate": 0.0,
-        "affinity": 58.7
+        "affinity": 58.6
       },
       {
         "symbol": "ENA",
@@ -851,7 +851,7 @@
         "avg_views": 115.7,
         "breakout_rate": 0.0,
         "absolute_300_rate": 0.0,
-        "affinity": 57.1
+        "affinity": 56.9
       },
       {
         "symbol": "AAVE",
@@ -860,7 +860,7 @@
         "avg_views": 184.0,
         "breakout_rate": 50.0,
         "absolute_300_rate": 0.0,
-        "affinity": 56.2
+        "affinity": 56.1
       },
       {
         "symbol": "RE",
@@ -869,7 +869,7 @@
         "avg_views": 96.2,
         "breakout_rate": 0.0,
         "absolute_300_rate": 0.0,
-        "affinity": 56.1
+        "affinity": 55.9
       },
       {
         "symbol": "NEAR",
@@ -878,7 +878,7 @@
         "avg_views": 150.0,
         "breakout_rate": 25.0,
         "absolute_300_rate": 0.0,
-        "affinity": 56.0
+        "affinity": 55.9
       },
       {
         "symbol": "SNXXB",
@@ -887,7 +887,7 @@
         "avg_views": 117.0,
         "breakout_rate": 25.0,
         "absolute_300_rate": 0.0,
-        "affinity": 55.3
+        "affinity": 55.2
       },
       {
         "symbol": "LINK",
@@ -896,7 +896,7 @@
         "avg_views": 99.2,
         "breakout_rate": 0.0,
         "absolute_300_rate": 0.0,
-        "affinity": 55.0
+        "affinity": 54.8
       },
       {
         "symbol": "KORUB",
@@ -914,15 +914,6 @@
         "avg_views": 93.2,
         "breakout_rate": 0.0,
         "absolute_300_rate": 0.0,
-        "affinity": 54.4
-      },
-      {
-        "symbol": "AVAX",
-        "posts": 2,
-        "median_views": 143.0,
-        "avg_views": 143.0,
-        "breakout_rate": 0.0,
-        "absolute_300_rate": 0.0,
         "affinity": 54.2
       },
       {
@@ -935,13 +926,31 @@
         "affinity": 54.2
       },
       {
+        "symbol": "AVAX",
+        "posts": 2,
+        "median_views": 143.0,
+        "avg_views": 143.0,
+        "breakout_rate": 0.0,
+        "absolute_300_rate": 0.0,
+        "affinity": 54.1
+      },
+      {
+        "symbol": "PYTH",
+        "posts": 1,
+        "median_views": 209.0,
+        "avg_views": 209.0,
+        "breakout_rate": 100.0,
+        "absolute_300_rate": 0.0,
+        "affinity": 53.6
+      },
+      {
         "symbol": "GPS",
         "posts": 12,
         "median_views": 94.5,
         "avg_views": 116.1,
         "breakout_rate": 25.0,
         "absolute_300_rate": 8.3,
-        "affinity": 53.5
+        "affinity": 53.4
       },
       {
         "symbol": "BCH",
@@ -959,7 +968,7 @@
         "avg_views": 125.4,
         "breakout_rate": 20.0,
         "absolute_300_rate": 0.0,
-        "affinity": 52.7
+        "affinity": 52.6
       },
       {
         "symbol": "FIL",
@@ -968,7 +977,7 @@
         "avg_views": 161.0,
         "breakout_rate": 0.0,
         "absolute_300_rate": 0.0,
-        "affinity": 52.6
+        "affinity": 52.5
       },
       {
         "symbol": "SOXLB",
@@ -977,7 +986,7 @@
         "avg_views": 97.3,
         "breakout_rate": 0.0,
         "absolute_300_rate": 0.0,
-        "affinity": 52.4
+        "affinity": 52.3
       },
       {
         "symbol": "ETHFI",
@@ -985,15 +994,6 @@
         "median_views": 114.0,
         "avg_views": 114.0,
         "breakout_rate": 50.0,
-        "absolute_300_rate": 0.0,
-        "affinity": 52.4
-      },
-      {
-        "symbol": "XLM",
-        "posts": 1,
-        "median_views": 149.0,
-        "avg_views": 149.0,
-        "breakout_rate": 0.0,
         "absolute_300_rate": 0.0,
         "affinity": 52.3
       }
@@ -1015,7 +1015,7 @@
         "avg_views": 53.0,
         "breakout_rate": 0.0,
         "absolute_300_rate": 0.0,
-        "affinity": 20.3
+        "affinity": 20.1
       },
       {
         "symbol": "BTC",
@@ -1024,16 +1024,7 @@
         "avg_views": 43.5,
         "breakout_rate": 0.0,
         "absolute_300_rate": 0.0,
-        "affinity": 26.7
-      },
-      {
-        "symbol": "PUMP",
-        "posts": 8,
-        "median_views": 45.5,
-        "avg_views": 55.8,
-        "breakout_rate": 0.0,
-        "absolute_300_rate": 0.0,
-        "affinity": 30.4
+        "affinity": 26.5
       },
       {
         "symbol": "ETH",
@@ -1042,7 +1033,7 @@
         "avg_views": 62.1,
         "breakout_rate": 5.3,
         "absolute_300_rate": 0.0,
-        "affinity": 32.7
+        "affinity": 32.5
       },
       {
         "symbol": "DOLO",
@@ -1054,13 +1045,22 @@
         "affinity": 35.0
       },
       {
+        "symbol": "PUMP",
+        "posts": 9,
+        "median_views": 55.0,
+        "avg_views": 61.7,
+        "breakout_rate": 0.0,
+        "absolute_300_rate": 0.0,
+        "affinity": 36.2
+      },
+      {
         "symbol": "PLUME",
         "posts": 13,
         "median_views": 57.0,
         "avg_views": 52.2,
         "breakout_rate": 0.0,
         "absolute_300_rate": 0.0,
-        "affinity": 37.5
+        "affinity": 37.3
       },
       {
         "symbol": "HOME",
@@ -1069,7 +1069,7 @@
         "avg_views": 70.3,
         "breakout_rate": 0.0,
         "absolute_300_rate": 0.0,
-        "affinity": 38.1
+        "affinity": 38.0
       },
       {
         "symbol": "BICO",
@@ -1078,7 +1078,7 @@
         "avg_views": 80.9,
         "breakout_rate": 0.0,
         "absolute_300_rate": 0.0,
-        "affinity": 42.6
+        "affinity": 42.4
       },
       {
         "symbol": "DUSK",
@@ -1096,7 +1096,7 @@
         "avg_views": 75.5,
         "breakout_rate": 5.9,
         "absolute_300_rate": 0.0,
-        "affinity": 43.6
+        "affinity": 43.4
       },
       {
         "symbol": "SNDKB",
@@ -1105,7 +1105,7 @@
         "avg_views": 79.8,
         "breakout_rate": 12.5,
         "absolute_300_rate": 0.0,
-        "affinity": 43.8
+        "affinity": 43.6
       },
       {
         "symbol": "PROM",
@@ -1114,7 +1114,7 @@
         "avg_views": 70.2,
         "breakout_rate": 0.0,
         "absolute_300_rate": 0.0,
-        "affinity": 44.0
+        "affinity": 43.8
       },
       {
         "symbol": "ONE",
@@ -1132,25 +1132,25 @@
         "avg_views": 79.2,
         "breakout_rate": 6.2,
         "absolute_300_rate": 0.0,
-        "affinity": 44.9
+        "affinity": 44.7
       }
     ],
     "lanes": [
       {
         "lane": "EVENT",
-        "posts": 253,
-        "median_views": 86.0,
-        "avg_views": 95.6,
-        "breakout_rate": 9.1,
-        "absolute_300_rate": 2.0,
-        "affinity": 50.6
+        "posts": 255,
+        "median_views": 87.0,
+        "avg_views": 96.9,
+        "breakout_rate": 9.8,
+        "absolute_300_rate": 2.4,
+        "affinity": 50.7
       },
       {
         "lane": "TRADE",
-        "posts": 202,
-        "median_views": 84.5,
-        "avg_views": 97.6,
-        "breakout_rate": 10.9,
+        "posts": 203,
+        "median_views": 85.0,
+        "avg_views": 97.7,
+        "breakout_rate": 10.8,
         "absolute_300_rate": 2.0,
         "affinity": 50.0
       },
@@ -1161,7 +1161,7 @@
         "avg_views": 78.6,
         "breakout_rate": 2.5,
         "absolute_300_rate": 0.0,
-        "affinity": 49.0
+        "affinity": 48.9
       }
     ],
     "hours": [
@@ -1172,7 +1172,7 @@
         "avg_views": 84.1,
         "breakout_rate": 4.8,
         "absolute_300_rate": 0.0,
-        "affinity": 48.3
+        "affinity": 48.1
       },
       {
         "hour": 1,
@@ -1181,7 +1181,7 @@
         "avg_views": 81.2,
         "breakout_rate": 4.8,
         "absolute_300_rate": 0.0,
-        "affinity": 54.4
+        "affinity": 54.2
       },
       {
         "hour": 2,
@@ -1190,7 +1190,7 @@
         "avg_views": 55.2,
         "breakout_rate": 0.0,
         "absolute_300_rate": 0.0,
-        "affinity": 30.0
+        "affinity": 29.8
       },
       {
         "hour": 3,
@@ -1199,7 +1199,7 @@
         "avg_views": 172.2,
         "breakout_rate": 44.0,
         "absolute_300_rate": 16.0,
-        "affinity": 69.0
+        "affinity": 68.9
       },
       {
         "hour": 4,
@@ -1208,7 +1208,7 @@
         "avg_views": 133.0,
         "breakout_rate": 20.0,
         "absolute_300_rate": 4.0,
-        "affinity": 52.0
+        "affinity": 51.8
       },
       {
         "hour": 5,
@@ -1217,7 +1217,7 @@
         "avg_views": 80.1,
         "breakout_rate": 3.8,
         "absolute_300_rate": 3.8,
-        "affinity": 40.2
+        "affinity": 40.0
       },
       {
         "hour": 6,
@@ -1226,7 +1226,7 @@
         "avg_views": 86.9,
         "breakout_rate": 8.3,
         "absolute_300_rate": 4.2,
-        "affinity": 43.3
+        "affinity": 43.2
       },
       {
         "hour": 7,
@@ -1235,7 +1235,7 @@
         "avg_views": 83.7,
         "breakout_rate": 5.0,
         "absolute_300_rate": 0.0,
-        "affinity": 42.9
+        "affinity": 42.7
       },
       {
         "hour": 8,
@@ -1244,25 +1244,25 @@
         "avg_views": 113.5,
         "breakout_rate": 14.8,
         "absolute_300_rate": 0.0,
-        "affinity": 56.9
+        "affinity": 56.7
       },
       {
         "hour": 9,
-        "posts": 25,
-        "median_views": 89.0,
-        "avg_views": 84.0,
-        "breakout_rate": 0.0,
-        "absolute_300_rate": 0.0,
-        "affinity": 51.6
+        "posts": 27,
+        "median_views": 90.0,
+        "avg_views": 98.0,
+        "breakout_rate": 7.4,
+        "absolute_300_rate": 3.7,
+        "affinity": 51.8
       },
       {
         "hour": 10,
-        "posts": 21,
-        "median_views": 91.0,
-        "avg_views": 85.4,
+        "posts": 22,
+        "median_views": 92.0,
+        "avg_views": 86.5,
         "breakout_rate": 0.0,
         "absolute_300_rate": 0.0,
-        "affinity": 52.4
+        "affinity": 52.5
       },
       {
         "hour": 11,
@@ -1271,7 +1271,7 @@
         "avg_views": 103.1,
         "breakout_rate": 15.0,
         "absolute_300_rate": 0.0,
-        "affinity": 56.7
+        "affinity": 56.6
       },
       {
         "hour": 12,
@@ -1280,7 +1280,7 @@
         "avg_views": 95.3,
         "breakout_rate": 7.7,
         "absolute_300_rate": 0.0,
-        "affinity": 52.0
+        "affinity": 51.8
       },
       {
         "hour": 13,
@@ -1289,7 +1289,7 @@
         "avg_views": 85.4,
         "breakout_rate": 0.0,
         "absolute_300_rate": 0.0,
-        "affinity": 45.1
+        "affinity": 45.0
       },
       {
         "hour": 14,
@@ -1298,7 +1298,7 @@
         "avg_views": 61.6,
         "breakout_rate": 6.2,
         "absolute_300_rate": 0.0,
-        "affinity": 30.4
+        "affinity": 30.2
       },
       {
         "hour": 15,
@@ -1307,7 +1307,7 @@
         "avg_views": 62.0,
         "breakout_rate": 4.8,
         "absolute_300_rate": 0.0,
-        "affinity": 36.9
+        "affinity": 36.8
       },
       {
         "hour": 16,
@@ -1316,7 +1316,7 @@
         "avg_views": 104.5,
         "breakout_rate": 16.7,
         "absolute_300_rate": 0.0,
-        "affinity": 51.3
+        "affinity": 51.1
       },
       {
         "hour": 17,
@@ -1325,7 +1325,7 @@
         "avg_views": 86.3,
         "breakout_rate": 4.0,
         "absolute_300_rate": 0.0,
-        "affinity": 50.2
+        "affinity": 50.0
       },
       {
         "hour": 18,
@@ -1334,7 +1334,7 @@
         "avg_views": 74.3,
         "breakout_rate": 4.0,
         "absolute_300_rate": 0.0,
-        "affinity": 46.2
+        "affinity": 46.0
       },
       {
         "hour": 19,
@@ -1343,7 +1343,7 @@
         "avg_views": 76.1,
         "breakout_rate": 4.8,
         "absolute_300_rate": 0.0,
-        "affinity": 42.2
+        "affinity": 42.0
       },
       {
         "hour": 20,
@@ -1352,7 +1352,7 @@
         "avg_views": 104.5,
         "breakout_rate": 5.0,
         "absolute_300_rate": 5.0,
-        "affinity": 52.9
+        "affinity": 52.7
       },
       {
         "hour": 21,
@@ -1361,7 +1361,7 @@
         "avg_views": 105.3,
         "breakout_rate": 10.0,
         "absolute_300_rate": 0.0,
-        "affinity": 56.4
+        "affinity": 56.3
       },
       {
         "hour": 22,
@@ -1370,7 +1370,7 @@
         "avg_views": 107.9,
         "breakout_rate": 15.8,
         "absolute_300_rate": 0.0,
-        "affinity": 53.4
+        "affinity": 53.2
       },
       {
         "hour": 23,
@@ -1379,36 +1379,36 @@
         "avg_views": 102.3,
         "breakout_rate": 7.1,
         "absolute_300_rate": 3.6,
-        "affinity": 56.9
+        "affinity": 56.7
       }
     ],
     "authors": [
       {
         "author": "deterministic",
-        "posts": 160,
-        "median_views": 75.5,
-        "avg_views": 90.0,
-        "breakout_rate": 9.4,
+        "posts": 161,
+        "median_views": 76.0,
+        "avg_views": 90.1,
+        "breakout_rate": 9.3,
         "absolute_300_rate": 1.9,
         "affinity": 46.4
       },
       {
         "author": "mistral_event",
-        "posts": 149,
-        "median_views": 100.0,
-        "avg_views": 109.1,
-        "breakout_rate": 10.7,
+        "posts": 150,
+        "median_views": 101.0,
+        "avg_views": 109.8,
+        "breakout_rate": 11.3,
         "absolute_300_rate": 2.0,
-        "affinity": 55.3
+        "affinity": 55.5
       },
       {
         "author": "deterministic_event",
-        "posts": 103,
-        "median_views": 52.0,
-        "avg_views": 73.5,
-        "breakout_rate": 5.8,
-        "absolute_300_rate": 1.0,
-        "affinity": 34.6
+        "posts": 104,
+        "median_views": 53.5,
+        "avg_views": 76.0,
+        "breakout_rate": 6.7,
+        "absolute_300_rate": 1.9,
+        "affinity": 35.3
       },
       {
         "author": "UNKNOWN",
@@ -1417,7 +1417,7 @@
         "avg_views": 78.6,
         "breakout_rate": 2.5,
         "absolute_300_rate": 0.0,
-        "affinity": 49.0
+        "affinity": 48.9
       },
       {
         "author": "mistral",
@@ -1426,7 +1426,7 @@
         "avg_views": 126.4,
         "breakout_rate": 16.7,
         "absolute_300_rate": 2.4,
-        "affinity": 59.2
+        "affinity": 59.0
       },
       {
         "author": "deepseek_event",
@@ -1440,19 +1440,139 @@
     ]
   },
   "outcomes": {
-    "total": 194,
+    "total": 197,
     "quarantined": 30,
-    "entered": 179,
+    "entered": 180,
     "active": 21,
-    "closed": 173,
+    "closed": 176,
     "tp1_hits": 86,
     "tp3_hits": 62,
-    "stops": 98,
+    "stops": 101,
     "target_complete": 62,
-    "tp1_rate": 48.0,
-    "tp3_rate": 34.6,
+    "tp1_rate": 47.8,
+    "tp3_rate": 34.4,
     "followups": 85,
     "recent": [
+      {
+        "setup_id": "setup_272c621d8994176e38af",
+        "source_post_id": "358658520965117",
+        "symbol": "RE",
+        "direction": "long",
+        "lane": "TRADE",
+        "published_at": "2026-08-23T03:05:15.680315+00:00",
+        "writer_source": "deterministic",
+        "status": "pending_entry",
+        "decision_mode": "breakout_confirm",
+        "public_decision_mode": "at_level",
+        "trade_state": "decision_now",
+        "entry": 0.5128,
+        "entry_zone_low": 0.5116900461344458,
+        "entry_zone_high": 0.5139099538655543,
+        "stop": 0.5003130190125143,
+        "tp1": 0.5252869809874857,
+        "tp2": 0.530656,
+        "tp3": 0.5376,
+        "rr_tp1": 1.0,
+        "rr_tp2": 1.4299693431018305,
+        "rr_tp3": 1.9860685320858757,
+        "public_risk_pct": 2.4350586949075046,
+        "exposed_targets": [
+          "tp1",
+          "tp2",
+          "tp3"
+        ],
+        "entry_confirmed": false,
+        "hits": {
+          "tp1": false,
+          "tp2": false,
+          "tp3": false,
+          "stop": false
+        },
+        "hit_at": {},
+        "followups": [],
+        "close_reason": "",
+        "closed_at": ""
+      },
+      {
+        "setup_id": "setup_caebc043ceebe2c4c120",
+        "source_post_id": "358648633839822",
+        "symbol": "ONDO",
+        "direction": "short",
+        "lane": "TRADE",
+        "published_at": "2026-08-23T02:25:01.838530+00:00",
+        "writer_source": "mistral",
+        "status": "active",
+        "decision_mode": "retest_reject",
+        "public_decision_mode": "retest_reject",
+        "trade_state": "waiting_retest",
+        "entry": 0.3625,
+        "entry_zone_low": 0.36192497165196125,
+        "entry_zone_high": 0.36307502834803873,
+        "stop": 0.3651954453814316,
+        "tp1": 0.3571263804981658,
+        "tp2": 0.35408911730147696,
+        "tp3": 0.3508182184742735,
+        "rr_tp1": 1.993592427749396,
+        "rr_tp2": 3.120405539086011,
+        "rr_tp3": 4.333896582063904,
+        "public_risk_pct": 0.7435711397052764,
+        "exposed_targets": [
+          "tp1",
+          "tp2",
+          "tp3"
+        ],
+        "entry_confirmed": true,
+        "hits": {
+          "tp1": false,
+          "tp2": false,
+          "tp3": false,
+          "stop": false
+        },
+        "hit_at": {},
+        "followups": [],
+        "close_reason": "",
+        "closed_at": ""
+      },
+      {
+        "setup_id": "setup_950069dba93d79df0cfd",
+        "source_post_id": "358643895112991",
+        "symbol": "KAITO",
+        "direction": "short",
+        "lane": "TRADE",
+        "published_at": "2026-08-23T02:05:44.930331+00:00",
+        "writer_source": "deterministic",
+        "status": "pending_entry",
+        "decision_mode": "retest_reject",
+        "public_decision_mode": "retest_reject",
+        "trade_state": "waiting_retest",
+        "entry": 0.343,
+        "entry_zone_low": 0.3425875330965003,
+        "entry_zone_high": 0.34341246690349975,
+        "stop": 0.34493343861015496,
+        "tp1": 0.33874040000000005,
+        "tp2": 0.33633280000000004,
+        "tp3": 0.33374000000000004,
+        "rr_tp1": 2.203121411575955,
+        "rr_tp2": 3.4483639485536686,
+        "rr_tp3": 4.7893943729912065,
+        "public_risk_pct": 0.5636847259926927,
+        "exposed_targets": [
+          "tp1",
+          "tp2",
+          "tp3"
+        ],
+        "entry_confirmed": false,
+        "hits": {
+          "tp1": false,
+          "tp2": false,
+          "tp3": false,
+          "stop": false
+        },
+        "hit_at": {},
+        "followups": [],
+        "close_reason": "",
+        "closed_at": ""
+      },
       {
         "setup_id": "setup_376f78b9bbbfca2b584c",
         "source_post_id": "358624123387413",
@@ -1461,7 +1581,7 @@
         "lane": "TRADE",
         "published_at": "2026-08-23T00:45:17.901859+00:00",
         "writer_source": "deterministic",
-        "status": "active",
+        "status": "closed",
         "decision_mode": "breakout_confirm",
         "public_decision_mode": "at_level",
         "trade_state": "decision_now",
@@ -1486,12 +1606,14 @@
           "tp1": false,
           "tp2": false,
           "tp3": false,
-          "stop": false
+          "stop": true
         },
-        "hit_at": {},
+        "hit_at": {
+          "stop": "2026-08-23T02:17:59.999000+00:00"
+        },
         "followups": [],
-        "close_reason": "",
-        "closed_at": ""
+        "close_reason": "stop",
+        "closed_at": "2026-08-23T02:17:59.999000+00:00"
       },
       {
         "setup_id": "setup_5be5512469cf862c4f03",
@@ -1711,7 +1833,7 @@
         "lane": "TRADE",
         "published_at": "2026-08-22T21:22:02.436913+00:00",
         "writer_source": "mistral",
-        "status": "active",
+        "status": "closed",
         "decision_mode": "breakout_confirm",
         "public_decision_mode": "at_level",
         "trade_state": "decision_now",
@@ -1736,12 +1858,14 @@
           "tp1": false,
           "tp2": false,
           "tp3": false,
-          "stop": false
+          "stop": true
         },
-        "hit_at": {},
+        "hit_at": {
+          "stop": "2026-08-23T02:21:59.999000+00:00"
+        },
         "followups": [],
-        "close_reason": "",
-        "closed_at": ""
+        "close_reason": "stop",
+        "closed_at": "2026-08-23T02:21:59.999000+00:00"
       },
       {
         "setup_id": "setup_76a9e90691a9e1bc7aa2",
@@ -2135,7 +2259,7 @@
         "lane": "EVENT",
         "published_at": "2026-08-22T16:41:52.338580+00:00",
         "writer_source": "mistral_event",
-        "status": "active",
+        "status": "closed",
         "decision_mode": "breakout_confirm",
         "public_decision_mode": "at_level",
         "trade_state": "decision_now",
@@ -2160,138 +2284,15 @@
           "tp1": true,
           "tp2": false,
           "tp3": false,
-          "stop": false
-        },
-        "hit_at": {
-          "tp1": "2026-08-22T18:00:59.999000+00:00"
-        },
-        "followups": [],
-        "close_reason": "",
-        "closed_at": ""
-      },
-      {
-        "setup_id": "setup_20fc224bd4a1e3f27f15",
-        "source_post_id": "358500446177119",
-        "symbol": "NEIRO",
-        "direction": "long",
-        "lane": "TRADE",
-        "published_at": "2026-08-22T16:22:03.212716+00:00",
-        "writer_source": "deterministic",
-        "status": "active",
-        "decision_mode": "breakout_confirm",
-        "public_decision_mode": "at_level",
-        "trade_state": "decision_now",
-        "entry": 9.061e-05,
-        "entry_zone_low": 9.036800062231654e-05,
-        "entry_zone_high": 9.085199937768346e-05,
-        "stop": 8.788750700106114e-05,
-        "tp1": 9.548023747587952e-05,
-        "tp2": 9.823298039702882e-05,
-        "tp3": 0.00010119747277365115,
-        "rr_tp1": 1.7888888888888899,
-        "rr_tp2": 2.800000000000001,
-        "rr_tp3": 3.8888888888888906,
-        "public_risk_pct": 3.004627523384687,
-        "exposed_targets": [
-          "tp1",
-          "tp2",
-          "tp3"
-        ],
-        "entry_confirmed": true,
-        "hits": {
-          "tp1": true,
-          "tp2": false,
-          "tp3": false,
-          "stop": false
-        },
-        "hit_at": {
-          "tp1": "2026-08-22T16:24:59.999000+00:00"
-        },
-        "followups": [],
-        "close_reason": "",
-        "closed_at": ""
-      },
-      {
-        "setup_id": "setup_e7c016c2645d16b16e59",
-        "source_post_id": "358495591075612",
-        "symbol": "ZAMA",
-        "direction": "long",
-        "lane": "EVENT",
-        "published_at": "2026-08-22T16:02:17.921067+00:00",
-        "writer_source": "mistral_event",
-        "status": "active",
-        "decision_mode": "breakout_confirm",
-        "public_decision_mode": "at_level",
-        "trade_state": "decision_now",
-        "entry": 0.05233,
-        "entry_zone_low": 0.052182309786534584,
-        "entry_zone_high": 0.05247769021346542,
-        "stop": 0.051329232339900936,
-        "tp1": 0.05463176561822785,
-        "tp2": 0.05593276357635664,
-        "tp3": 0.05733383830049533,
-        "rr_tp1": 2.3000000000000003,
-        "rr_tp2": 3.5999999999999996,
-        "rr_tp3": 5.0,
-        "public_risk_pct": 1.9124167018900542,
-        "exposed_targets": [
-          "tp1",
-          "tp2",
-          "tp3"
-        ],
-        "entry_confirmed": true,
-        "hits": {
-          "tp1": false,
-          "tp2": false,
-          "tp3": false,
-          "stop": false
-        },
-        "hit_at": {},
-        "followups": [],
-        "close_reason": "",
-        "closed_at": ""
-      },
-      {
-        "setup_id": "setup_a78be1b875bf78abde80",
-        "source_post_id": "358490589332754",
-        "symbol": "DOGE",
-        "direction": "short",
-        "lane": "EVENT",
-        "published_at": "2026-08-22T15:41:56.872156+00:00",
-        "writer_source": "mistral_event",
-        "status": "closed",
-        "decision_mode": "breakdown_confirm",
-        "public_decision_mode": "at_level",
-        "trade_state": "decision_now",
-        "entry": 0.09024,
-        "entry_zone_low": 0.09006829112235565,
-        "entry_zone_high": 0.09041170887764435,
-        "stop": 0.09217172487349895,
-        "tp1": 0.0869096,
-        "tp2": 0.0850272,
-        "tp3": 0.083,
-        "rr_tp1": 1.7240550379038277,
-        "rr_tp2": 2.6985209288929477,
-        "rr_tp3": 3.7479457345735385,
-        "public_risk_pct": 2.1406525637178073,
-        "exposed_targets": [
-          "tp1",
-          "tp2",
-          "tp3"
-        ],
-        "entry_confirmed": true,
-        "hits": {
-          "tp1": false,
-          "tp2": false,
-          "tp3": false,
           "stop": true
         },
         "hit_at": {
-          "stop": "2026-08-22T16:47:59.999000+00:00"
+          "tp1": "2026-08-22T18:00:59.999000+00:00",
+          "stop": "2026-08-23T02:50:59.999000+00:00"
         },
         "followups": [],
         "close_reason": "stop",
-        "closed_at": "2026-08-22T16:47:59.999000+00:00"
+        "closed_at": "2026-08-23T02:50:59.999000+00:00"
       }
     ]
   }
