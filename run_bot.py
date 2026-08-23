@@ -8,12 +8,12 @@ from runtime import PROJECT_DIR, load_project_env
 load_project_env()
 os.chdir(PROJECT_DIR)
 
-# Apply the v11.3 production hotfix before main imports outcome_engine/publisher.
-# The patch is idempotent, so it becomes a no-op once these fixes are merged
-# directly into the source files.
+# Apply production hotfixes before main imports outcome/writer modules.
 from runtime_hotfix_v113 import apply_v113_hotfix
+from runtime_hotfix_v114 import apply_v114_hotfix
 
 apply_v113_hotfix()
+apply_v114_hotfix()
 
 from main import main
 
