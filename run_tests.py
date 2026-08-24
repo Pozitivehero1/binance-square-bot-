@@ -1,4 +1,4 @@
-"""Run the practical offline v11.2 Signal Quality + confirmed-entry regression suite.
+"""Run the practical offline regression suite.
 
 Set RUN_STRESS_TESTS=1 to append the longer repetition stress tests.
 """
@@ -28,6 +28,7 @@ STANDARD_TESTS = [
     "adaptive_test.py",
     "outcome_test.py",
     "outcome_card_test.py",
+    "text_integrity_test.py",
     "self_test.py",
 ]
 
@@ -49,7 +50,7 @@ def main() -> int:
             print(f"FAILED: {test}")
             return result.returncode
 
-    print("\nALL V11.2 STANDARD OFFLINE TESTS PASSED")
+    print("\nALL STANDARD OFFLINE TESTS PASSED")
     if tests == STANDARD_TESTS:
         print("Long repetition stress tests are available with RUN_STRESS_TESTS=1 python run_tests.py")
     return 0
