@@ -11,9 +11,11 @@ os.chdir(PROJECT_DIR)
 # Apply production hotfixes before main imports outcome/writer modules.
 from runtime_hotfix_v113 import apply_v113_hotfix
 from runtime_hotfix_v114 import apply_v114_hotfix
+from runtime_hotfix_v1141 import apply_v1141_hotfix
 
 apply_v113_hotfix()
 apply_v114_hotfix()
+apply_v1141_hotfix()
 
 from main import main
 
