@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Iterable, List, Optional, Union
 
 from runtime import PROJECT_DIR
+from text_integrity import artifact_reasons, sanitize_safe_markup
 
 logger = logging.getLogger(__name__)
 
@@ -72,10 +73,38 @@ def _extract_post_id(stdout: str) -> str:
     return ""
 
 
+def normalize_square_cashtags(text: str) -> str:
+    """Keep Binance Square cashtags isolated from colon punctuation."""
+    value = str(text or "")
+    return re.sub(r"(\$[A-Za-z][A-Za-z0-9]{0,19})\s*[:：]", r"\1 —", value)
+
+
+def _prepare_text_for_square(text: str) -> tuple[str, tuple[str, ...]]:
+    """Safe final-boundary cleanup plus a hard artifact gate."""
+    original = str(text or "")
+    text = sanitize_safe_markup(original)
+    normalized = normalize_square_cashtags(text)
+    reasons = artifact_reasons(normalized)
+    return normalized, reasons
+
+
 def publish(text: str, image_path: ImageInput = None) -> PublishResult:
     if not text or not text.strip():
         logger.error("Refusing to publish an empty post")
         return PublishResult(False, stderr="empty post")
+
+    prepared, reasons = _prepare_text_for_square(text)
+    if reasons:
+        diagnostic = ", ".join(reasons)
+        logger.error("Refusing to publish text with integrity artifacts: %s", diagnostic)
+        return PublishResult(False, stderr=f"text integrity: {diagnostic}")
+    if prepared != text:
+        logger.info("Normalized Square text/cashtag formatting before publish")
+    text = prepared
+
+    if not text.strip():
+        logger.error("Refusing to publish a post emptied by text cleanup")
+        return PublishResult(False, stderr="empty post after cleanup")
 
     skill_dir = find_skill_dir()
     if not skill_dir:
