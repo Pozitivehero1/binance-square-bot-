@@ -30,6 +30,7 @@ STANDARD_TESTS = [
     "outcome_card_test.py",
     "text_integrity_test.py",
     "reach_quality_test.py",
+    "language_quality_test.py",
     "self_test.py",
 ]
 
