@@ -6,7 +6,9 @@ on:
     branches: [main]
     paths:
       - "dashboard_builder.py"
+      - "dashboard_version_enrich.py"
       - "collect_stats.py"
+      - "VERSION.txt"
       - ".github/workflows/dashboard.yml"
   schedule:
     - cron: "17 * * * *"
@@ -60,6 +62,7 @@ jobs:
       - name: Refresh public Square analytics
         run: |
           python collect_stats.py --pages "$STATS_REFRESH_PAGES" --build-dashboard
+          python dashboard_version_enrich.py
           test -s dashboard/data.json
           test -s dashboard/summary.json
 
