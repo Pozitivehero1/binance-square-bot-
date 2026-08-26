@@ -75,7 +75,12 @@ jobs:
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git commit -m "Update live dashboard analytics [skip ci]"
-            git push
+            # The dashboard can finish while a normal code commit lands on main.
+            # Rebase the generated snapshot onto the newest main instead of losing
+            # the whole analytics/deploy run to a non-fast-forward push.
+            git fetch origin main
+            git rebase origin/main
+            git push origin HEAD:main
           fi
 
       - name: Setup GitHub Pages
