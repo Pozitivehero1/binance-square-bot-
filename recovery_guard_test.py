@@ -1,4 +1,4 @@
-"""Focused regression checks for v11.4.4 recovery selection."""
+"""Focused regression checks for v11.4.5 recovery selection."""
 from recovery_guard import evaluate_recovery_candidate
 
 
@@ -38,7 +38,7 @@ assert decision(
     reach_score=72.0,
 ).allowed
 
-# Real high-demand live event similar to the observed BMT case should pass.
+# Real high-demand live event should pass.
 assert decision(
     lane="event",
     writer_source="mistral_event",
@@ -54,7 +54,41 @@ assert decision(
     plan_valid=False,
 ).allowed
 
-# Weak ordinary high-volume trade should not pass merely because volume inflates reach.
+# v11.4.5 regression: a live high-demand AI event must not be killed merely
+# because selection/reach miss the old ordinary-event thresholds by a few points.
+assert decision(
+    lane="event",
+    writer_source="mistral_event",
+    event_class="ordinary",
+    micro_phase="developing",
+    opportunity_score=66.0,
+    audience_demand=80.2,
+    attention_score=44.5,
+    micro_score=60.2,
+    monetization_score=56.8,
+    selection_score=66.7,
+    reach_score=74.9,
+    plan_valid=False,
+).allowed
+
+# Weak ordinary high-volume/event cycle remains blocked even when its copy/reach
+# score is superficially decent.
+assert not decision(
+    lane="event",
+    writer_source="mistral_event",
+    event_class="ordinary",
+    micro_phase="fresh",
+    opportunity_score=60.4,
+    audience_demand=63.8,
+    attention_score=46.5,
+    micro_score=78.1,
+    monetization_score=52.7,
+    selection_score=55.1,
+    reach_score=74.2,
+    plan_valid=False,
+).allowed
+
+# Weak ordinary trade should not pass merely because volume inflates reach.
 assert not decision(
     event_class="ordinary",
     opportunity_score=64.0,
