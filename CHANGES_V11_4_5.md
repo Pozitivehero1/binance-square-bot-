@@ -1,6 +1,6 @@
 # v11.4.5 Production Guard
 
-This release fixes two production regressions observed after v11.4.4 without changing the trading geometry or the v11.3 outcome policy.
+This release fixes the production regressions observed after v11.4.4 without changing the trading geometry or the v11.3 outcome policy.
 
 ## 1. Canonical single trade plan
 
@@ -12,9 +12,15 @@ The final publisher also rejects duplicate TP blocks, duplicate plan blocks, tru
 
 ## 2. Stronger semantic rejection
 
-The final semantic gate now rejects unsupported narrative inventions observed in live posts, including invented buyer/seller intent, unsupported time-of-day context, fabricated "second/third order" support/resistance language and over-aggressive risk wording.
+The semantic gate rejects unsupported narrative inventions observed in live posts, including invented buyer/seller intent, unsupported time-of-day context, fabricated "second/third order" support/resistance language and over-aggressive risk wording.
 
-## 3. Recovery gate rebalanced
+## 3. State and indicator fact consistency
+
+The writer now validates prose against the exact Python semantic package. A newly published plan may not claim that the trade is already open, working or profitable before the outcome engine confirms entry.
+
+The guard also blocks unsupported historical claims such as "often precedes", ADX direction misuse, ADX/RSI state contradictions and price/turnover unit mixing.
+
+## 4. Recovery gate rebalanced
 
 The v11.4.4 recovery gate could suppress a strong live candidate because one historical reach threshold was missed by a few points. v11.4.5 adds a bounded live-interest recovery path for AI-authored candidates that simultaneously have strong demand, opportunity, monetization, activity and selection quality.
 
