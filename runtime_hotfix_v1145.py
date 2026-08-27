@@ -45,9 +45,9 @@ def _patch_writer() -> bool:
     new = '''def _enforce_full_plan_block(text: str, levels: Dict[str, Any], direction: str, *, seed: str = "") -> str:
     """Make Python the single owner of the visible Entry/SL/TP ladder.
 
-    AI prose may contain a correct-looking but duplicated or truncated plan.  We
+    AI prose may contain a correct-looking but duplicated or truncated plan. We
     therefore remove all embedded plan rows and append exactly one canonical
-    Python block.  This also makes the final text contract independent of model
+    Python block. This makes the final text contract independent of model
     formatting quirks.
     """
     clean = strip_embedded_trade_plan(text)
@@ -68,10 +68,13 @@ def _patch_publisher() -> bool:
         "from semantic_quality import semantic_quality_reasons\nfrom production_guard import final_text_reasons\n",
         label="publisher production guard import",
     )
+    # v11.4.3 adds language_quality_reasons before this hotfix runs, so the
+    # structural guard must extend that full final-boundary tuple rather than the
+    # older v11.4.2-only expression.
     changed |= _replace_optional(
         path,
-        "    reasons = tuple(dict.fromkeys((*artifact_reasons(normalized), *semantic_quality_reasons(normalized))))\n",
-        "    reasons = tuple(dict.fromkeys((*artifact_reasons(normalized), *semantic_quality_reasons(normalized), *final_text_reasons(normalized))))\n",
+        "    reasons = tuple(dict.fromkeys((*artifact_reasons(normalized), *semantic_quality_reasons(normalized), *language_quality_reasons(normalized))))\n",
+        "    reasons = tuple(dict.fromkeys((*artifact_reasons(normalized), *semantic_quality_reasons(normalized), *language_quality_reasons(normalized), *final_text_reasons(normalized))))\n",
         label="publisher structural final gate",
     )
     return changed
