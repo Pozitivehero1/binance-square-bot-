@@ -15,6 +15,7 @@ from runtime_hotfix_v1141 import apply_v1141_hotfix
 from runtime_hotfix_v1142 import apply_v1142_hotfix
 from runtime_hotfix_v1143 import apply_v1143_hotfix
 from runtime_hotfix_v1144 import apply_v1144_hotfix
+from runtime_hotfix_v1145 import apply_v1145_hotfix
 
 apply_v113_hotfix()
 apply_v114_hotfix()
@@ -22,6 +23,7 @@ apply_v1141_hotfix()
 apply_v1142_hotfix()
 apply_v1143_hotfix()
 apply_v1144_hotfix()
+apply_v1145_hotfix()
 
 from main import main
 
