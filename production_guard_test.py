@@ -1,4 +1,5 @@
-"""Focused regressions for the v11.4.5 final production text guard."""
+"""Focused regressions for the v11.4.5 production text guard."""
+from fact_consistency import fact_consistency_reasons
 from production_guard import final_text_reasons, strip_embedded_trade_plan
 from semantic_quality import semantic_quality_reasons
 
@@ -42,5 +43,35 @@ GOOD_NARRATIVES = [
 ]
 for text in GOOD_NARRATIVES:
     assert not semantic_quality_reasons(text), (text, semantic_quality_reasons(text))
+
+TRADE_PACKAGE = {
+    "market": {"rsi_15m": "78.3", "adx_15m": "38.1"},
+    "trade_plan": {"direction": "LONG", "trade_state": "decision_now"},
+}
+EVENT_PACKAGE = {
+    "market_event": {"rsi_15m": "31.6", "adx_15m": "38.1"},
+    "optional_trade_plan": {"available": False},
+}
+
+# Exact failure classes observed in live copy.
+assert "unconfirmed-position-claim" in fact_consistency_reasons(
+    "$TUT — пока сделка работает в нашу пользу.", TRADE_PACKAGE
+)
+assert "unsupported-historical-generalization" in fact_consistency_reasons(
+    "$TUT — такое сочетание часто предшествует коррекции.", TRADE_PACKAGE
+)
+assert "adx-strength-contradiction" in fact_consistency_reasons(
+    "$ONG — ADX говорит о слабом тренде (38.1).", EVENT_PACKAGE
+)
+assert "rsi-neutral-contradiction" in fact_consistency_reasons(
+    "$ONG — RSI подбирается к нейтральной зоне (31.6).", EVENT_PACKAGE
+)
+assert "price-turnover-unit-mix" in fact_consistency_reasons(
+    "$BICO вырос почти на треть оборота за час.", TRADE_PACKAGE
+)
+
+assert not fact_consistency_reasons(
+    "$TUT — цена выше VWAP; LONG рассматриваю только по условиям плана.", TRADE_PACKAGE
+)
 
 print("production guard checks passed")
