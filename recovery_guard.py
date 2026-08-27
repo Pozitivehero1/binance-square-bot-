@@ -1,8 +1,8 @@
-"""Reach recovery gate for v11.4.4.
+"""Reach recovery gate for v11.4.5.
 
-The scanner still runs on every cron tick. This gate only suppresses publication
-when the winning candidate is too ordinary/weak for the current account reach
-baseline. Fresh audience events remain free to break through.
+The scanner runs on every cron tick. The guard blocks stale/ordinary filler, but
+must not suppress a genuinely useful live candidate merely because one learned
+reach component is a few points below a historical threshold.
 """
 from __future__ import annotations
 
@@ -50,9 +50,8 @@ def evaluate_recovery_candidate(
     active_market = event == "active_market"
     deterministic = source.startswith("deterministic")
 
-    # Truly stale candidates should almost never consume a publication slot.
-    # A very high-demand/high-attention exception keeps this a soft guard instead
-    # of a permanent ban on large coins during an unusual move.
+    # Stale data is a hard quality problem, not something a high copy score can
+    # hide. Keep only a genuinely exceptional high-demand/high-attention escape.
     if phase == "stale" or event == "stale_event":
         stale_escape = (
             demand >= 82.0
@@ -60,9 +59,46 @@ def evaluate_recovery_candidate(
             and opportunity >= 68.0
             and selection >= 72.0
             and reach >= 78.0
+            and not deterministic
         )
         if not stale_escape:
             return RecoveryDecision(False, "stale market without exceptional demand", 78.0)
+
+    # v11.4.5: a strong live AI-authored candidate may pass on the *combination*
+    # of opportunity, demand, monetization and activity instead of being killed
+    # by one arbitrary reach/selection cutoff. This is deliberately unavailable
+    # to deterministic fallback copy and still requires the normal Distribution
+    # Gate to have passed before this function is called.
+    if not deterministic:
+        broad_live_interest = (
+            demand >= 75.0
+            and opportunity >= 64.0
+            and selection >= 64.0
+            and monetization >= 50.0
+            and activity >= 48.0
+            and reach >= 71.0
+        )
+        actionable_live_plan = (
+            plan_valid
+            and demand >= 60.0
+            and opportunity >= 64.0
+            and selection >= 64.0
+            and monetization >= 50.0
+            and activity >= 48.0
+            and reach >= 72.0
+        )
+        if broad_live_interest:
+            return RecoveryDecision(
+                True,
+                f"live-interest recovery pass: reach={reach:.1f} selection={selection:.1f} opportunity={opportunity:.1f} demand={demand:.1f}",
+                71.0,
+            )
+        if actionable_live_plan:
+            return RecoveryDecision(
+                True,
+                f"actionable-plan recovery pass: reach={reach:.1f} selection={selection:.1f} opportunity={opportunity:.1f}",
+                72.0,
+            )
 
     if strong_event:
         threshold = 68.0
@@ -90,22 +126,19 @@ def evaluate_recovery_candidate(
         min_opportunity = 67.0
         min_demand = 48.0
 
-    # Observation-only EVENT posts need a little more evidence because they have
-    # lower trading intent and historically weaker reach when the market is ordinary.
+    # Observation-only ordinary events still need stronger evidence because they
+    # have no actionable trade plan. Fresh/audience-breakout events are exempt.
     if lane_name == "event" and not plan_valid and not strong_event:
         threshold += 1.5
         min_selection += 1.5
 
-    # Deterministic copy is an outage fallback, not a co-equal author. Historical
-    # account data shows a large reach gap, so only publish it on stronger markets.
+    # Deterministic copy is an outage fallback, never a co-equal author.
     if deterministic:
         threshold += 4.0
         min_selection += 4.0
         min_opportunity += 2.0
         min_demand += 3.0
 
-    # A healthy W2E/actionable plan can earn a tiny concession, but never enough
-    # to rescue a genuinely weak market candidate.
     if plan_valid and monetization >= 58.0 and not deterministic:
         threshold -= 1.0
 
@@ -121,8 +154,6 @@ def evaluate_recovery_candidate(
     if demand < min_demand:
         reasons.append(f"demand {demand:.1f} < {min_demand:.1f}")
 
-    # Ordinary posts also need some live activity. Strong-event classes already
-    # encode that evidence and are intentionally exempt from this extra condition.
     if not strong_event and not high_demand and activity < 50.0:
         reasons.append(f"activity {activity:.1f} < 50.0")
 
