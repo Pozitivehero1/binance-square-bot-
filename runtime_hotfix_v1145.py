@@ -151,6 +151,40 @@ def _patch_main() -> bool:
     )
 
 
+def _self_check() -> None:
+    """Fail closed before main imports if a critical production guard is absent."""
+    writer_source = (PROJECT_DIR / "writer.py").read_text(encoding="utf-8")
+    event_source = (PROJECT_DIR / "event_writer.py").read_text(encoding="utf-8")
+    publisher_source = (PROJECT_DIR / "publisher.py").read_text(encoding="utf-8")
+
+    required = {
+        "writer canonical plan": "strip_embedded_trade_plan(text)" in writer_source,
+        "writer fact consistency": "fact_consistency_reasons(text, package)" in writer_source,
+        "event fact consistency": "fact_consistency_reasons(text, package)" in event_source,
+        "publisher structural guard": "*final_text_reasons(normalized)" in publisher_source,
+    }
+    missing = [name for name, ok in required.items() if not ok]
+    if missing:
+        raise RuntimeError("v11.4.5 production guard incomplete: " + ", ".join(missing))
+
+    from production_guard import final_text_reasons, strip_embedded_trade_plan
+    from fact_consistency import fact_consistency_reasons
+
+    malformed = "LONG | вход 97.87-98.03 | стоп 97.58\nTP1 98.99 | TP2 99.58 | TP3 100,\nLONG-план: зона 97.87-98.03, стоп 97.58\nЦели: TP1 98.99 -> TP2 99.58 -> TP3 100.2"
+    cleaned = strip_embedded_trade_plan(malformed)
+    if "TP1" in cleaned or "LONG-план" in cleaned:
+        raise RuntimeError("v11.4.5 embedded plan sanitizer self-check failed")
+    if not final_text_reasons(malformed):
+        raise RuntimeError("v11.4.5 malformed final text self-check failed")
+
+    package = {
+        "market": {"rsi_15m": "78.3", "adx_15m": "38.1"},
+        "trade_plan": {"direction": "LONG", "trade_state": "decision_now"},
+    }
+    if "unconfirmed-position-claim" not in fact_consistency_reasons("$TUT — сделка работает в нашу пользу.", package):
+        raise RuntimeError("v11.4.5 trade-state fact self-check failed")
+
+
 def apply_v1145_hotfix() -> None:
     os.environ["BOT_VERSION"] = "v11.4.5"
     # Keep the v11.3 final-only outcome policy explicit at the newest boundary.
@@ -158,10 +192,11 @@ def apply_v1145_hotfix() -> None:
     os.environ["OUTCOME_POST_PARTIAL_TARGETS"] = "0"
 
     changed = _patch_writer() | _patch_event_writer() | _patch_publisher() | _patch_main()
+    _self_check()
     if changed:
-        print("[v11.4.5 hotfix] Production Guard applied: canonical plan + fact consistency + final structural gate")
+        print("[v11.4.5 hotfix] Production Guard applied and verified: canonical plan + fact consistency + final structural gate")
     else:
-        print("[v11.4.5 hotfix] Production Guard already applied or no compatible source changes found")
+        print("[v11.4.5 hotfix] Production Guard already applied and verified")
 
 
 if __name__ == "__main__":
