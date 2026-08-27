@@ -32,6 +32,7 @@ STANDARD_TESTS = [
     "reach_quality_test.py",
     "language_quality_test.py",
     "recovery_guard_test.py",
+    "production_guard_test.py",
     "self_test.py",
 ]
 
