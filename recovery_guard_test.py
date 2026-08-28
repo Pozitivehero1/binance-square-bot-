@@ -1,4 +1,4 @@
-"""Focused regression checks for v11.4.5 recovery selection."""
+"""Focused regression checks for v11.4.6 recovery selection."""
 from recovery_guard import evaluate_recovery_candidate
 
 
@@ -54,8 +54,8 @@ assert decision(
     plan_valid=False,
 ).allowed
 
-# v11.4.5 regression: a live high-demand AI event must not be killed merely
-# because selection/reach miss the old ordinary-event thresholds by a few points.
+# v11.4.5 regression retained: a live high-demand AI event must not be killed
+# merely because selection/reach miss the old ordinary-event thresholds.
 assert decision(
     lane="event",
     writer_source="mistral_event",
@@ -68,6 +68,61 @@ assert decision(
     monetization_score=56.8,
     selection_score=66.7,
     reach_score=74.9,
+    plan_valid=False,
+).allowed
+
+# v11.4.6 exact cadence regression from production: the XRP cycle already
+# passed Distribution Gate (74.4 >= 69), had exceptional demand and solid W2E,
+# and should not be suppressed only because learned selection was 61.6.
+xrp = decision(
+    lane="event",
+    writer_source="mistral_event",
+    event_class="ordinary",
+    micro_phase="ordinary",
+    opportunity_score=65.2,
+    audience_demand=90.8,
+    attention_score=50.8,
+    micro_score=45.8,
+    monetization_score=63.7,
+    selection_score=61.6,
+    reach_score=74.4,
+    plan_valid=False,
+)
+assert xrp.allowed
+assert "cadence recovery pass" in xrp.reason
+
+# A valid live trade plan gets a cautious cadence escape when the learned
+# selection prior is only modestly below the old cutoff.
+actionable = decision(
+    lane="trade",
+    writer_source="mistral",
+    event_class="ordinary",
+    micro_phase="ordinary",
+    opportunity_score=65.0,
+    audience_demand=54.0,
+    attention_score=49.0,
+    micro_score=47.0,
+    monetization_score=56.0,
+    selection_score=63.0,
+    reach_score=72.5,
+    plan_valid=True,
+)
+assert actionable.allowed
+assert "actionable cadence pass" in actionable.reason
+
+# High demand alone is not enough: weak opportunity/monetization must still fail.
+assert not decision(
+    lane="event",
+    writer_source="mistral_event",
+    event_class="ordinary",
+    micro_phase="ordinary",
+    opportunity_score=58.0,
+    audience_demand=91.0,
+    attention_score=52.0,
+    micro_score=48.0,
+    monetization_score=45.0,
+    selection_score=62.0,
+    reach_score=75.0,
     plan_valid=False,
 ).allowed
 
