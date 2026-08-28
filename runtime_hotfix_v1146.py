@@ -11,6 +11,23 @@ import os
 from runtime import PROJECT_DIR
 
 
+def _patch_status_label() -> bool:
+    path = PROJECT_DIR / "main.py"
+    text = path.read_text(encoding="utf-8")
+    old = '            "v11.4.5 recovery gate: " + recovery.reason,\n'
+    new = '            "v11.4.6 recovery gate: " + recovery.reason,\n'
+    if new in text:
+        return False
+    count = text.count(old)
+    if count != 1:
+        print(f"[v11.4.6 hotfix] warning: recovery status label expected one match, found {count}; skipped")
+        return False
+    updated = text.replace(old, new, 1)
+    compile(updated, str(path), "exec")
+    path.write_text(updated, encoding="utf-8")
+    return True
+
+
 def _self_check() -> None:
     source = (PROJECT_DIR / "recovery_guard.py").read_text(encoding="utf-8")
     required = (
@@ -65,8 +82,10 @@ def apply_v1146_hotfix() -> None:
     # Preserve the final-only public outcome contract at the newest boundary.
     os.environ["OUTCOME_POST_STOPS"] = "0"
     os.environ["OUTCOME_POST_PARTIAL_TARGETS"] = "0"
+    label_changed = _patch_status_label()
     _self_check()
-    print("[v11.4.6 hotfix] Cadence Recovery verified: strong live AI candidates can pass without weakening stale/weak guards")
+    suffix = " + status label" if label_changed else ""
+    print("[v11.4.6 hotfix] Cadence Recovery verified: strong live AI candidates can pass without weakening stale/weak guards" + suffix)
 
 
 if __name__ == "__main__":
