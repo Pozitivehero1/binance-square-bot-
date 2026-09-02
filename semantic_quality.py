@@ -11,6 +11,9 @@ from typing import Tuple
 
 
 _HIGH_CONFIDENCE_RULES = (
+    ("mixed-script-word", r"(?u)\b(?:[A-Za-z]+[А-Яа-яЁё]+|[А-Яа-яЁё]+[A-Za-z]+)\b"),
+    ("broken-english-fragments", r"(?iu)(?:^|[\s/|,;:])(?:in|a|or)(?:[\s/|,;:]|$).*(?:[\s/|,;:])(?:in|a|or)(?:[\s/|,;:]|$)"),
+    ("double-multiplier", r"(?iu)\b(?:x|х|×)\s*\d+(?:[.,]\d+)?\s+в\s+разы\b"),
     ("known-typo", r"(?iu)\b(?:ыход|ыхода|ыходу|ыходом|ыходе)\b"),
     ("unsupported-certainty", r"(?iu)\b(?:дело\s+времени|без\s+потерь|гарантированн\w*)\b"),
     (

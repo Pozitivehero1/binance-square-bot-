@@ -258,6 +258,7 @@ class PostMemory:
         content_format: str = "",
         visual_style: str = "",
         direction: str = "",
+        lane: str = "",
         levels: dict | None = None,
         market_price: float | None = None,
     ) -> None:
@@ -286,6 +287,7 @@ class PostMemory:
                 "content_format": str(content_format or ""),
                 "visual_style": str(visual_style or ""),
                 "direction": str(direction or ""),
+                "lane": str(lane or "").upper(),
                 "levels": {
                     key: float(value)
                     for key, value in (levels or {}).items()
@@ -327,6 +329,9 @@ class PostMemory:
 
     def get_last_visual_styles(self, n: int = 10) -> List[str]:
         return [str(item.get("visual_style", "")) for item in self.items[-n:] if item.get("visual_style")]
+
+    def get_last_lanes(self, n: int = 10) -> List[str]:
+        return [str(item.get("lane", "")).upper() for item in self.items[-n:] if item.get("lane")]
 
     def find_previous_symbol(self, symbol: str, n: int = 120) -> dict | None:
         target = str(symbol).upper()

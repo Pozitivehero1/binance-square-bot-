@@ -26,6 +26,40 @@ MILESTONES = {
 }
 
 
+def reach_recovery_state(now: Optional[datetime] = None) -> tuple[bool, float, float]:
+    """Return (enabled, rolling_24h_views, seven-day daily baseline).
+
+    The state is data-driven and fail-open until enough history exists. The
+    current day enters recovery below 82% of the preceding six complete daily
+    buckets, with a small hysteresis margin supplied by the stricter threshold.
+    """
+    now = now or _now()
+    rows: list[tuple[datetime, float]] = []
+    for item in load_store().get("posts", {}).values():
+        if not isinstance(item, dict):
+            continue
+        published = _parse_dt(item.get("published_at", ""))
+        stats = item.get("stats") if isinstance(item.get("stats"), dict) else {}
+        try:
+            views = float(stats.get("views", 0) or 0)
+        except (TypeError, ValueError):
+            continue
+        if published and now - timedelta(days=7) <= published <= now:
+            rows.append((published, views))
+    current = sum(views for published, views in rows if published >= now - timedelta(hours=24))
+    buckets = []
+    for day in range(1, 7):
+        high = now - timedelta(days=day)
+        low = high - timedelta(days=1)
+        total = sum(views for published, views in rows if low <= published < high)
+        if total > 0:
+            buckets.append(total)
+    if len(buckets) < 3:
+        return False, round(current, 1), 0.0
+    baseline = float(median(buckets))
+    return current < baseline * 0.82, round(current, 1), round(baseline, 1)
+
+
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 

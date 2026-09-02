@@ -1,4 +1,4 @@
-"""Focused regression checks for v11.4.6 recovery selection."""
+"""Focused regression checks for v11.5 quality-first recovery selection."""
 from recovery_guard import evaluate_recovery_candidate
 
 
@@ -54,8 +54,7 @@ assert decision(
     plan_valid=False,
 ).allowed
 
-# v11.4.5 regression retained: a live high-demand AI event must not be killed
-# merely because selection/reach miss the old ordinary-event thresholds.
+# A broadly interesting live event still passes outside recovery mode.
 assert decision(
     lane="event",
     writer_source="mistral_event",
@@ -71,9 +70,7 @@ assert decision(
     plan_valid=False,
 ).allowed
 
-# v11.4.6 exact cadence regression from production: the XRP cycle already
-# passed Distribution Gate (74.4 >= 69), had exceptional demand and solid W2E,
-# and should not be suppressed only because learned selection was 61.6.
+# v11.5 removes the cadence escape that admitted this weak-selection XRP slot.
 xrp = decision(
     lane="event",
     writer_source="mistral_event",
@@ -88,11 +85,9 @@ xrp = decision(
     reach_score=74.4,
     plan_valid=False,
 )
-assert xrp.allowed
-assert "cadence recovery pass" in xrp.reason
+assert not xrp.allowed
 
-# A valid live trade plan gets a cautious cadence escape when the learned
-# selection prior is only modestly below the old cutoff.
+# A valid plan does not bypass weak learned selection merely to fill cadence.
 actionable = decision(
     lane="trade",
     writer_source="mistral",
@@ -107,8 +102,18 @@ actionable = decision(
     reach_score=72.5,
     plan_valid=True,
 )
-assert actionable.allowed
-assert "actionable cadence pass" in actionable.reason
+assert not actionable.allowed
+
+# Recovery mode raises thresholds for an ordinary candidate that would pass in
+# normal conditions, while leaving the same rules deterministic and testable.
+ordinary = dict(
+    lane="trade", writer_source="mistral", event_class="ordinary",
+    micro_phase="ordinary", opportunity_score=70.0, audience_demand=58.0,
+    attention_score=57.0, micro_score=55.0, monetization_score=56.0,
+    selection_score=71.0, reach_score=75.0, plan_valid=True,
+)
+assert evaluate_recovery_candidate(**ordinary, recovery_mode=False).allowed
+assert not evaluate_recovery_candidate(**ordinary, recovery_mode=True).allowed
 
 # High demand alone is not enough: weak opportunity/monetization must still fail.
 assert not decision(

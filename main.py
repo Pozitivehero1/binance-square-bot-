@@ -50,7 +50,7 @@ from trade_plan import plan_summary
 from event_writer import (
     event_decision_level, generate_event_candidates, rank_event_candidates,
 )
-from performance_store import record_publication
+from performance_store import record_publication, reach_recovery_state
 from adaptive import AdaptiveAdjustment, score_adaptive
 from trade_journal import record_trade_setup, validate_public_plan_text
 from outcome_engine import process_outcomes
@@ -1082,6 +1082,13 @@ def _run_once() -> int:
     else:
         event_selection_score = float("-inf")
 
+    # Two consecutive TRADE publications saturate the feed. Prefer a genuinely
+    # eligible EVENT next; never manufacture an event merely for rotation.
+    recent_lanes = memory.get_last_lanes(2)
+    if recent_lanes == ["TRADE", "TRADE"] and event_chosen is not None:
+        event_selection_score += 8.0
+        logger.info("Lane saturation: two recent TRADE posts, EVENT receives +8.0")
+
     if event_chosen is not None and (
         trade_chosen is None or event_selection_score >= trade_selection_score + EVENT_LANE_ADVANTAGE
     ):
@@ -1217,6 +1224,38 @@ def _run_once() -> int:
             reach_score=reach.score,
             market_score=opportunity.score,
             quality_score=quality_report.score,
+        )
+        return 0
+
+    recovery_mode, rolling_reach, reach_baseline = reach_recovery_state()
+    logger.info(
+        "Reach recovery mode=%s rolling24h=%.0f baseline=%.0f",
+        recovery_mode, rolling_reach, reach_baseline,
+    )
+
+    from recovery_guard import evaluate_recovery_candidate
+    recovery = evaluate_recovery_candidate(
+        lane=lane,
+        writer_source=selected_post.source,
+        event_class=opportunity.event_class,
+        micro_phase=micro.phase,
+        opportunity_score=opportunity.score,
+        audience_demand=opportunity.audience_demand,
+        attention_score=attention.score,
+        micro_score=micro.score,
+        monetization_score=monetization.score,
+        selection_score=selection_score,
+        reach_score=reach.score,
+        plan_valid=plan_valid,
+        recovery_mode=recovery_mode,
+    )
+    logger.info("v11.5 recovery gate: %s", recovery.reason)
+    if not DRY_RUN and not recovery.allowed:
+        write_status(
+            "skipped", "v11.5 recovery gate: " + recovery.reason,
+            symbol=symbol, lane=lane, recovery_mode=recovery_mode,
+            rolling_reach=rolling_reach, reach_baseline=reach_baseline,
+            reach_score=reach.score, selection_score=selection_score,
         )
         return 0
 
@@ -1400,6 +1439,7 @@ def _run_once() -> int:
             content_format=selected_post.content_format,
             visual_style=selected_post.visual_style,
             direction=best_score.direction if plan_valid else "",
+            lane=lane,
             levels=levels if plan_valid else {},
             market_price=indicator.price,
         )

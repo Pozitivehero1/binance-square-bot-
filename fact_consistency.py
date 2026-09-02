@@ -70,7 +70,7 @@ def fact_consistency_reasons(text: str, package: Dict[str, Any]) -> Tuple[str, .
     if re.search(r"(?iu)\b(?:давлени\w*\s+ADX|ADX\s+давит|ADX\s+подтвержда\w*\s+(?:рост|падени)|ADX\s+показыва\w*\s+направлен)\b", value):
         reasons.append("adx-direction-misuse")
     if adx is not None:
-        if adx >= 25.0 and re.search(r"(?iu)\bADX\b.{0,45}\b(?:слаб\w*\s+тренд|тренд\w*\s+слаб\w*)\b", value):
+        if adx >= 25.0 and re.search(r"(?iu)\bADX\b.{0,45}(?:слаб\w*\s+тренд\w*|тренд\w*\s+слаб\w*)", value):
             reasons.append("adx-strength-contradiction")
         if adx < 20.0 and re.search(r"(?iu)\bADX\b.{0,45}\b(?:сильн\w*|выраженн\w*)\s+тренд", value):
             reasons.append("adx-strength-contradiction")
@@ -81,7 +81,7 @@ def fact_consistency_reasons(text: str, package: Dict[str, Any]) -> Tuple[str, .
             reasons.append("rsi-state-contradiction")
         if rsi <= 30.0 and re.search(r"(?iu)\bRSI\b.{0,45}\bперекуплен\w*\b", value):
             reasons.append("rsi-state-contradiction")
-        if (rsi < 40.0 or rsi > 60.0) and re.search(r"(?iu)\bRSI\b.{0,45}\bнейтральн\w*\s+зон", value):
+        if (rsi < 40.0 or rsi > 60.0) and re.search(r"(?iu)\bRSI\b.{0,45}нейтральн\w*\s+зон", value):
             reasons.append("rsi-neutral-contradiction")
 
     # Prevent category/unit mixing such as "price rose by a third of turnover".

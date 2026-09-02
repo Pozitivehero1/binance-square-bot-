@@ -21,8 +21,8 @@ def _bool(name: str, default: str = "1") -> bool:
 
 
 LOCAL_TZ_OFFSET = int(os.getenv("ANALYTICS_TZ_OFFSET", "3"))
-LOOKBACK_DAYS = max(3, min(int(os.getenv("ADAPTIVE_LOOKBACK_DAYS", "14")), 60))
-HALF_LIFE_DAYS = max(2.0, min(float(os.getenv("ADAPTIVE_HALF_LIFE_DAYS", "7")), 30.0))
+LOOKBACK_DAYS = max(3, min(int(os.getenv("ADAPTIVE_LOOKBACK_DAYS", "7")), 60))
+HALF_LIFE_DAYS = max(2.0, min(float(os.getenv("ADAPTIVE_HALF_LIFE_DAYS", "3")), 30.0))
 MAX_TOTAL = max(4.0, min(float(os.getenv("ADAPTIVE_MAX_TOTAL", "14")), 25.0))
 MAX_TICKER = max(2.0, min(float(os.getenv("ADAPTIVE_TICKER_MAX", "10")), 15.0))
 MAX_HOUR = max(1.0, min(float(os.getenv("ADAPTIVE_HOUR_MAX", "5")), 10.0))
@@ -73,6 +73,14 @@ def _metric(item: dict, now: datetime) -> Optional[float]:
             return float(milestones["24h"].get("views", 0) or 0)
         except (TypeError, ValueError):
             return None
+    # Early feedback is converted to a conservative 24h-equivalent. It reacts
+    # to failing formats within hours while giving mature 24h data precedence.
+    for label, factor in (("6h", 2.0), ("2h", 3.2), ("30m", 5.0)):
+        if isinstance(milestones.get(label), dict):
+            try:
+                return float(milestones[label].get("views", 0) or 0) * factor
+            except (TypeError, ValueError):
+                pass
     published = _parse_dt(item.get("published_at", ""))
     if not published or (now - published).total_seconds() < 24 * 3600:
         return None

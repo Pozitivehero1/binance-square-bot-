@@ -1,4 +1,4 @@
-"""Reach recovery gate for v11.4.6.
+"""Quality-first reach recovery gate for v11.5.
 
 The scanner runs on every cron tick. The guard blocks stale/ordinary filler, but
 must not suppress a genuinely useful live candidate merely because one learned
@@ -30,6 +30,7 @@ def evaluate_recovery_candidate(
     selection_score: float,
     reach_score: float,
     plan_valid: bool,
+    recovery_mode: bool = False,
 ) -> RecoveryDecision:
     lane_name = str(lane or "").strip().lower()
     source = str(writer_source or "").strip().lower()
@@ -64,46 +65,9 @@ def evaluate_recovery_candidate(
         if not stale_escape:
             return RecoveryDecision(False, "stale market without exceptional demand", 78.0)
 
-    # v11.4.6 cadence recovery: once the normal Distribution Gate has already
-    # passed, a very high-demand AI-authored candidate should not be discarded
-    # because learned selection is a few points below the old ordinary-event
-    # cutoff. This path still requires useful opportunity, monetization and live
-    # activity and is never available to deterministic fallback copy.
-    if not deterministic:
-        high_demand_ai = (
-            demand >= 82.0
-            and opportunity >= 63.5
-            and selection >= 60.0
-            and monetization >= 55.0
-            and activity >= 45.0
-            and reach >= 72.0
-        )
-        if high_demand_ai:
-            return RecoveryDecision(
-                True,
-                f"cadence recovery pass: reach={reach:.1f} selection={selection:.1f} opportunity={opportunity:.1f} demand={demand:.1f}",
-                72.0,
-            )
-
-        # A validated public trade plan has already passed the strict geometry
-        # contract. Give such a live AI candidate a narrower recovery path so a
-        # modest learned-reach miss does not create multi-hour posting gaps.
-        actionable_cadence = (
-            plan_valid
-            and demand >= 48.0
-            and opportunity >= 64.0
-            and selection >= 62.0
-            and monetization >= 54.0
-            and activity >= 46.0
-            and reach >= 71.5
-        )
-        if actionable_cadence:
-            return RecoveryDecision(
-                True,
-                f"actionable cadence pass: reach={reach:.1f} selection={selection:.1f} opportunity={opportunity:.1f}",
-                71.5,
-            )
-
+    # There is deliberately no cadence escape in v11.5. A cron tick is an
+    # opportunity to publish, not an obligation to fill the slot.
+    if not deterministic and not recovery_mode:
         broad_live_interest = (
             demand >= 75.0
             and opportunity >= 64.0
@@ -175,6 +139,16 @@ def evaluate_recovery_candidate(
 
     if plan_valid and monetization >= 58.0 and not deterministic:
         threshold -= 1.0
+
+    # While rolling reach is depressed, demand stronger evidence from every
+    # ordinary candidate. Genuine fresh/breakout events keep a smaller uplift.
+    if recovery_mode:
+        uplift = 2.0 if strong_event else 4.0
+        threshold += uplift
+        min_selection += 3.0 if strong_event else 4.0
+        min_opportunity += 2.0 if strong_event else 3.0
+        if active_market and not strong_event:
+            threshold += 1.0
 
     threshold = max(66.0, min(82.0, threshold))
 
