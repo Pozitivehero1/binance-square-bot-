@@ -1,4 +1,4 @@
-"""Offline smoke/regression suite for Audience Author v9.
+"""Offline smoke/regression suite for the cumulative production bot.
 
 No market API and no real publication are attempted.
 """
@@ -26,6 +26,7 @@ from quality import PostQualityEvaluator
 from trend import TrendingMarket
 from writer import (
     FULL_PLAN_FORMATS,
+    MIN_VALID_AI_DRAFTS,
     _fmt_price,
     _levels,
     _ticker_count,
@@ -251,14 +252,15 @@ def _test_mistral_full_author_and_fact_lock() -> None:
 
     assert mocked.call_count >= 1
     ai = [d for d in drafts if d.source == "mistral"]
-    assert len(ai) >= 5, [d.content_format for d in drafts]
+    assert len(ai) >= MIN_VALID_AI_DRAFTS, [d.content_format for d in drafts]
+    assert all(not d.source.startswith("deterministic") for d in drafts), [d.source for d in drafts]
     assert all("x99" not in d.text for d in ai)
     assert all("донат" not in d.text.lower() for d in ai)
     request_json = mocked.call_args.kwargs["json"]
     semantic = json.loads(request_json["messages"][1]["content"])["semantic_package"]
     trade = semantic["trade_plan"]
     assert all(key in trade for key in ("entry", "entry_zone", "stop_loss", "tp1", "tp2", "tp3", "rr_tp1", "rr_tp2", "rr_tp3"))
-    print(f"AI AUTHOR FACT LOCK: OK | accepted_ai={len(ai)} | full semantic trade plan | fabricated x99 + donation solicitation rejected")
+    print(f"AI AUTHOR FACT LOCK: OK | accepted_ai={len(ai)} | deterministic excluded from healthy AI pool | full semantic trade plan | fabricated x99 + donation solicitation rejected")
 
 
 def _test_balanced_fallback() -> None:
@@ -301,7 +303,7 @@ def main() -> None:
     _test_mistral_full_author_and_fact_lock()
     _test_balanced_fallback()
     _test_publisher_command()
-    print("All v11.1 core offline tests passed. No publication was attempted.")
+    print("All cumulative core offline tests passed. No publication was attempted.")
 
 
 if __name__ == "__main__":

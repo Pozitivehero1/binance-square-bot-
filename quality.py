@@ -21,8 +21,8 @@ FULL_PLAN_FORMATS: set[str] = {"trade_map", "risk_first"}
 
 
 class PostQualityEvaluator:
-    MIN_LENGTH = int(os.getenv("POST_MIN_CHARS", "150"))
-    MAX_LENGTH = int(os.getenv("POST_MAX_CHARS", "560"))
+    MIN_LENGTH = int(os.getenv("POST_MIN_CHARS", "220"))
+    MAX_LENGTH = int(os.getenv("POST_MAX_CHARS", "430"))
 
     UNSUPPORTED_CLAIMS = (
         "90% точности", "100% точности", "гарантирован", "без риска",

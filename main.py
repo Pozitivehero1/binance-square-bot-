@@ -1,4 +1,4 @@
-"""Main orchestration for Binance Square Bot v11.1 Outcome Integrity Engine.
+"""Main orchestration for Binance Square Bot v11.6 cumulative release.
 
 Pipeline:
 1. Scan a broad liquid USDT universe on 5m/15m/1h.
@@ -51,7 +51,8 @@ from event_writer import (
     event_decision_level, generate_event_candidates, rank_event_candidates,
 )
 from performance_store import record_publication, reach_recovery_state
-from adaptive import AdaptiveAdjustment, score_adaptive
+from adaptive import AdaptiveAdjustment, score_adaptive, score_content_performance
+from reach_editorial import editorial_reach_adjustment
 from trade_journal import record_trade_setup, validate_public_plan_text
 from outcome_engine import process_outcomes
 
@@ -77,7 +78,7 @@ MIN_W2E_MARKET_SCORE = float(os.getenv("MIN_W2E_MARKET_SCORE", "56"))
 W2E_SOFT_FLOOR = float(os.getenv("W2E_SOFT_FLOOR", "40"))
 HOT_W2E_FLOOR = float(os.getenv("HOT_W2E_FLOOR", "34"))
 MIN_CONVERSION_INTENT = float(os.getenv("MIN_CONVERSION_INTENT", "75"))
-MIN_OPPORTUNITY_SCORE = float(os.getenv("MIN_OPPORTUNITY_SCORE", "62"))
+MIN_OPPORTUNITY_SCORE = float(os.getenv("MIN_OPPORTUNITY_SCORE", "63"))
 MIN_AUDIENCE_DEMAND = float(os.getenv("MIN_AUDIENCE_DEMAND", "24"))
 # Event lane is deliberately independent from ADX/R/R hard gates.
 MIN_EVENT_SCORE = float(os.getenv("MIN_EVENT_SCORE", "60"))
@@ -90,8 +91,8 @@ EVENT_MIN_CONVERSION = float(os.getenv("EVENT_MIN_CONVERSION", "72"))
 PRELIM_MIN_SCORE = float(os.getenv("PRELIM_MIN_SCORE", "38"))
 W2E_PROXY_MAX_BONUS = float(os.getenv("W2E_PROXY_MAX_BONUS", "5.0"))
 W2E_PROXY_MAX_PENALTY = float(os.getenv("W2E_PROXY_MAX_PENALTY", "3.0"))
-VALID_PLAN_EVENT_BONUS = float(os.getenv("VALID_PLAN_EVENT_BONUS", "4.0"))
-OBSERVATION_ONLY_EVENT_PENALTY = float(os.getenv("OBSERVATION_ONLY_EVENT_PENALTY", "1.5"))
+VALID_PLAN_EVENT_BONUS = float(os.getenv("VALID_PLAN_EVENT_BONUS", "0"))
+OBSERVATION_ONLY_EVENT_PENALTY = float(os.getenv("OBSERVATION_ONLY_EVENT_PENALTY", "0"))
 STRICT_BTC_FILTER = os.getenv("STRICT_BTC_FILTER", "0").lower() in {"1", "true", "yes"}
 DRY_RUN = os.getenv("DRY_RUN", "1").lower() in {"1", "true", "yes"}
 PUBLISH_IMAGES = os.getenv("PUBLISH_IMAGES", "1").lower() in {"1", "true", "yes"}
@@ -706,6 +707,8 @@ def _best_event_post_variant(
         min_quality=EVENT_MIN_POST_QUALITY,
         max_similarity=MAX_POST_SIMILARITY,
         plan_available=bool(levels.get("plan_valid", False)),
+        event_class=opportunity.event_class,
+        direction=score.direction if levels.get("plan_valid", False) else "observation",
     )
 
 
@@ -839,7 +842,15 @@ def _best_post_variant(
                     robotic_penalty += 12.0
 
             phrase_penalty = phrase_family_penalty(draft.text, recent_texts)
-            author_bonus = 4.0 if draft.source == "mistral" else 0.0
+            author_bonus = 1.0 if not draft.source.startswith("deterministic") else 0.0
+            content_adaptive = score_content_performance(
+                lane="TRADE",
+                content_format=draft.content_format,
+                writer_source=draft.source,
+                event_class=opportunity.event_class,
+                direction=score.direction,
+            )
+            editorial = editorial_reach_adjustment(draft.text)
 
             adjusted_score = (
                 report.score * 0.30
@@ -855,10 +866,12 @@ def _best_post_variant(
                 + length_bonus
                 + aesthetic_bonus
                 + author_bonus
+                + content_adaptive.total
+                + editorial.score
             )
             logger.info(
                 "Post candidate %s: source=%s format=%s visual=%s angle=%s quality=%.1f appeal=%.1f conversion=%.1f valid=%s "
-                "memory_sim=%.2f local_sim=%.2f phrase_penalty=%.1f adjusted=%.1f",
+                "memory_sim=%.2f local_sim=%.2f phrase_penalty=%.1f content_adaptive=%+.1f editorial=%+.1f adjusted=%.1f [%s] [%s]",
                 index + 1,
                 draft.source,
                 draft.content_format,
@@ -871,7 +884,11 @@ def _best_post_variant(
                 memory_similarity,
                 local_similarity,
                 phrase_penalty,
+                content_adaptive.total,
+                editorial.score,
                 adjusted_score,
+                content_adaptive.reason,
+                editorial.reason,
             )
 
             if (
@@ -953,10 +970,25 @@ def _cleanup_files(paths: Iterable[Optional[str]]) -> None:
             logger.debug("Temporary file cleanup failed for %s: %s", path, exc)
 
 
+def _try_outcome_fallback(*, memory: PostMemory, guard: PublicationGuard, recovery_mode: bool) -> bool:
+    """Publish a queued TP3 only when no fresh post won and reach is healthy."""
+    if recovery_mode:
+        logger.info("Outcome follow-up postponed while reach recovery mode is active")
+        return False
+    try:
+        if process_outcomes(memory=memory, guard=guard, dry_run=DRY_RUN, refresh_only=False):
+            write_status("published", "verified trade outcome fallback published", lane="outcome")
+            return True
+    except Exception as exc:
+        logger.warning("Outcome fallback cycle failed: %s", exc)
+    return False
+
+
 def _run_once() -> int:
     cleanup_history()
     memory = PostMemory()
     guard = PublicationGuard(memory.items)
+    recovery_mode, rolling_reach, reach_baseline = reach_recovery_state()
     logger.info(
         "Run start project=%s cwd=%s dry_run=%s memory=%s",
         PROJECT_DIR,
@@ -973,13 +1005,10 @@ def _run_once() -> int:
             return 0
         logger.info("Publication guard: %s", pacing.reason)
 
-    # v11.1 Outcome Engine runs before the fresh-market scan. At most one verified
-    # follow-up is published per cron cycle; if it publishes, this run stops here
-    # so the account never emits an outcome and a fresh setup at the same moment.
+    # Refresh outcome truth first, but never let a queued TP3 steal a slot from a
+    # live market candidate. Publication is a fallback after fresh selection.
     try:
-        if process_outcomes(memory=memory, guard=guard, dry_run=DRY_RUN):
-            write_status("published", "verified trade outcome follow-up published", lane="outcome")
-            return 0
+        process_outcomes(memory=memory, guard=guard, dry_run=DRY_RUN, refresh_only=True)
     except Exception as exc:
         # Outcome tracking is additive. A transient market-data/card failure must
         # never block the normal Square publishing pipeline.
@@ -996,6 +1025,7 @@ def _run_once() -> int:
     symbols = [symbol for symbol in symbols if symbol not in recent]
     logger.info("Symbols after cooldown: %s", len(symbols))
     if not symbols:
+        _try_outcome_fallback(memory=memory, guard=guard, recovery_mode=recovery_mode)
         return 0
 
     btc = get_btc_context()
@@ -1012,6 +1042,7 @@ def _run_once() -> int:
     shortlist = _preliminary_shortlist(primary_data, market_meta, trending_market)
     logger.info("Preliminary shortlist: %s", ", ".join(shortlist) if shortlist else "empty")
     if not shortlist:
+        _try_outcome_fallback(memory=memory, guard=guard, recovery_mode=recovery_mode)
         return 0
 
     confirmation_data = _fetch_many(shortlist, CONFIRMATION_TIMEFRAMES)
@@ -1062,6 +1093,7 @@ def _run_once() -> int:
         logger.info("No TRADE or EVENT candidate passed publication gates")
         _log_near_misses(candidates)
         write_status("skipped", "no candidate passed dual-lane market selection")
+        _try_outcome_fallback(memory=memory, guard=guard, recovery_mode=recovery_mode)
         return 0
 
     lane = "trade"
@@ -1177,6 +1209,7 @@ def _run_once() -> int:
 
     if generated is None:
         logger.info("No publication-quality %s post was generated", lane)
+        _try_outcome_fallback(memory=memory, guard=guard, recovery_mode=recovery_mode)
         return 0
     selected_post, quality_report = generated
     post_text = selected_post.text
@@ -1203,6 +1236,7 @@ def _run_once() -> int:
                 "skipped", "full public trade plan contract failed",
                 symbol=symbol, lane=lane, reasons=list(public_reasons),
             )
+            _try_outcome_fallback(memory=memory, guard=guard, recovery_mode=recovery_mode)
             return 0
         logger.info(
             "PUBLIC TEXT CONTRACT PASS %s: direction + entry + SL + TP1/TP2/TP3 are explicit", symbol
@@ -1225,9 +1259,9 @@ def _run_once() -> int:
             market_score=opportunity.score,
             quality_score=quality_report.score,
         )
+        _try_outcome_fallback(memory=memory, guard=guard, recovery_mode=recovery_mode)
         return 0
 
-    recovery_mode, rolling_reach, reach_baseline = reach_recovery_state()
     logger.info(
         "Reach recovery mode=%s rolling24h=%.0f baseline=%.0f",
         recovery_mode, rolling_reach, reach_baseline,
@@ -1248,15 +1282,18 @@ def _run_once() -> int:
         reach_score=reach.score,
         plan_valid=plan_valid,
         recovery_mode=recovery_mode,
+        hour_affinity=adaptive.hour_affinity,
+        hour_samples=adaptive.hour_samples,
     )
-    logger.info("v11.5 recovery gate: %s", recovery.reason)
+    logger.info("v11.6 recovery gate: %s", recovery.reason)
     if not DRY_RUN and not recovery.allowed:
         write_status(
-            "skipped", "v11.5 recovery gate: " + recovery.reason,
+            "skipped", "v11.6 recovery gate: " + recovery.reason,
             symbol=symbol, lane=lane, recovery_mode=recovery_mode,
             rolling_reach=rolling_reach, reach_baseline=reach_baseline,
             reach_score=reach.score, selection_score=selection_score,
         )
+        _try_outcome_fallback(memory=memory, guard=guard, recovery_mode=recovery_mode)
         return 0
 
     card_path: Optional[str] = None

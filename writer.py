@@ -32,14 +32,16 @@ from trade_plan import build_public_trade_plan
 load_dotenv()
 logger = logging.getLogger(__name__)
 
-POST_MAX_CHARS = int(os.getenv("POST_MAX_CHARS", "560"))
-POST_MIN_CHARS = int(os.getenv("POST_MIN_CHARS", "150"))
+POST_MAX_CHARS = int(os.getenv("POST_MAX_CHARS", "430"))
+POST_MIN_CHARS = int(os.getenv("POST_MIN_CHARS", "220"))
 EMOJI_RATE = max(0.0, min(float(os.getenv("EMOJI_RATE", "0.16")), 0.30))
 QUESTION_EVERY = max(5, int(os.getenv("QUESTION_EVERY", "9")))
 AI_VARIANTS = max(3, min(int(os.getenv("AI_VARIANTS", "6")), 10))
 AI_RETRIES = max(1, min(int(os.getenv("AI_RETRIES", "2")), 3))
+MIN_VALID_AI_DRAFTS = max(1, min(int(os.getenv("MIN_VALID_AI_DRAFTS", "2")), 6))
+DETERMINISTIC_COMPARE_SLOTS = max(0, min(int(os.getenv("DETERMINISTIC_COMPARE_SLOTS", "0")), 3))
 AI_TIMEOUT = max(10, min(int(os.getenv("AI_TIMEOUT", "55")), 120))
-AI_TEMPERATURE = max(0.15, min(float(os.getenv("AI_TEMPERATURE", "0.72")), 0.85))
+AI_TEMPERATURE = max(0.15, min(float(os.getenv("AI_TEMPERATURE", "0.70")), 0.85))
 
 # Legacy style hint only. In v11.1 every valid public trade plan carries the full ladder.
 FULL_PLAN_FORMATS: set[str] = set(FORMAT_SPECS) if False else {"trade_map", "risk_first"}
@@ -1030,7 +1032,7 @@ def generate_post_candidates(
                 )
             except Exception as exc:
                 logger.warning("AI author attempt %s failed: %s", attempt, exc)
-                break
+                continue
 
             for raw in raw_candidates:
                 fmt = str(raw.get("format_id", "")).strip()
@@ -1058,11 +1060,15 @@ def generate_post_candidates(
             if len(drafts) >= min(3, len(ai_formats)):
                 break
 
-    # Always create deterministic alternatives. They are a safety net when the
-    # API is down and also give the selector something fact-perfect to compare.
+    # Deterministic copy is an outage fallback, not a co-equal author. When the
+    # AI pool is healthy, honour DETERMINISTIC_COMPARE_SLOTS (zero in production)
+    # instead of quietly filling half the ranking pool with weaker templates.
     target_count = max(6, min(int(variant_count), 24))
+    healthy_ai_pool = len(drafts) >= MIN_VALID_AI_DRAFTS
+    deterministic_limit = DETERMINISTIC_COMPARE_SLOTS if healthy_ai_pool else target_count
+    deterministic_added = 0
     for index, fmt in enumerate(formats):
-        if len(drafts) >= target_count:
+        if len(drafts) >= target_count or deterministic_added >= deterministic_limit:
             break
         angle = angles[(index + len(drafts)) % min(len(angles), 6)]
         fallback_seed = (len(memory.items) * 7 if memory else 0) + index
@@ -1092,6 +1098,7 @@ def generate_post_candidates(
         )
         if generated and all(PostMemory.compare_texts(generated.text, item.text) < 0.80 for item in drafts):
             drafts.append(generated)
+            deterministic_added += 1
 
     return drafts[:target_count]
 

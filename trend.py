@@ -17,7 +17,7 @@ BINANCE_24H_ENDPOINTS = (
     "https://data-api.binance.vision/api/v3/ticker/24hr",
     "https://api.binance.com/api/v3/ticker/24hr",
 )
-MIN_QUOTE_VOLUME = float(os.getenv("MIN_QUOTE_VOLUME", "8000000"))
+MIN_QUOTE_VOLUME = float(os.getenv("MIN_QUOTE_VOLUME", "5000000"))
 
 STABLES = {
     "USDT",

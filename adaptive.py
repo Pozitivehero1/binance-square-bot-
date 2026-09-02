@@ -33,6 +33,11 @@ MAX_SATURATION = max(0.0, min(float(os.getenv("ADAPTIVE_SATURATION_MAX", "5")), 
 MAX_OUTCOME = max(0.0, min(float(os.getenv("ADAPTIVE_OUTCOME_MAX", "5")), 8.0))
 OUTCOME_PRIOR = max(2.0, min(float(os.getenv("ADAPTIVE_OUTCOME_PRIOR", "6")), 20.0))
 OUTCOME_MIN_CLOSED = max(1, min(int(os.getenv("ADAPTIVE_OUTCOME_MIN_CLOSED", "3")), 20))
+MAX_CONTENT_TOTAL = max(2.0, min(float(os.getenv("ADAPTIVE_CONTENT_MAX_TOTAL", "9")), 14.0))
+MAX_FORMAT = max(1.0, min(float(os.getenv("ADAPTIVE_FORMAT_MAX", "5")), 8.0))
+MAX_WRITER = max(0.5, min(float(os.getenv("ADAPTIVE_WRITER_MAX", "2.5")), 5.0))
+MAX_EVENT_CLASS = max(0.5, min(float(os.getenv("ADAPTIVE_EVENT_CLASS_MAX", "2")), 4.0))
+MAX_DIRECTION = max(0.0, min(float(os.getenv("ADAPTIVE_DIRECTION_MAX", "1.5")), 3.0))
 
 
 @dataclass(frozen=True)
@@ -56,6 +61,22 @@ class AdaptiveAdjustment:
     reason: str
 
 
+@dataclass(frozen=True)
+class ContentPerformanceAdjustment:
+    enabled: bool
+    total: float
+    format_component: float
+    writer_component: float
+    event_component: float
+    direction_component: float
+    format_samples: int
+    writer_samples: int
+    event_samples: int
+    direction_samples: int
+    baseline_views: float
+    reason: str
+
+
 def _parse_dt(value: str) -> Optional[datetime]:
     try:
         dt = datetime.fromisoformat(str(value or ""))
@@ -75,7 +96,10 @@ def _metric(item: dict, now: datetime) -> Optional[float]:
             return None
     # Early feedback is converted to a conservative 24h-equivalent. It reacts
     # to failing formats within hours while giving mature 24h data precedence.
-    for label, factor in (("6h", 2.0), ("2h", 3.2), ("30m", 5.0)):
+    # Calibrated on the account's tracked history: most Square distribution is
+    # delivered early. Large generic multipliers (for example 30m x5) grossly
+    # overstate weak fresh posts and poison the feedback loop.
+    for label, factor in (("6h", 1.04), ("2h", 1.12), ("30m", 1.25)):
         if isinstance(milestones.get(label), dict):
             try:
                 return float(milestones[label].get("views", 0) or 0) * factor
@@ -116,6 +140,8 @@ def _rows(store: dict, now: datetime) -> list[dict]:
     for item in store.get("posts", {}).values():
         if not isinstance(item, dict):
             continue
+        if not item.get("learning_eligible", True):
+            continue
         published = _parse_dt(item.get("published_at", ""))
         if not published or published < cutoff:
             continue
@@ -124,6 +150,60 @@ def _rows(store: dict, now: datetime) -> list[dict]:
             continue
         result.append({"item": item, "published": published, "views": views, "weight": _decay_weight(published, now)})
     return result
+
+
+def score_content_performance(
+    *,
+    lane: str,
+    content_format: str,
+    writer_source: str,
+    event_class: str,
+    direction: str,
+    now: Optional[datetime] = None,
+) -> ContentPerformanceAdjustment:
+    """Score the actual editorial attributes of a generated draft.
+
+    Candidate-market ranking cannot know the eventual format or writer. This
+    second bounded layer runs after copy generation, so stored format/writer
+    analytics finally influence which valid draft consumes the slot.
+    """
+    now = now or datetime.now(timezone.utc)
+    enabled = _bool("ENABLE_ADAPTIVE_RANKING", "1") and not _bool("LEARNING_ONLY", "0")
+    if not enabled:
+        return ContentPerformanceAdjustment(False, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, "content adaptive disabled")
+    rows = _rows(load_store(), now)
+    minimum = max(30, int(os.getenv("ADAPTIVE_CONTENT_MIN_SAMPLES", "60")))
+    if len(rows) < minimum:
+        return ContentPerformanceAdjustment(False, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, f"insufficient content samples={len(rows)}")
+
+    baseline = _weighted_median((row["views"], row["weight"]) for row in rows)
+    lane_name = str(lane or "").upper()
+    fmt = str(content_format or "")
+    writer = str(writer_source or "")
+    event = str(event_class or "")
+    side = str(direction or "").upper()
+    lane_rows = [row for row in rows if str(row["item"].get("lane") or "").upper() == lane_name]
+
+    format_rows = [row for row in lane_rows if str(row["item"].get("content_format") or "") == fmt]
+    writer_rows = [row for row in lane_rows if str(row["item"].get("writer_source") or "") == writer]
+    event_rows = [row for row in lane_rows if str(row["item"].get("event_class") or "") == event]
+    direction_rows = [row for row in lane_rows if str(row["item"].get("direction") or "").upper() == side]
+
+    _, format_comp, format_n = _affinity(format_rows, baseline, prior=8.0, max_component=MAX_FORMAT)
+    _, writer_comp, writer_n = _affinity(writer_rows, baseline, prior=14.0, max_component=MAX_WRITER)
+    _, event_comp, event_n = _affinity(event_rows, baseline, prior=18.0, max_component=MAX_EVENT_CLASS)
+    _, direction_comp, direction_n = _affinity(direction_rows, baseline, prior=24.0, max_component=MAX_DIRECTION)
+    total = max(-MAX_CONTENT_TOTAL, min(MAX_CONTENT_TOTAL, format_comp + writer_comp + event_comp + direction_comp))
+    reason = (
+        f"format={fmt}/n{format_n} ({format_comp:+.1f}), writer={writer}/n{writer_n} ({writer_comp:+.1f}), "
+        f"event={event}/n{event_n} ({event_comp:+.1f}), direction={side}/n{direction_n} ({direction_comp:+.1f}), "
+        f"baseline={baseline:.1f}"
+    )
+    return ContentPerformanceAdjustment(
+        True, round(total, 2), round(format_comp, 2), round(writer_comp, 2),
+        round(event_comp, 2), round(direction_comp, 2), format_n, writer_n,
+        event_n, direction_n, round(baseline, 2), reason,
+    )
 
 
 def _affinity(group: list[dict], baseline: float, *, prior: float, max_component: float) -> tuple[float, float, int]:

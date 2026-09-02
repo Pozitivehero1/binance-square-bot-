@@ -1,4 +1,4 @@
-"""Quality-first reach recovery gate for v11.5.
+"""Quality-first reach recovery gate for the cumulative v11.6 release.
 
 The scanner runs on every cron tick. The guard blocks stale/ordinary filler, but
 must not suppress a genuinely useful live candidate merely because one learned
@@ -31,6 +31,8 @@ def evaluate_recovery_candidate(
     reach_score: float,
     plan_valid: bool,
     recovery_mode: bool = False,
+    hour_affinity: float = 50.0,
+    hour_samples: int = 0,
 ) -> RecoveryDecision:
     lane_name = str(lane or "").strip().lower()
     source = str(writer_source or "").strip().lower()
@@ -65,7 +67,7 @@ def evaluate_recovery_candidate(
         if not stale_escape:
             return RecoveryDecision(False, "stale market without exceptional demand", 78.0)
 
-    # There is deliberately no cadence escape in v11.5. A cron tick is an
+    # There is deliberately no cadence escape. A cron tick is an
     # opportunity to publish, not an obligation to fill the slot.
     if not deterministic and not recovery_mode:
         broad_live_interest = (
@@ -149,6 +151,9 @@ def evaluate_recovery_candidate(
         min_opportunity += 2.0 if strong_event else 3.0
         if active_market and not strong_event:
             threshold += 1.0
+        if int(hour_samples) >= 6 and float(hour_affinity) < 43.0 and not strong_event:
+            threshold += 2.0
+            min_selection += 2.0
 
     threshold = max(66.0, min(82.0, threshold))
 

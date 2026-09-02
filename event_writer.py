@@ -22,15 +22,19 @@ from engagement import FeedAppealEvaluator
 from memory import PostMemory
 from quality import QualityReport
 from writer import GeneratedPost, _enforce_full_plan_block, _fmt_pct, _fmt_price, _fmt_x, phrase_family_penalty
+from adaptive import score_content_performance
+from reach_editorial import editorial_reach_adjustment
 
 logger = logging.getLogger(__name__)
 
-POST_MAX_CHARS = int(os.getenv("POST_MAX_CHARS", "560"))
-POST_MIN_CHARS = int(os.getenv("POST_MIN_CHARS", "150"))
+POST_MAX_CHARS = int(os.getenv("POST_MAX_CHARS", "430"))
+POST_MIN_CHARS = int(os.getenv("POST_MIN_CHARS", "220"))
 EVENT_AI_VARIANTS = max(3, min(int(os.getenv("EVENT_AI_VARIANTS", "6")), 10))
 EVENT_AI_RETRIES = max(1, min(int(os.getenv("EVENT_AI_RETRIES", "2")), 3))
+EVENT_MIN_VALID_AI_DRAFTS = max(1, min(int(os.getenv("EVENT_MIN_VALID_AI_DRAFTS", "2")), 6))
+EVENT_DETERMINISTIC_COMPARE_SLOTS = max(0, min(int(os.getenv("EVENT_DETERMINISTIC_COMPARE_SLOTS", "0")), 3))
 AI_TIMEOUT = max(10, min(int(os.getenv("AI_TIMEOUT", "55")), 120))
-AI_TEMPERATURE = max(0.20, min(float(os.getenv("EVENT_AI_TEMPERATURE", "0.72")), 0.90))
+AI_TEMPERATURE = max(0.20, min(float(os.getenv("EVENT_AI_TEMPERATURE", "0.70")), 0.90))
 EMOJI_RATE = max(0.0, min(float(os.getenv("EMOJI_RATE", "0.16")), 0.30))
 
 EVENT_FORMAT_SPECS: Dict[str, Dict[str, str]] = {
@@ -555,7 +559,7 @@ def generate_event_candidates(
                 )
             except Exception as exc:
                 logger.warning("AI event-author attempt %s failed: %s", attempt, exc)
-                break
+                continue
             for raw in raw_candidates:
                 fmt = str(raw.get("format_id", "")).strip()
                 if fmt not in ai_formats or fmt not in EVENT_FORMAT_SPECS:
@@ -595,10 +599,15 @@ def generate_event_candidates(
             if len(drafts) >= min(3, len(ai_formats)):
                 break
 
-    # Safety net.  AI remains the preferred source, but one API hiccup must
-    # not make the market scanner fragile.
+    # Safety net only when AI could not produce a healthy pool. Production sets
+    # compare slots to zero so deterministic templates cannot beat valid AI copy
+    # simply through hand-tuned quality heuristics.
+    target_count = max(6, min(count, 14))
+    healthy_ai_pool = len(drafts) >= EVENT_MIN_VALID_AI_DRAFTS
+    deterministic_limit = EVENT_DETERMINISTIC_COMPARE_SLOTS if healthy_ai_pool else target_count
+    deterministic_added = 0
     for index, fmt in enumerate(formats):
-        if len(drafts) >= max(6, min(count, 14)):
+        if len(drafts) >= target_count or deterministic_added >= deterministic_limit:
             break
         raw = _deterministic_event_candidate(
             basic=basic,
@@ -639,6 +648,7 @@ def generate_event_candidates(
         )
         if all(PostMemory.compare_texts(draft.text, item.text) < 0.78 for item in drafts):
             drafts.append(draft)
+            deterministic_added += 1
     return drafts
 
 
@@ -734,6 +744,8 @@ def rank_event_candidates(
     min_quality: float,
     max_similarity: float,
     plan_available: bool,
+    event_class: str = "",
+    direction: str = "observation",
 ) -> Optional[Tuple[GeneratedPost, QualityReport]]:
     appeal_evaluator = FeedAppealEvaluator()
     recent_texts = memory.recent_texts(10)
@@ -752,6 +764,14 @@ def rank_event_candidates(
             novelty_pen += 5.0
         if recent_visuals[-1:] == [draft.visual_style]:
             novelty_pen += 2.0
+        content_adaptive = score_content_performance(
+            lane="EVENT",
+            content_format=draft.content_format,
+            writer_source=draft.source,
+            event_class=event_class,
+            direction=direction,
+        )
+        editorial = editorial_reach_adjustment(draft.text)
 
         adjusted = (
             report.score * 0.45
@@ -760,10 +780,14 @@ def rank_event_candidates(
             - max(0.0, similarity - 0.26) * 78.0
             - phrase_pen
             - min(12.0, novelty_pen)
+            + content_adaptive.total
+            + editorial.score
         )
         logger.info(
-            "Event copy candidate format=%s source=%s quality=%.1f appeal=%.1f conversion=%.1f similarity=%.3f adjusted=%.1f",
-            draft.content_format, draft.source, report.score, appeal.score, conversion, similarity, adjusted,
+            "Event copy candidate format=%s source=%s quality=%.1f appeal=%.1f conversion=%.1f similarity=%.3f "
+            "content_adaptive=%+.1f editorial=%+.1f adjusted=%.1f [%s] [%s]",
+            draft.content_format, draft.source, report.score, appeal.score, conversion, similarity,
+            content_adaptive.total, editorial.score, adjusted, content_adaptive.reason, editorial.reason,
         )
         if (
             report.valid

@@ -242,6 +242,9 @@ def build_summary_payload(payload: dict) -> dict:
             "lanes": list(learning.get("lanes") or []),
             "hours": list(learning.get("hours") or []),
             "authors": list(learning.get("authors") or []),
+            "formats": list(learning.get("formats") or []),
+            "event_classes": list(learning.get("event_classes") or []),
+            "directions": list(learning.get("directions") or []),
         },
         "outcomes": compact_outcomes,
     }

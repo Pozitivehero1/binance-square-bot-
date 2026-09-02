@@ -30,7 +30,7 @@ class PublicationGuard:
         self.enable_reach_gate = os.getenv("ENABLE_REACH_GATE", "1").strip().lower() in {"1", "true", "yes", "on"}
         self.min_interval_min = max(20, int(os.getenv("MIN_GLOBAL_INTERVAL_MIN", "20")))
         self.max_posts_day = max(1, int(os.getenv("MAX_POSTS_PER_DAY", "72")))
-        self.min_reach_score = max(0.0, min(100.0, float(os.getenv("MIN_REACH_SCORE", "64"))))
+        self.min_reach_score = max(0.0, min(100.0, float(os.getenv("MIN_REACH_SCORE", "69"))))
         self.force_publish = os.getenv("FORCE_PUBLISH", "0").strip().lower() in {"1", "true", "yes", "on"}
         timezone_name = (os.getenv("BOT_TIMEZONE") or "UTC").strip()
         try:

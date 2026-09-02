@@ -28,9 +28,9 @@ from trade_journal import load_journal, save_journal, verify_trade_integrity
 
 logger = logging.getLogger(__name__)
 ENABLED = os.getenv("ENABLE_OUTCOME_ENGINE", "1").strip().lower() in {"1", "true", "yes", "on"}
-POST_STOPS = os.getenv("OUTCOME_POST_STOPS", "1").strip().lower() in {"1", "true", "yes", "on"}
-PENDING_HOURS = max(2.0, float(os.getenv("OUTCOME_PENDING_ENTRY_HOURS", "36")))
-MAX_AGE_HOURS = max(PENDING_HOURS, float(os.getenv("OUTCOME_MAX_AGE_HOURS", "96")))
+POST_STOPS = os.getenv("OUTCOME_POST_STOPS", "0").strip().lower() in {"1", "true", "yes", "on"}
+PENDING_HOURS = max(2.0, float(os.getenv("OUTCOME_PENDING_ENTRY_HOURS", "18")))
+MAX_AGE_HOURS = max(PENDING_HOURS, float(os.getenv("OUTCOME_MAX_AGE_HOURS", "72")))
 MIN_FOLLOWUP_GAP_MIN = max(20.0, float(os.getenv("OUTCOME_MIN_FOLLOWUP_GAP_MIN", "45")))
 MAX_FOLLOWUPS = max(1, min(3, int(os.getenv("OUTCOME_MAX_FOLLOWUPS_PER_TRADE", "2"))))
 MAX_FETCH_PAGES = max(1, min(10, int(os.getenv("OUTCOME_MAX_KLINE_PAGES", "7"))))
@@ -361,7 +361,13 @@ def _facts(trade: dict, event: dict) -> dict:
     }
 
 
-def process_outcomes(*, memory: PostMemory, guard: PublicationGuard, dry_run: bool = False) -> bool:
+def process_outcomes(
+    *,
+    memory: PostMemory,
+    guard: PublicationGuard,
+    dry_run: bool = False,
+    refresh_only: bool = False,
+) -> bool:
     """Refresh journal and publish at most one outcome. Return True if published."""
     if not ENABLED:
         return False
@@ -385,6 +391,10 @@ def process_outcomes(*, memory: PostMemory, guard: PublicationGuard, dry_run: bo
 
     pending = _pending_candidates(trades)
     if not pending:
+        return False
+    if refresh_only:
+        logger.info("Outcome state refreshed; %s follow-up(s) remain queued behind fresh-market selection", len(pending))
+        save_journal(journal)
         return False
     last_followup = _last_followup_dt(trades)
     if last_followup and (now - last_followup).total_seconds() < MIN_FOLLOWUP_GAP_MIN * 60:
@@ -427,7 +437,8 @@ def process_outcomes(*, memory: PostMemory, guard: PublicationGuard, dry_run: bo
             str(trade.get("market_symbol") or facts["symbol"]), text,
             post_style="outcome", signal_type=f"outcome_{event.get('kind')}",
             content_format=f"outcome_{event.get('kind')}", visual_style="avatar_outcome_card",
-            direction=str(trade.get("direction") or ""), levels={}, market_price=facts["reached_price"],
+            direction=str(trade.get("direction") or ""), lane="OUTCOME",
+            levels={}, market_price=facts["reached_price"],
         )
         guard.record_success(
             symbol=str(trade.get("market_symbol") or facts["symbol"]), direction=str(trade.get("direction") or ""),

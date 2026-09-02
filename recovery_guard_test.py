@@ -1,4 +1,4 @@
-"""Focused regression checks for v11.5 quality-first recovery selection."""
+"""Focused regression checks for cumulative quality-first recovery selection."""
 from recovery_guard import evaluate_recovery_candidate
 
 
@@ -70,7 +70,7 @@ assert decision(
     plan_valid=False,
 ).allowed
 
-# v11.5 removes the cadence escape that admitted this weak-selection XRP slot.
+# The cumulative release removes the cadence escape that admitted this weak-selection XRP slot.
 xrp = decision(
     lane="event",
     writer_source="mistral_event",

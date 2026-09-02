@@ -8,11 +8,11 @@ from runtime import PROJECT_DIR, load_project_env
 load_project_env()
 os.chdir(PROJECT_DIR)
 
-# v11.5 ships the cumulative source directly. Startup performs one read-only
+# The cumulative release ships source directly. Startup performs one read-only
 # release verification instead of rewriting files through a hotfix chain.
-from runtime_release_v115 import activate_v115
+from runtime_release import activate_release
 
-activate_v115()
+activate_release()
 
 from main import main
 

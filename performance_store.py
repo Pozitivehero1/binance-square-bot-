@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import logging
 import math
 import os
@@ -34,24 +34,45 @@ def reach_recovery_state(now: Optional[datetime] = None) -> tuple[bool, float, f
     buckets, with a small hysteresis margin supplied by the stricter threshold.
     """
     now = now or _now()
-    rows: list[tuple[datetime, float]] = []
+    rows: list[tuple[datetime, dict]] = []
     for item in load_store().get("posts", {}).values():
         if not isinstance(item, dict):
             continue
         published = _parse_dt(item.get("published_at", ""))
+        if published and now - timedelta(days=7) <= published <= now:
+            rows.append((published, item))
+
+    def projected(item: dict) -> float:
+        milestones = item.get("milestones") if isinstance(item.get("milestones"), dict) else {}
+        for label, factor in (("24h", 1.0), ("6h", 1.04), ("2h", 1.12), ("30m", 1.25)):
+            row = milestones.get(label)
+            if isinstance(row, dict):
+                try:
+                    return float(row.get("views", 0) or 0) * factor
+                except (TypeError, ValueError):
+                    pass
         stats = item.get("stats") if isinstance(item.get("stats"), dict) else {}
         try:
-            views = float(stats.get("views", 0) or 0)
+            return float(stats.get("views", 0) or 0) * 1.25
         except (TypeError, ValueError):
-            continue
-        if published and now - timedelta(days=7) <= published <= now:
-            rows.append((published, views))
-    current = sum(views for published, views in rows if published >= now - timedelta(hours=24))
+            return 0.0
+
+    current = sum(projected(item) for published, item in rows if published >= now - timedelta(hours=24))
     buckets = []
     for day in range(1, 7):
         high = now - timedelta(days=day)
         low = high - timedelta(days=1)
-        total = sum(views for published, views in rows if low <= published < high)
+        total = 0.0
+        for published, item in rows:
+            if not low <= published < high:
+                continue
+            milestone = item.get("milestones") if isinstance(item.get("milestones"), dict) else {}
+            row = milestone.get("24h")
+            if isinstance(row, dict):
+                try:
+                    total += float(row.get("views", 0) or 0)
+                except (TypeError, ValueError):
+                    pass
         if total > 0:
             buckets.append(total)
     if len(buckets) < 3:
@@ -359,11 +380,17 @@ def build_learning_summary(store: Optional[dict] = None) -> dict:
     by_lane: dict[str, list[dict]] = defaultdict(list)
     by_hour: dict[int, list[dict]] = defaultdict(list)
     by_author: dict[str, list[dict]] = defaultdict(list)
+    by_format: dict[str, list[dict]] = defaultdict(list)
+    by_event_class: dict[str, list[dict]] = defaultdict(list)
+    by_direction: dict[str, list[dict]] = defaultdict(list)
     for item in posts:
         symbol = _normalize_symbol(item.get("symbol", "")) or "UNKNOWN"
         by_symbol[symbol].append(item)
         by_lane[str(item.get("lane") or "UNKNOWN").upper()].append(item)
         by_author[str(item.get("writer_source") or "UNKNOWN")].append(item)
+        by_format[str(item.get("content_format") or "UNKNOWN")].append(item)
+        by_event_class[str(item.get("event_class") or "UNKNOWN")].append(item)
+        by_direction[str(item.get("direction") or "UNKNOWN").upper()].append(item)
         published = _parse_dt(item.get("published_at", ""))
         if published:
             local_hour = (published.hour + LOCAL_TZ_OFFSET_HOURS) % 24
@@ -380,6 +407,12 @@ def build_learning_summary(store: Optional[dict] = None) -> dict:
     hours = [{"hour": hour, **_affinity(rows, account_median)} for hour, rows in sorted(by_hour.items())]
     authors = [{"author": author, **_affinity(rows, account_median)} for author, rows in by_author.items()]
     authors.sort(key=lambda row: (row["posts"], row["affinity"]), reverse=True)
+    formats = [{"format": name, **_affinity(rows, account_median)} for name, rows in by_format.items()]
+    formats.sort(key=lambda row: (row["affinity"], row["posts"]), reverse=True)
+    event_classes = [{"event_class": name, **_affinity(rows, account_median)} for name, rows in by_event_class.items()]
+    event_classes.sort(key=lambda row: (row["affinity"], row["posts"]), reverse=True)
+    directions = [{"direction": name, **_affinity(rows, account_median)} for name, rows in by_direction.items()]
+    directions.sort(key=lambda row: (row["affinity"], row["posts"]), reverse=True)
     return {
         "learning_only": str(os.getenv("LEARNING_ONLY", "0")).lower() in {"1", "true", "yes"},
         "account_median_24h": round(account_median, 1),
@@ -388,4 +421,7 @@ def build_learning_summary(store: Optional[dict] = None) -> dict:
         "lanes": lanes,
         "hours": hours,
         "authors": authors,
+        "formats": formats,
+        "event_classes": event_classes,
+        "directions": directions,
     }

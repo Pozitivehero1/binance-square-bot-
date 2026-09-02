@@ -123,9 +123,9 @@ def _request(
 
 def _retry_delay(exc: Exception, attempt: int) -> tuple[bool, float, str]:
     """Return (retryable, delay_seconds, diagnostic)."""
-    base = max(0.2, float(os.getenv("ORCAROUTER_RETRY_BASE_SECONDS", "3")))
-    cap = max(base, float(os.getenv("ORCAROUTER_RETRY_CAP_SECONDS", "15")))
-    max_retry_after = max(cap, float(os.getenv("ORCAROUTER_MAX_RETRY_AFTER", "30")))
+    base = max(0.2, float(os.getenv("ORCAROUTER_RETRY_BASE_SECONDS", "2")))
+    cap = max(base, float(os.getenv("ORCAROUTER_RETRY_CAP_SECONDS", "6")))
+    max_retry_after = max(cap, float(os.getenv("ORCAROUTER_MAX_RETRY_AFTER", "8")))
     delay = min(cap, base * (2 ** max(0, attempt - 1))) + random.uniform(0.0, 0.45)
     diagnostic = str(exc)
     if isinstance(exc, requests.HTTPError):
@@ -184,7 +184,7 @@ def request_candidates(
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
-        attempts = max(1, min(6, int(os.getenv("ORCAROUTER_RETRIES", "4"))))
+        attempts = max(1, min(6, int(os.getenv("ORCAROUTER_RETRIES", "2"))))
         last_exc: Optional[Exception] = None
         for attempt in range(1, attempts + 1):
             try:

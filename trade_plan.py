@@ -22,10 +22,10 @@ from typing import Any, Dict, Tuple
 
 from indicators import build_trade_levels
 
-MIN_PUBLIC_TP3_RR = float(os.getenv("MIN_PUBLIC_TP3_RR", "1.55"))
-MAX_PUBLIC_RISK_PCT = float(os.getenv("MAX_PUBLIC_RISK_PCT", "8.0"))
-DECISION_NEAR_ATR = float(os.getenv("DECISION_NEAR_ATR", "0.30"))
-DECISION_NEAR_PCT = float(os.getenv("DECISION_NEAR_PCT", "0.25"))  # percent
+MIN_PUBLIC_TP3_RR = float(os.getenv("MIN_PUBLIC_TP3_RR", "1.65"))
+MAX_PUBLIC_RISK_PCT = float(os.getenv("MAX_PUBLIC_RISK_PCT", "7.0"))
+DECISION_NEAR_ATR = float(os.getenv("DECISION_NEAR_ATR", "0.24"))
+DECISION_NEAR_PCT = float(os.getenv("DECISION_NEAR_PCT", "0.20"))  # percent
 MAX_STRUCTURAL_DISTANCE_ATR = float(os.getenv("MAX_STRUCTURAL_DISTANCE_ATR", "2.40"))
 MAX_STRUCTURAL_DISTANCE_PCT = float(os.getenv("MAX_STRUCTURAL_DISTANCE_PCT", "4.0"))
 PUBLIC_STOP_BUFFER_ATR = float(os.getenv("PUBLIC_STOP_BUFFER_ATR", "0.75"))
