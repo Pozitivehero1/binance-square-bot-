@@ -1,0 +1,38 @@
+name: Offline Regression Tests
+
+on:
+  push:
+    paths:
+      - "**.py"
+      - "requirements.txt"
+      - "VERSION.txt"
+      - "CHANGES_V11_7.md"
+      - ".github/workflows/tests.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: offline-regression-tests
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run offline regression suite
+        env:
+          DRY_RUN: "1"
+          ANALYTICS_TZ_OFFSET: "3"
+        run: python run_tests.py
