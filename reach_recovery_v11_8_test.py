@@ -76,7 +76,24 @@ def main() -> int:
     )
     assert healthy.allowed
 
-    print("v11.8 distribution recovery tests passed")
+    # OpenRouter free can route to a small model. Its prose may contain invented
+    # numbers or malformed plan lines; those must be removed rather than allowed
+    # through the fact lock. Python will append the canonical plan afterwards.
+    policy._LAST_AI_PROVIDER = "openrouter_free"
+    assert policy._source_name_v118("mistral") == "openrouter"
+    repaired = policy._repair_ai_narrative_v118(
+        "$NEAR: движение выглядит интересно\n\nОбъём x99 и цена 123.45 уже гарантируют рост.\n\nTP1 777, стоп 1.\n\nСмотрю на реакцию рынка без погони.",
+        basic="NEAR",
+        direction="long",
+        package={},
+    )
+    assert "$NEAR" in repaired
+    assert "x99" not in repaired
+    assert "123.45" not in repaired
+    assert "777" not in repaired
+    assert "гарант" not in repaired.lower()
+
+    print("v11.8 distribution recovery tests passed | OpenRouter fact-lock repair passed")
     return 0
 
 
