@@ -36,8 +36,9 @@ jobs:
         run: pip install -r requirements.txt
       - name: Compile every Python module
         run: python -m compileall -q .
-      - name: Run offline regression suite
+      - name: Run full offline regression suite
         env:
           DRY_RUN: "1"
           ANALYTICS_TZ_OFFSET: "3"
+          RUN_STRESS_TESTS: "1"
         run: python run_tests.py
