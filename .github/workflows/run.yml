@@ -20,6 +20,7 @@ jobs:
 
       SQUARE_API: ${{ secrets.SQUARE_API }}
       ORCAROUTER_API_KEY: ${{ secrets.ORCAROUTER_API_KEY }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
       MISTRAL_API: ${{ secrets.MISTRAL_API }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
@@ -61,8 +62,8 @@ jobs:
       MIN_REACH_SCORE: "69"
       COOLDOWN_MIN: "240"
 
-      # AI author: DeepSeek V4 Pro through OrcaRouter is primary; Mistral is the
-      # immediate fallback when the free model has no capacity. Python owns facts.
+      # AI author chain: OrcaRouter/DeepSeek -> OpenRouter free pool -> Mistral.
+      # Python owns all market facts; providers only author the prose variants.
       CONTENT_MODE: "ai_author"
       ORCAROUTER_BASE_URL: "https://api.orcarouter.ai/v1"
       ORCAROUTER_MODEL: "deepseek/deepseek-v4-pro-free"
@@ -70,6 +71,12 @@ jobs:
       ORCAROUTER_RETRY_BASE_SECONDS: "2"
       ORCAROUTER_RETRY_CAP_SECONDS: "6"
       ORCAROUTER_MAX_RETRY_AFTER: "8"
+      OPENROUTER_BASE_URL: "https://openrouter.ai/api/v1"
+      OPENROUTER_MODEL: "openrouter/free"
+      OPENROUTER_RETRIES: "2"
+      OPENROUTER_RETRY_BASE_SECONDS: "1"
+      OPENROUTER_RETRY_CAP_SECONDS: "3"
+      OPENROUTER_MAX_RETRY_AFTER: "6"
       MISTRAL_MODEL: "mistral-small-latest"
       AI_VARIANTS: "6"
       AI_RETRIES: "2"
