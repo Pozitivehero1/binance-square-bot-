@@ -32,6 +32,8 @@ def main() -> None:
                 "nex-agi/nex-n2-pro:free",
                 "liquid/lfm-2.5-2.6b:free",
             ]
+            assert chain._request_batch(models, 0) == models[:3]
+            assert chain._request_batch(models, 1) == [models[3], models[4], models[0]]
 
             chain.install_openrouter_fallback_chain()
             patched = ai_provider._request
@@ -52,7 +54,8 @@ def main() -> None:
             )
             first = captured[-1][1]
             assert "model" not in first
-            assert first["models"] == models
+            assert first["models"] == models[:3]
+            assert len(first["models"]) <= 3
             assert first["response_format"] == {"type": "json_object"}
 
             patched(
@@ -64,8 +67,9 @@ def main() -> None:
                 retry_without_response_format=True,
             )
             second = captured[-1][1]
-            assert second["models"][0] == models[1]
-            assert second["models"][-1] == models[0]
+            assert second["models"] == [models[3], models[4], models[0]]
+            assert len(second["models"]) <= 3
+            assert set(first["models"] + second["models"]) == set(models)
 
             patched(
                 url="https://api.mistral.ai/v1/chat/completions",
@@ -86,10 +90,11 @@ def main() -> None:
                 "z-ai/glm-5.2:free",
                 "openai/gpt-oss-20b:free",
             ]
+            assert len(chain._request_batch(chain.configured_openrouter_models(), 0)) <= 3
     finally:
         ai_provider._request = original
 
-    print("OPENROUTER FALLBACK CHAIN: OK | 5 models | server failover + retry rotation")
+    print("OPENROUTER FALLBACK CHAIN: OK | 5 models | <=3 per request | full coverage in 2 retries")
 
 
 if __name__ == "__main__":
