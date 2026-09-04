@@ -15,12 +15,11 @@ from runtime_release import activate_release
 activate_release()
 
 from main import main
-from reach_recovery_v11_7 import activate_reach_recovery
+from reach_recovery_v11_8 import activate_reach_recovery
 
-# v11.7 intentionally activates after main/event_writer have imported their
-# normal functions, then replaces only the bounded reach/editorial ranking
-# references. Trade levels, signal math, publication and the external cron stay
-# untouched.
+# v11.8 intentionally keeps the pre-v11.7 market/adaptive ranking bounds and
+# patches only the final recovery publication gate.  The external cron, trade
+# levels, signal math and publisher remain untouched.
 activate_reach_recovery()
 
 
