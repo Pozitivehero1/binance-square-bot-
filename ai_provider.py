@@ -56,28 +56,107 @@ def preferred_provider_name() -> str:
     return "deterministic"
 
 
-def _clean_json(text: str) -> str:
-    value = re.sub(r"^```(?:json)?\s*", "", str(text or "").strip(), flags=re.IGNORECASE)
-    value = re.sub(r"\s*```$", "", value.strip())
-    start = value.find("{")
-    end = value.rfind("}")
-    return value[start:end + 1] if start >= 0 and end > start else value
-
-
 def _message_text(payload: dict) -> str:
-    content = payload["choices"][0]["message"]["content"]
+    message = payload["choices"][0]["message"]
+    content = message.get("content", "")
     if isinstance(content, list):
-        return "".join(
+        text = "".join(
             str(item.get("text", "")) if isinstance(item, dict) else str(item)
             for item in content
         )
-    return str(content or "")
+    else:
+        text = str(content or "")
+
+    # Some routed reasoning models can put the useful final structure into a
+    # reasoning/details field while returning an empty content string.
+    if text.strip():
+        return text
+    for key in ("reasoning", "reasoning_content"):
+        fallback = message.get(key)
+        if fallback:
+            return str(fallback)
+    return ""
+
+
+def _candidate_rows_from_object(value: Any) -> List[dict]:
+    """Normalize common model JSON shapes into a list of candidate dicts."""
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except json.JSONDecodeError:
+            return []
+
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, dict)]
+
+    if not isinstance(value, dict):
+        return []
+
+    rows = value.get("candidates", [])
+    if isinstance(rows, str):
+        try:
+            rows = json.loads(rows)
+        except json.JSONDecodeError:
+            return []
+    if isinstance(rows, dict):
+        rows = [rows]
+    if isinstance(rows, list):
+        return [item for item in rows if isinstance(item, dict)]
+    return []
+
+
+def _parse_json_fragment(text: str) -> List[dict]:
+    """Extract the first usable candidate JSON object from noisy model text.
+
+    Free routed models are not equally strict about structured-output mode. A
+    successful response may contain markdown, prose before/after JSON, or even
+    multiple JSON objects. Using first-'{' to last-'}' corrupts those replies.
+    Instead we decode complete JSON values one by one and accept the first value
+    containing candidate objects.
+    """
+    raw = str(text or "").strip()
+    if not raw:
+        return []
+
+    variants: List[str] = []
+    fenced = re.findall(r"```(?:json)?\s*([\s\S]*?)```", raw, flags=re.IGNORECASE)
+    variants.extend(block.strip() for block in fenced if block.strip())
+    variants.append(raw)
+
+    decoder = json.JSONDecoder()
+    for variant in variants:
+        cleaned = variant.strip()
+        if not cleaned:
+            continue
+
+        # Fast path for a clean reply.
+        try:
+            rows = _candidate_rows_from_object(json.loads(cleaned))
+            if rows:
+                return rows
+        except json.JSONDecodeError:
+            pass
+
+        # Robust path: scan every plausible JSON value start and decode only
+        # that complete value. Trailing prose/JSON no longer causes Extra data.
+        starts = [i for i, ch in enumerate(cleaned) if ch in "{["]
+        for start in starts:
+            try:
+                obj, _end = decoder.raw_decode(cleaned[start:])
+            except (json.JSONDecodeError, TypeError, ValueError):
+                continue
+            rows = _candidate_rows_from_object(obj)
+            if rows:
+                return rows
+
+    return []
 
 
 def _parse_candidates(payload: dict) -> List[dict]:
-    parsed = json.loads(_clean_json(_message_text(payload)))
-    rows = parsed.get("candidates", []) if isinstance(parsed, dict) else []
-    return [item for item in rows if isinstance(item, dict)]
+    rows = _parse_json_fragment(_message_text(payload))
+    if rows:
+        return rows
+    raise ValueError("AI response contained no parseable candidate JSON")
 
 
 def _safe_error_body(response: Optional[requests.Response]) -> str:
@@ -190,8 +269,6 @@ def request_candidates(
                     retry_without_response_format=True,
                 )
                 candidates = _parse_candidates(payload)
-                if not candidates:
-                    raise ValueError("DeepSeek returned no candidate objects")
                 _annotate(candidates, "deepseek_v4_pro", model)
                 logger.info(
                     "AI author provider=deepseek_v4_pro model=%s candidates=%s attempt=%s/%s",
@@ -221,9 +298,20 @@ def request_candidates(
     if openrouter_key:
         base = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").strip().rstrip("/")
         model = os.getenv("OPENROUTER_MODEL", "openrouter/free").strip()
+        openrouter_messages = [
+            {
+                "role": "system",
+                "content": (
+                    system_prompt
+                    + "\n\nOUTPUT CONTRACT: Return exactly one valid JSON object with a top-level "
+                    + "'candidates' array. Do not wrap it in markdown and do not add commentary before or after JSON."
+                ),
+            },
+            {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False)},
+        ]
         body = {
             "model": model,
-            "messages": messages,
+            "messages": openrouter_messages,
             "response_format": {"type": "json_object"},
             "temperature": temperature,
             "max_tokens": max_tokens,
@@ -245,10 +333,8 @@ def request_candidates(
                     retry_without_response_format=True,
                 )
                 candidates = _parse_candidates(payload)
-                if not candidates:
-                    raise ValueError("OpenRouter returned no candidate objects")
-                _annotate(candidates, "openrouter_free", model)
                 actual_model = str(payload.get("model") or model)
+                _annotate(candidates, "openrouter_free", actual_model)
                 logger.info(
                     "AI author provider=openrouter_free model=%s routed_model=%s candidates=%s attempt=%s/%s",
                     model, actual_model, len(candidates), attempt, attempts,
@@ -296,8 +382,6 @@ def request_candidates(
                 provider="Mistral",
             )
             candidates = _parse_candidates(payload)
-            if not candidates:
-                raise ValueError("Mistral returned no candidate objects")
             _annotate(candidates, "mistral", model)
             logger.info("AI author provider=mistral fallback=true model=%s candidates=%s", model, len(candidates))
             return ProviderResult(candidates, "mistral", model)
