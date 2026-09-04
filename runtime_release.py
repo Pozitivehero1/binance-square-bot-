@@ -20,8 +20,10 @@ def activate_release() -> None:
         raise RuntimeError("v11.8 version defaults were not activated")
     if os.environ.get("ADAPTIVE_HOUR_MAX") != "5":
         raise RuntimeError("v11.8 conservative ranking bounds were not activated")
-    if os.environ.get("EVENT_AI_RETRIES") != "1":
-        raise RuntimeError("v11.8 provider retry guard was not activated")
+    if os.environ.get("AI_RETRIES") != "2" or os.environ.get("EVENT_AI_RETRIES") != "2":
+        raise RuntimeError("v11.8 author retry policy was not activated")
+    if os.environ.get("ORCAROUTER_RETRIES") != "1":
+        raise RuntimeError("v11.8 Orca capacity retry guard was not activated")
     print("[v11.8] cumulative release verified: distribution recovery active")
 
 
