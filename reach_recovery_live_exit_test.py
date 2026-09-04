@@ -39,9 +39,27 @@ def _prom_kwargs(source="openrouter"):
     )
 
 
+def _dash_outage_kwargs():
+    return dict(
+        lane="trade",
+        writer_source="deterministic",
+        event_class="audience_breakout",
+        micro_phase="fresh",
+        opportunity_score=81.7,
+        audience_demand=86.7,
+        attention_score=71.8,
+        micro_score=79.7,
+        monetization_score=71.8,
+        selection_score=96.7,
+        reach_score=81.9,
+        plan_valid=True,
+        recovery_mode=True,
+        hour_affinity=50.0,
+        hour_samples=8,
+    )
+
+
 def main() -> int:
-    # Use the real v11.6 gate underneath v11.8 so this reproduces the production
-    # PROM case that was blocked only because rolling24h recovery_mode=True.
     policy._ORIGINAL_RECOVERY_GATE = base_recovery_gate
     policy.distribution_health = lambda now=None: _health()
 
@@ -55,12 +73,21 @@ def main() -> int:
     assert released.allowed
     assert "live-distribution recovery exit" in released.reason
 
-    # Deterministic outage copy must remain blocked even with healthy fresh data.
-    deterministic = live_exit._evaluate_with_live_exit(
+    # Ordinary/mediocre deterministic copy remains blocked.
+    deterministic_weak = live_exit._evaluate_with_live_exit(
         policy.evaluate_recovery_candidate_v118,
         **_prom_kwargs(source="deterministic"),
     )
-    assert not deterministic.allowed
+    assert not deterministic_weak.allowed
+
+    # If every provider is down, a genuinely exceptional strong-market outage
+    # fallback can keep the account alive once fresh distribution has recovered.
+    deterministic_strong = live_exit._evaluate_with_live_exit(
+        policy.evaluate_recovery_candidate_v118,
+        **_dash_outage_kwargs(),
+    )
+    assert deterministic_strong.allowed
+    assert "exceptional outage fallback" in deterministic_strong.reason
 
     # Insufficient or still-depressed fresh data must not bypass recovery mode.
     policy.distribution_health = lambda now=None: _health(early=0.82, early_n=2)
@@ -77,7 +104,7 @@ def main() -> int:
     )
     assert not insufficient.allowed
 
-    print("LIVE RECOVERY EXIT: OK | fresh AI resumes | deterministic remains blocked")
+    print("LIVE RECOVERY EXIT: OK | AI resumes | exceptional outage continuity guarded")
     return 0
 
 
