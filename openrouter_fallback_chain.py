@@ -1,9 +1,10 @@
 """Explicit OpenRouter free-model failover for v11.8.
 
-Do not rely on one routed `models` array to rescue an upstream 429/503. The
-wrapper tries concrete free models itself, validates that the HTTP response
-contains parseable candidate JSON, and only then returns it to ai_provider.
-Two outer OpenRouter attempts rotate through the five-model pool.
+The wrapper does not trust one routed `models` array. It tries concrete free
+models itself, validates parseable candidate JSON, and only then returns a
+response to ai_provider. Each outer OpenRouter attempt can walk the full model
+pool, rotating the starting point on the next attempt so one flaky endpoint
+cannot dominate the retry budget.
 """
 from __future__ import annotations
 
@@ -18,15 +19,23 @@ import ai_provider
 
 logger = logging.getLogger(__name__)
 
+# Keep this list limited to text-generation endpoints verified as currently
+# available on OpenRouter. `openrouter/free` is intentionally last: it is a broad
+# emergency router and can choose a smaller model, while the concrete entries
+# ahead of it make analytics and behavior more predictable.
 DEFAULT_OPENROUTER_MODELS = (
-    "openai/gpt-oss-20b:free",
+    "nvidia/nemotron-3.5-lightning:free",
     "z-ai/glm-5.2:free",
-    "google/gemma-4-26b-a4b-it:free",
-    "nex-agi/nex-n2-pro:free",
+    "z-ai/glm-5.1:free",
     "liquid/lfm-2.5-2.6b:free",
+    "openrouter/free",
 )
 
-OPENROUTER_MODELS_PER_REQUEST = 3
+# These are sequential concrete requests, not one OpenRouter `models` array, so
+# the old max-three-array restriction does not apply here. Walking all five in
+# one outer attempt materially reduces missed publishing slots during shared
+# free-tier 429/503 bursts.
+OPENROUTER_MODELS_PER_ATTEMPT = 5
 
 
 def configured_openrouter_models() -> List[str]:
@@ -63,19 +72,19 @@ def _rotated(models: List[str], offset: int) -> List[str]:
 
 
 def _request_batch(models: List[str], call_index: int) -> List[str]:
-    """Return at most three concrete models, rotating across outer retries."""
+    """Return the per-attempt model walk, rotating its starting model."""
     if not models:
         return []
-    offset = (call_index * OPENROUTER_MODELS_PER_REQUEST) % len(models)
-    return _rotated(models, offset)[:OPENROUTER_MODELS_PER_REQUEST]
+    rotated = _rotated(models, call_index)
+    return rotated[: min(OPENROUTER_MODELS_PER_ATTEMPT, len(rotated))]
 
 
 def _model_error_is_fallbackable(exc: Exception) -> bool:
     if isinstance(exc, requests.HTTPError):
         response = exc.response
         status = int(response.status_code) if response is not None else 0
-        # Auth/account failures are global; model/rate/capacity/format failures
-        # are worth trying on the next free model.
+        # Auth/account failures are global. Model/rate/capacity/format failures
+        # are local enough to justify immediately trying the next free model.
         return status in {400, 404, 408, 409, 422, 425, 429, 500, 502, 503, 504}
     return isinstance(
         exc,
@@ -119,9 +128,9 @@ def install_openrouter_fallback_chain() -> None:
         if not batch:
             raise RuntimeError("OpenRouter fallback model pool is empty")
 
-        per_model_timeout = max(8, min(int(os.getenv("OPENROUTER_MODEL_TIMEOUT", "24")), int(timeout)))
+        per_model_timeout = max(8, min(int(os.getenv("OPENROUTER_MODEL_TIMEOUT", "20")), int(timeout)))
         logger.info(
-            "OpenRouter explicit fallback batch=%s configured=%s per_model_timeout=%ss",
+            "OpenRouter explicit fallback walk=%s configured=%s per_model_timeout=%ss",
             " -> ".join(batch), len(models), per_model_timeout,
         )
 
@@ -163,7 +172,7 @@ def install_openrouter_fallback_chain() -> None:
 
         if last_exc is not None:
             raise last_exc
-        raise RuntimeError("OpenRouter fallback batch exhausted without an exception")
+        raise RuntimeError("OpenRouter fallback walk exhausted without an exception")
 
     wrapped_request._openrouter_multi_model_fallback = True  # type: ignore[attr-defined]
     ai_provider._request = wrapped_request
