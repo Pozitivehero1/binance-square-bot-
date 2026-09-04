@@ -1,8 +1,8 @@
 """OpenRouter multi-model fallback routing for v11.8.
 
-OpenRouter can fail over across providers for one model and across different
-models through the `models` request field.  This module keeps ai_provider.py
-backward compatible and upgrades only OpenRouter requests at runtime.
+OpenRouter supports model failover through the `models` request field, but the
+API accepts at most three model IDs in one request. This module keeps the full
+configured pool and exposes it as rotating batches of up to three models.
 """
 from __future__ import annotations
 
@@ -22,6 +22,8 @@ DEFAULT_OPENROUTER_MODELS = (
     "nex-agi/nex-n2-pro:free",
     "liquid/lfm-2.5-2.6b:free",
 )
+
+OPENROUTER_MODELS_PER_REQUEST = 3
 
 
 def configured_openrouter_models() -> List[str]:
@@ -62,13 +64,28 @@ def _rotated(models: List[str], offset: int) -> List[str]:
     return models[pos:] + models[:pos]
 
 
-def install_openrouter_fallback_chain() -> None:
-    """Patch ai_provider._request so OpenRouter uses model-level failover.
+def _request_batch(models: List[str], call_index: int) -> List[str]:
+    """Build one OpenRouter-safe batch while covering the whole pool over retries.
 
-    Each OpenRouter call sends the full model list to OpenRouter. If a request
-    has to be made again because parsing/validation failed, the starting model
-    rotates so a model that returns a technically successful but unusable reply
-    does not monopolize every retry.
+    With the default five-model pool the first two calls are:
+      1) models 1,2,3
+      2) models 4,5,1
+    This respects OpenRouter's maximum of three models per request and gives all
+    five configured models a chance across OPENROUTER_RETRIES=2.
+    """
+    if not models:
+        return []
+    offset = (call_index * OPENROUTER_MODELS_PER_REQUEST) % len(models)
+    return _rotated(models, offset)[:OPENROUTER_MODELS_PER_REQUEST]
+
+
+def install_openrouter_fallback_chain() -> None:
+    """Patch ai_provider._request so OpenRouter uses bounded model-level failover.
+
+    Each OpenRouter call sends at most three model IDs. If a request must be made
+    again because the provider response is unavailable or unusable, the next
+    three-model batch starts after the previous one, so a bad first model cannot
+    monopolize every retry.
     """
     current = ai_provider._request
     if getattr(current, "_openrouter_multi_model_fallback", False):
@@ -99,17 +116,18 @@ def install_openrouter_fallback_chain() -> None:
             )
 
         models = configured_openrouter_models()
-        ordered = _rotated(models, call_index)
+        batch = _request_batch(models, call_index)
         call_index += 1
 
         routed_body = dict(body)
         routed_body.pop("model", None)
-        routed_body["models"] = ordered
+        routed_body["models"] = batch
 
         logger.info(
-            "OpenRouter fallback chain start=%s models=%s",
-            ordered[0] if ordered else "none",
-            " -> ".join(ordered),
+            "OpenRouter fallback batch start=%s models=%s configured=%s",
+            batch[0] if batch else "none",
+            " -> ".join(batch),
+            len(models),
         )
         return current(
             url=url,
