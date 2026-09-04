@@ -62,12 +62,13 @@ jobs:
       MIN_REACH_SCORE: "69"
       COOLDOWN_MIN: "240"
 
-      # AI author chain: OrcaRouter/DeepSeek -> pinned OpenRouter free model -> Mistral.
-      # Python owns all market facts; providers only author the prose variants.
+      # AI author chain: OrcaRouter/DeepSeek -> OpenRouter free-model pool -> Mistral.
+      # One valid AI draft is enough; deterministic copy is outage-only and never
+      # competes with a surviving AI draft in final ranking.
       CONTENT_MODE: "ai_author"
       ORCAROUTER_BASE_URL: "https://api.orcarouter.ai/v1"
       ORCAROUTER_MODEL: "deepseek/deepseek-v4-pro-free"
-      ORCAROUTER_RETRIES: "2"
+      ORCAROUTER_RETRIES: "1"
       ORCAROUTER_RETRY_BASE_SECONDS: "2"
       ORCAROUTER_RETRY_CAP_SECONDS: "6"
       ORCAROUTER_MAX_RETRY_AFTER: "8"
@@ -81,13 +82,13 @@ jobs:
       AI_VARIANTS: "6"
       AI_RETRIES: "2"
       AI_TEMPERATURE: "0.70"
-      MIN_VALID_AI_DRAFTS: "2"
+      MIN_VALID_AI_DRAFTS: "1"
       DETERMINISTIC_COMPARE_SLOTS: "0"
       AI_TIMEOUT: "55"
       EVENT_AI_VARIANTS: "6"
       EVENT_AI_RETRIES: "2"
       EVENT_AI_TEMPERATURE: "0.70"
-      EVENT_MIN_VALID_AI_DRAFTS: "2"
+      EVENT_MIN_VALID_AI_DRAFTS: "1"
       EVENT_DETERMINISTIC_COMPARE_SLOTS: "0"
 
       # Editorial controls
