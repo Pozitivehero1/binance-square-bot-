@@ -17,6 +17,7 @@ activate_release()
 from main import main
 from openrouter_fallback_chain import install_openrouter_fallback_chain
 from reach_recovery_v11_8 import activate_reach_recovery
+from reach_recovery_live_exit import activate_live_recovery_exit
 
 # OpenRouter now receives an ordered free-model fallback chain. Provider-level
 # failures are handled inside OpenRouter; repeated requests rotate the first
@@ -27,6 +28,11 @@ install_openrouter_fallback_chain()
 # patches only the final recovery publication gate.  The external cron, trade
 # levels, signal math and publisher remain untouched.
 activate_reach_recovery()
+
+# Rolling 24h reach recovers slowly after an outage. Once fresh 30m distribution
+# and 30m->2h expansion are back near baseline, AI-authored candidates use the
+# normal quality gate again. Deterministic outage copy remains protected.
+activate_live_recovery_exit()
 
 
 if __name__ == "__main__":
