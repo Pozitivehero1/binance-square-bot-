@@ -39,6 +39,26 @@ def _prom_kwargs(source="openrouter"):
     )
 
 
+def _pump_kwargs(source="openrouter_event_repaired"):
+    return dict(
+        lane="event",
+        writer_source=source,
+        event_class="ordinary",
+        micro_phase="fresh",
+        opportunity_score=68.8,
+        audience_demand=68.8,
+        attention_score=61.4,
+        micro_score=70.4,
+        monetization_score=57.1,
+        selection_score=73.1,
+        reach_score=81.5,
+        plan_valid=True,
+        recovery_mode=True,
+        hour_affinity=47.4,
+        hour_samples=6,
+    )
+
+
 def _dash_outage_kwargs():
     return dict(
         lane="trade",
@@ -89,7 +109,38 @@ def main() -> int:
     assert deterministic_strong.allowed
     assert "exceptional outage fallback" in deterministic_strong.reason
 
-    # Insufficient or still-depressed fresh data must not bypass recovery mode.
+    # Today's production restart case: one very strong 30m sample (115 vs 70)
+    # plus seven healthy 30m->2h expansion samples must release a valid AI EVENT.
+    policy.distribution_health = lambda now=None: _health(
+        early=115.0 / 70.0,
+        early_n=1,
+        expansion=1.13 / 1.11,
+        expansion_n=7,
+    )
+    restart = live_exit._evaluate_with_live_exit(
+        policy.evaluate_recovery_candidate_v118,
+        **_pump_kwargs(),
+    )
+    assert restart.allowed, restart.reason
+    assert "restart" in restart.reason
+
+    # A merely average singleton is still insufficient, even with healthy expansion.
+    policy.distribution_health = lambda now=None: _health(early=1.02, early_n=1, expansion=1.05, expansion_n=7)
+    insufficient = live_exit._evaluate_with_live_exit(
+        policy.evaluate_recovery_candidate_v118,
+        **_prom_kwargs(),
+    )
+    assert not insufficient.allowed
+
+    # Strong 30m alone cannot release recovery if second-stage expansion is weak.
+    policy.distribution_health = lambda now=None: _health(early=1.30, early_n=1, expansion=0.82, expansion_n=7)
+    weak_expansion = live_exit._evaluate_with_live_exit(
+        policy.evaluate_recovery_candidate_v118,
+        **_pump_kwargs(),
+    )
+    assert not weak_expansion.allowed
+
+    # Multi-sample but genuinely depressed fresh distribution remains blocked.
     policy.distribution_health = lambda now=None: _health(early=0.82, early_n=2)
     still_blocked = live_exit._evaluate_with_live_exit(
         policy.evaluate_recovery_candidate_v118,
@@ -97,14 +148,7 @@ def main() -> int:
     )
     assert not still_blocked.allowed
 
-    policy.distribution_health = lambda now=None: _health(early=1.02, early_n=1)
-    insufficient = live_exit._evaluate_with_live_exit(
-        policy.evaluate_recovery_candidate_v118,
-        **_prom_kwargs(),
-    )
-    assert not insufficient.allowed
-
-    print("LIVE RECOVERY EXIT: OK | AI resumes | exceptional outage continuity guarded")
+    print("LIVE RECOVERY EXIT: OK | normal + confident restart | outage continuity guarded")
     return 0
 
 
