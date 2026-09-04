@@ -62,7 +62,7 @@ jobs:
       MIN_REACH_SCORE: "69"
       COOLDOWN_MIN: "240"
 
-      # AI author chain: OrcaRouter/DeepSeek -> OpenRouter free pool -> Mistral.
+      # AI author chain: OrcaRouter/DeepSeek -> pinned OpenRouter free model -> Mistral.
       # Python owns all market facts; providers only author the prose variants.
       CONTENT_MODE: "ai_author"
       ORCAROUTER_BASE_URL: "https://api.orcarouter.ai/v1"
@@ -72,7 +72,7 @@ jobs:
       ORCAROUTER_RETRY_CAP_SECONDS: "6"
       ORCAROUTER_MAX_RETRY_AFTER: "8"
       OPENROUTER_BASE_URL: "https://openrouter.ai/api/v1"
-      OPENROUTER_MODEL: "openrouter/free"
+      OPENROUTER_MODEL: "openai/gpt-oss-20b:free"
       OPENROUTER_RETRIES: "2"
       OPENROUTER_RETRY_BASE_SECONDS: "1"
       OPENROUTER_RETRY_CAP_SECONDS: "3"
