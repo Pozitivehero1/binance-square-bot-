@@ -1,4 +1,4 @@
-"""Offline regression tests for DeepSeek-primary / retry / Mistral-fallback routing."""
+"""Offline regression tests for DeepSeek -> OpenRouter -> Mistral routing."""
 from __future__ import annotations
 
 import json
@@ -10,14 +10,17 @@ import requests
 from ai_provider import request_candidates
 
 
-def _ok(provider_text: str) -> Mock:
+def _ok(provider_text: str, model: str | None = None) -> Mock:
     r = Mock()
     r.status_code = 200
     r.headers = {}
     r.raise_for_status.return_value = None
-    r.json.return_value = {
+    payload = {
         "choices": [{"message": {"content": json.dumps({"candidates": [{"format_id": "hot_take", "text": provider_text}]})}}]
     }
+    if model:
+        payload["model"] = model
+    r.json.return_value = payload
     return r
 
 
@@ -40,6 +43,12 @@ def main() -> None:
         "ORCAROUTER_RETRIES": "3",
         "ORCAROUTER_RETRY_BASE_SECONDS": "0.01",
         "ORCAROUTER_RETRY_CAP_SECONDS": "0.01",
+        "OPENROUTER_API_KEY": "openrouter-test",
+        "OPENROUTER_BASE_URL": "https://openrouter.ai/api/v1",
+        "OPENROUTER_MODEL": "openrouter/free",
+        "OPENROUTER_RETRIES": "2",
+        "OPENROUTER_RETRY_BASE_SECONDS": "0.01",
+        "OPENROUTER_RETRY_CAP_SECONDS": "0.01",
         "MISTRAL_API": "mistral-test",
     }
     kwargs = dict(system_prompt="system", user_payload={"task": "test"}, temperature=0.5, max_tokens=200, timeout=5)
@@ -48,7 +57,7 @@ def main() -> None:
         result = request_candidates(**kwargs)
         assert result.provider == "deepseek_v4_pro"
         assert result.candidates[0]["_provider"] == "deepseek_v4_pro"
-        assert post.call_count == 1, "Mistral must not be contacted when DeepSeek works"
+        assert post.call_count == 1, "Fallbacks must not be contacted when DeepSeek works"
         assert post.call_args.args[0].endswith("/chat/completions")
         assert post.call_args.kwargs["json"]["model"] == "deepseek/deepseek-v4-pro-free"
 
@@ -63,15 +72,31 @@ def main() -> None:
 
     with patch.dict(os.environ, env, clear=False), patch(
         "ai_provider.requests.post",
-        side_effect=[_http_error(503), _http_error(503), _http_error(503), _ok("mistral")],
+        side_effect=[_http_error(503), _http_error(503), _http_error(503), _ok("openrouter", "free/model-routed")],
+    ) as post, patch("ai_provider.time.sleep"):
+        result = request_candidates(**kwargs)
+        assert result.provider == "openrouter_free"
+        assert result.model == "free/model-routed"
+        assert result.candidates[0]["_provider"] == "openrouter_free"
+        assert post.call_count == 4
+        assert "openrouter.ai" in post.call_args_list[-1].args[0]
+        assert post.call_args_list[-1].kwargs["json"]["model"] == "openrouter/free"
+
+    with patch.dict(os.environ, env, clear=False), patch(
+        "ai_provider.requests.post",
+        side_effect=[
+            _http_error(503), _http_error(503), _http_error(503),
+            _http_error(429), _http_error(503),
+            _ok("mistral"),
+        ],
     ) as post, patch("ai_provider.time.sleep"):
         result = request_candidates(**kwargs)
         assert result.provider == "mistral"
         assert result.candidates[0]["_provider"] == "mistral"
-        assert post.call_count == 4
+        assert post.call_count == 6
         assert "mistral.ai" in post.call_args_list[-1].args[0]
 
-    print("AI PROVIDER: OK | DeepSeek primary | 429/5xx retry first | Mistral only after retry exhaustion")
+    print("AI PROVIDER: OK | DeepSeek primary | OpenRouter free fallback | Mistral final fallback")
 
 
 if __name__ == "__main__":
