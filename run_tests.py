@@ -39,6 +39,7 @@ STANDARD_TESTS = [
     "reach_recovery_v11_8_test.py",
     "reach_recovery_live_exit_test.py",
     "production_guard_test.py",
+    "runtime_policy_test.py",
     "self_test.py",
 ]
 
