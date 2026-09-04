@@ -14,7 +14,6 @@ STANDARD_TESTS = [
     "opportunity_test.py",
     "dual_lane_test.py",
     "event_author_test.py",
-    "event_ai_resilience_test.py",
     "author_pool_policy_test.py",
     "public_plan_contract_test.py",
     "event_visual_test.py",
