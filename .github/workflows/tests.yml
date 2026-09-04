@@ -5,9 +5,11 @@ on:
     paths:
       - "**.py"
       - "requirements.txt"
+      - "env.example"
       - "VERSION.txt"
       - "CHANGES_V11_7.md"
       - "CHANGES_V11_8.md"
+      - ".github/workflows/run.yml"
       - ".github/workflows/tests.yml"
   workflow_dispatch:
 
@@ -32,6 +34,8 @@ jobs:
           cache: pip
       - name: Install dependencies
         run: pip install -r requirements.txt
+      - name: Compile every Python module
+        run: python -m compileall -q .
       - name: Run offline regression suite
         env:
           DRY_RUN: "1"
