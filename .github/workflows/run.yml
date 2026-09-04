@@ -62,9 +62,9 @@ jobs:
       MIN_REACH_SCORE: "69"
       COOLDOWN_MIN: "240"
 
-      # AI author chain: OrcaRouter/DeepSeek -> OpenRouter free-model pool -> Mistral.
-      # One valid AI draft is enough; deterministic copy is outage-only and never
-      # competes with a surviving AI draft in final ranking.
+      # AI author chain: OrcaRouter/DeepSeek -> explicit current OpenRouter free
+      # model walk -> OpenRouter free router -> Mistral. One valid AI draft is
+      # enough; deterministic copy is outage-only and never competes with AI.
       CONTENT_MODE: "ai_author"
       ORCAROUTER_BASE_URL: "https://api.orcarouter.ai/v1"
       ORCAROUTER_MODEL: "deepseek/deepseek-v4-pro-free"
@@ -73,8 +73,10 @@ jobs:
       ORCAROUTER_RETRY_CAP_SECONDS: "6"
       ORCAROUTER_MAX_RETRY_AFTER: "8"
       OPENROUTER_BASE_URL: "https://openrouter.ai/api/v1"
-      OPENROUTER_MODEL: "openai/gpt-oss-20b:free"
+      OPENROUTER_MODEL: "nvidia/nemotron-3.5-lightning:free"
+      OPENROUTER_MODELS: "nvidia/nemotron-3.5-lightning:free,z-ai/glm-5.2:free,z-ai/glm-5.1:free,liquid/lfm-2.5-2.6b:free,openrouter/free"
       OPENROUTER_RETRIES: "2"
+      OPENROUTER_MODEL_TIMEOUT: "20"
       OPENROUTER_RETRY_BASE_SECONDS: "1"
       OPENROUTER_RETRY_CAP_SECONDS: "3"
       OPENROUTER_MAX_RETRY_AFTER: "6"
