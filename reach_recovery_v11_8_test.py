@@ -30,8 +30,8 @@ def main() -> int:
     assert os.environ["ADAPTIVE_MAX_TOTAL"] == "14"
     assert os.environ["ADAPTIVE_TICKER_MAX"] == "10"
     assert os.environ["ADAPTIVE_HOUR_MAX"] == "5"
-    assert os.environ["AI_RETRIES"] == "1"
-    assert os.environ["EVENT_AI_RETRIES"] == "1"
+    assert os.environ["AI_RETRIES"] == "2"
+    assert os.environ["EVENT_AI_RETRIES"] == "2"
     assert os.environ["ORCAROUTER_RETRIES"] == "1"
 
     policy._ORIGINAL_RECOVERY_GATE = _gate
@@ -76,24 +76,31 @@ def main() -> int:
     )
     assert healthy.allowed
 
-    # OpenRouter free can route to a small model. Its prose may contain invented
-    # numbers or malformed plan lines; those must be removed rather than allowed
-    # through the fact lock. Python will append the canonical plan afterwards.
     policy._LAST_AI_PROVIDER = "openrouter_free"
     assert policy._source_name_v118("mistral") == "openrouter"
-    repaired = policy._repair_ai_narrative_v118(
-        "$NEAR: движение выглядит интересно\n\nОбъём x99 и цена 123.45 уже гарантируют рост.\n\nTP1 777, стоп 1.\n\nСмотрю на реакцию рынка без погони.",
+    repaired, meaningful = policy._repair_ai_narrative_v118(
+        "$NEAR: движение выглядит интересно\n\nОбъём x99 и цена 123.45 уже гарантируют рост.\n\nTP1 777, стоп 1.\n\nСмотрю на реакцию рынка без погони и не хочу превращать один импульс в обещание следующей свечи.",
         basic="NEAR",
         direction="long",
         package={},
     )
+    assert meaningful
     assert "$NEAR" in repaired
     assert "x99" not in repaired
     assert "123.45" not in repaired
     assert "777" not in repaired
     assert "гарант" not in repaired.lower()
 
-    print("v11.8 distribution recovery tests passed | OpenRouter fact-lock repair passed")
+    # A model response made entirely from corrupt plan fragments is not AI copy.
+    empty, meaningful = policy._repair_ai_narrative_v118(
+        "$NEAR\nLONG 123\nTP1 777\nстоп 1",
+        basic="NEAR",
+        direction="long",
+        package={},
+    )
+    assert empty == "" and not meaningful
+
+    print("v11.8 distribution recovery tests passed | truthful repaired-AI contract passed")
     return 0
 
 
