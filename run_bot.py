@@ -15,7 +15,13 @@ from runtime_release import activate_release
 activate_release()
 
 from main import main
+from openrouter_fallback_chain import install_openrouter_fallback_chain
 from reach_recovery_v11_8 import activate_reach_recovery
+
+# OpenRouter now receives an ordered free-model fallback chain. Provider-level
+# failures are handled inside OpenRouter; repeated requests rotate the first
+# model so unusable successful responses do not monopolize every retry.
+install_openrouter_fallback_chain()
 
 # v11.8 intentionally keeps the pre-v11.7 market/adaptive ranking bounds and
 # patches only the final recovery publication gate.  The external cron, trade
