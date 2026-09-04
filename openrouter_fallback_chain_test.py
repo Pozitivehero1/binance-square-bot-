@@ -23,33 +23,39 @@ def main() -> None:
     captured: list[tuple[str, dict, str, bool, int]] = []
     calls_by_model: dict[str, int] = {}
 
+    models_expected = [
+        "nvidia/nemotron-3.5-lightning:free",
+        "z-ai/glm-5.2:free",
+        "z-ai/glm-5.1:free",
+        "liquid/lfm-2.5-2.6b:free",
+        "openrouter/free",
+    ]
+
     def fake_request(*, url, key, body, timeout, provider, retry_without_response_format=False):
         del key
         model = str(body.get("model") or "")
         calls_by_model[model] = calls_by_model.get(model, 0) + 1
         captured.append((url, dict(body), provider, retry_without_response_format, timeout))
 
-        # First outer batch: transport failure -> malformed JSON -> success.
-        if model == "openai/gpt-oss-20b:free" and calls_by_model[model] == 1:
+        # First walk exercises the failures seen in production: unavailable model,
+        # rate limit, malformed JSON, then a later model succeeds.
+        if model == models_expected[0] and calls_by_model[model] == 1:
+            raise _http_error(404, "temporarily unavailable")
+        if model == models_expected[1]:
             raise _http_error(429, "rate limited")
-        if model == "z-ai/glm-5.2:free":
+        if model == models_expected[2]:
             return {"choices": [{"message": {"content": "not-json"}}], "model": model}
-        if model == "google/gemma-4-26b-a4b-it:free":
-            return {
-                "choices": [{"message": {"content": '{"candidates":[{"format_id":"hot_take","text":"gemma-ok"}]}'}}],
-                "model": model,
-            }
-
-        # Second outer batch: one capacity failure, then success.
-        if model == "nex-agi/nex-n2-pro:free":
-            raise _http_error(503, "no capacity")
-        if model == "liquid/lfm-2.5-2.6b:free":
+        if model == models_expected[3]:
             return {
                 "choices": [{"message": {"content": '{"candidates":[{"format_id":"hot_take","text":"lfm-ok"}]}'}}],
                 "model": model,
             }
+
+        # On the next outer attempt the starting point rotates by one. GLM 5.2
+        # still fails, GLM 5.1 is malformed, LFM succeeds without revisiting the
+        # first model before it is needed.
         return {
-            "choices": [{"message": {"content": '{"candidates":[{"format_id":"hot_take","text":"fallback-ok"}]}'}}],
+            "choices": [{"message": {"content": '{"candidates":[{"format_id":"hot_take","text":"router-ok"}]}'}}],
             "model": model,
         }
 
@@ -58,22 +64,16 @@ def main() -> None:
         with patch.dict(
             os.environ,
             {
-                "OPENROUTER_MODEL": "openai/gpt-oss-20b:free",
+                "OPENROUTER_MODEL": "nvidia/nemotron-3.5-lightning:free",
                 "OPENROUTER_MODELS": "",
                 "OPENROUTER_MODEL_TIMEOUT": "17",
             },
             clear=False,
         ):
             models = chain.configured_openrouter_models()
-            assert models[:5] == [
-                "openai/gpt-oss-20b:free",
-                "z-ai/glm-5.2:free",
-                "google/gemma-4-26b-a4b-it:free",
-                "nex-agi/nex-n2-pro:free",
-                "liquid/lfm-2.5-2.6b:free",
-            ]
-            assert chain._request_batch(models, 0) == models[:3]
-            assert chain._request_batch(models, 1) == [models[3], models[4], models[0]]
+            assert models == models_expected
+            assert chain._request_batch(models, 0) == models_expected
+            assert chain._request_batch(models, 1) == models_expected[1:] + models_expected[:1]
 
             chain.install_openrouter_fallback_chain()
             patched = ai_provider._request
@@ -93,11 +93,11 @@ def main() -> None:
                 provider="OpenRouter/free",
                 retry_without_response_format=True,
             )
-            assert payload1["model"] == models[2]
-            first_models = [row[1]["model"] for row in captured[:3]]
-            assert first_models == models[:3]
-            assert all("models" not in row[1] for row in captured[:3])
-            assert all(row[4] == 17 for row in captured[:3])
+            assert payload1["model"] == models_expected[3]
+            first_models = [row[1]["model"] for row in captured[:4]]
+            assert first_models == models_expected[:4]
+            assert all("models" not in row[1] for row in captured[:4])
+            assert all(row[4] == 17 for row in captured[:4])
 
             start = len(captured)
             payload2 = patched(
@@ -108,9 +108,9 @@ def main() -> None:
                 provider="OpenRouter/free",
                 retry_without_response_format=True,
             )
-            assert payload2["model"] == models[4]
+            assert payload2["model"] == models_expected[3]
             second_models = [row[1]["model"] for row in captured[start:]]
-            assert second_models == [models[3], models[4]]
+            assert second_models == models_expected[1:4]
 
             start = len(captured)
             patched(
@@ -125,17 +125,17 @@ def main() -> None:
 
         with patch.dict(
             os.environ,
-            {"OPENROUTER_MODELS": "z-ai/glm-5.2:free, openai/gpt-oss-20b:free, z-ai/glm-5.2:free"},
+            {"OPENROUTER_MODELS": "z-ai/glm-5.2:free, liquid/lfm-2.5-2.6b:free, z-ai/glm-5.2:free"},
             clear=False,
         ):
             assert chain.configured_openrouter_models() == [
                 "z-ai/glm-5.2:free",
-                "openai/gpt-oss-20b:free",
+                "liquid/lfm-2.5-2.6b:free",
             ]
     finally:
         ai_provider._request = original
 
-    print("OPENROUTER FALLBACK CHAIN: OK | explicit model rotation | 429/503/bad-JSON failover")
+    print("OPENROUTER FALLBACK CHAIN: OK | full model walk | 404/429/bad-JSON failover")
 
 
 if __name__ == "__main__":
