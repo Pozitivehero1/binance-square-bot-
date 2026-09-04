@@ -1,7 +1,7 @@
 """v11.8 distribution-recovery policy.
 
 v11.7 proved that stronger ticker/hour priors do not solve the current reach
-problem.  v11.8 deliberately returns ranking weights to the conservative
+problem. v11.8 deliberately returns ranking weights to the conservative
 pre-v11.7 bounds and focuses on the two distribution stages we can actually
 observe from the account:
 
@@ -12,6 +12,11 @@ During a reach/distribution slump deterministic outage copy is not published.
 The external cron remains unchanged: every tick may inspect the market, but a
 slot is allowed to stay empty when the author providers are unavailable or the
 market evidence is not strong enough to justify another post.
+
+OpenRouter note: the free router can route to small models. v11.8 therefore
+keeps their prose only as editorial narrative and lets Python own every public
+trade number. This preserves the strict Entry/SL/TP contract while making a
+valid OpenRouter response usable instead of silently falling back to templates.
 """
 from __future__ import annotations
 
@@ -19,19 +24,23 @@ from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 import logging
 import os
+import re
 from statistics import median
 from typing import Optional
 
 logger = logging.getLogger(__name__)
 
 _ORIGINAL_RECOVERY_GATE = None
+_ORIGINAL_WRITER_BUILD = None
+_ORIGINAL_AI_REQUEST = None
+_LAST_AI_PROVIDER = ""
 
 
 def configure_environment() -> None:
     """Install v11.8 defaults before main/adaptive modules are imported."""
     os.environ["BOT_VERSION"] = "v11.8"
 
-    # Roll back the aggressive v11.7 reach priors.  These are the bounded values
+    # Roll back the aggressive v11.7 reach priors. These are the bounded values
     # used before the account-specific over-concentration experiment.
     os.environ["ADAPTIVE_MAX_TOTAL"] = "14"
     os.environ["ADAPTIVE_TICKER_MAX"] = "10"
@@ -43,7 +52,7 @@ def configure_environment() -> None:
     os.environ["ADAPTIVE_DIRECTION_MAX"] = "1.5"
 
     # One author attempt already includes primary -> fallback provider routing.
-    # Repeating the whole chain when both providers are failing only multiplies
+    # Repeating the whole chain when providers are failing only multiplies
     # 503/429 traffic and then creates deterministic fallback candidates.
     os.environ["ORCAROUTER_RETRIES"] = "1"
     os.environ["AI_RETRIES"] = "1"
@@ -177,9 +186,6 @@ def evaluate_recovery_candidate_v118(*args, **kwargs):
         f"({expansion_ratio:.2f}, n={expansion_n})"
     )
 
-    # Fix the v11.7 lag: when rolling reach is already depressed OR either live
-    # distribution stage is depressed, provider-outage templates never publish.
-    # They can still be generated for diagnostics, but cannot consume a feed slot.
     if deterministic and (recovery_mode or distribution_depressed):
         return replace(
             base,
@@ -188,16 +194,12 @@ def evaluate_recovery_candidate_v118(*args, **kwargs):
             reason="v11.8 provider-outage fallback blocked during reach recovery" + suffix,
         )
 
-    # Keep every rejection from the conservative base recovery guard.
     if not base.allowed:
         return replace(base, reason=base.reason + suffix)
 
     strong_event = event in {"fresh_event", "audience_breakout", "high_demand_active"}
     activity = max(attention, micro)
 
-    # This is the rescue profile for a feed whose initial test and/or second-stage
-    # expansion is failing.  It is intentionally about live evidence, not about
-    # historical ticker/hour affinity.
     rescue_quality = (
         strong_event
         and reach >= 78.0
@@ -224,10 +226,6 @@ def evaluate_recovery_candidate_v118(*args, **kwargs):
             reason=f"v11.8 {stage}-distribution rescue block" + suffix,
         )
 
-    # When both stages are depressed simultaneously, only an exceptional live
-    # event is worth another test slot.  This prevents a run of merely 'good'
-    # posts from repeatedly receiving 10-30 views and teaching the feed the same
-    # low-engagement pattern.
     if initial_depressed and expansion_depressed and not exceptional:
         return replace(
             base,
@@ -239,20 +237,144 @@ def evaluate_recovery_candidate_v118(*args, **kwargs):
     return replace(base, reason=base.reason + suffix)
 
 
+def _track_ai_provider_v118(*args, **kwargs):
+    """Remember which provider produced the current batch for truthful writer_source."""
+    global _LAST_AI_PROVIDER
+    rows = _ORIGINAL_AI_REQUEST(*args, **kwargs)
+    providers = {
+        str(row.get("_provider") or "").strip().lower()
+        for row in rows
+        if isinstance(row, dict) and row.get("_provider")
+    }
+    _LAST_AI_PROVIDER = next(iter(providers)) if len(providers) == 1 else ""
+    return rows
+
+
+def _source_name_v118(source: str) -> str:
+    raw = str(source or "").strip().lower()
+    if _LAST_AI_PROVIDER == "openrouter_free" and raw == "mistral":
+        return "openrouter"
+    return raw
+
+
+def _repair_ai_narrative_v118(raw_text: str, *, basic: str, direction: str, package: dict) -> str:
+    """Keep AI prose, discard AI-owned numbers, and let Python append the trade plan.
+
+    The repair intentionally does *not* relax fact validation. It removes the
+    parts a small free model is most likely to corrupt (numbers/plan lines), then
+    the normal writer inserts the canonical Python-owned plan and validates the
+    complete result exactly as before.
+    """
+    import writer
+
+    text = re.sub(r"```(?:json|markdown|text)?", "", str(raw_text or ""), flags=re.IGNORECASE)
+    text = re.sub(r"#[A-Za-zА-Яа-я0-9_]+", "", text)
+    text = re.sub(r"[ \t]+", " ", text)
+    lines = [line.strip(" -•\t") for line in text.splitlines() if line.strip()]
+
+    opposite = ("short", "шорт") if direction == "long" else ("long", "лонг")
+    plan_markers = re.compile(r"(?i)\b(?:tp\s*[123]|entry|stop(?:_loss)?|sl)\b|\b(?:вход|стоп|цель|цели)\b")
+    kept: list[str] = []
+    for line in lines:
+        lowered = line.lower().replace("ё", "е")
+        if plan_markers.search(line):
+            continue
+        if any(re.search(rf"(?i)(?<![A-Za-zА-Яа-я]){re.escape(token)}(?![A-Za-zА-Яа-я])", lowered) for token in opposite):
+            continue
+        # Narrative from AI must not own numerical market facts. Python will add
+        # the exact public plan after this repair.
+        if writer._numeric_tokens(line):
+            continue
+        if any(item in lowered for item in writer._ROBOTIC):
+            continue
+        if any(re.search(pattern, lowered, flags=re.IGNORECASE) for pattern in writer._FORBIDDEN_PATTERNS):
+            continue
+        if any(re.search(pattern, lowered, flags=re.IGNORECASE) for pattern in writer._PREDICTIVE_PATTERNS):
+            continue
+        kept.append(line)
+
+    ticker = writer._ticker(basic)
+    if not kept:
+        kept = [f"{ticker}: смотрю на реакцию цены, а не пытаюсь угадать следующую свечу"]
+    elif ticker.lower() not in kept[0].lower():
+        kept[0] = f"{ticker}: {kept[0]}"
+
+    # Keep a compact human narrative. The canonical plan added by writer stays
+    # within POST_MAX_CHARS and supplies direction + Entry/SL/TP1-3.
+    narrative = "\n\n".join(kept[:3]).strip()
+    if len(narrative) > 235:
+        narrative = narrative[:235].rstrip(" ,;:-") + "."
+    if len(narrative) < 105:
+        narrative += "\n\nМне важна реакция рынка у рабочей зоны: если сценарий не подтверждается, догонять движение не буду."
+    return narrative
+
+
+def _build_generated_v118(*args, **kwargs):
+    """Repair rejected AI prose once while preserving the original validator."""
+    import writer
+
+    source = _source_name_v118(str(kwargs.get("source") or ""))
+    first_kwargs = dict(kwargs)
+    first_kwargs["source"] = source
+    generated = _ORIGINAL_WRITER_BUILD(*args, **first_kwargs)
+    if generated is not None or source.startswith("deterministic"):
+        return generated
+
+    raw_text = str(kwargs.get("raw_text") or "")
+    basic = str(kwargs.get("basic") or "")
+    direction = str(kwargs.get("direction") or "")
+    levels = kwargs.get("levels") or {}
+    package = kwargs.get("package") or {}
+    fmt = str(kwargs.get("format_id") or "")
+
+    # Log the exact rejection reasons at INFO so production diagnostics no longer
+    # hide a successful provider response followed by a silent validator drop.
+    try:
+        probe = writer._enforce_full_plan_block(raw_text, levels, direction, seed=f"probe|{source}|{fmt}")
+        _, reasons = writer._validate_ai_post(
+            probe,
+            basic=basic,
+            direction=direction,
+            levels=levels,
+            package=package,
+            format_id=fmt,
+        )
+        logger.info("v11.8 AI draft rejected provider=%s format=%s reasons=%s", source, fmt, "; ".join(reasons))
+    except Exception as exc:
+        logger.info("v11.8 AI draft diagnostics provider=%s format=%s error=%s", source, fmt, exc)
+
+    repaired = _repair_ai_narrative_v118(raw_text, basic=basic, direction=direction, package=package)
+    retry_kwargs = dict(first_kwargs)
+    retry_kwargs["raw_text"] = repaired
+    generated = _ORIGINAL_WRITER_BUILD(*args, **retry_kwargs)
+    if generated is not None:
+        logger.info("v11.8 repaired AI draft accepted provider=%s format=%s", source, fmt)
+    else:
+        logger.info("v11.8 repaired AI draft still rejected provider=%s format=%s", source, fmt)
+    return generated
+
+
 def prepare_originals() -> None:
-    global _ORIGINAL_RECOVERY_GATE
-    if _ORIGINAL_RECOVERY_GATE is not None:
-        return
-    import recovery_guard
-    _ORIGINAL_RECOVERY_GATE = recovery_guard.evaluate_recovery_candidate
+    global _ORIGINAL_RECOVERY_GATE, _ORIGINAL_WRITER_BUILD, _ORIGINAL_AI_REQUEST
+    if _ORIGINAL_RECOVERY_GATE is None:
+        import recovery_guard
+        _ORIGINAL_RECOVERY_GATE = recovery_guard.evaluate_recovery_candidate
+    if _ORIGINAL_WRITER_BUILD is None or _ORIGINAL_AI_REQUEST is None:
+        import writer
+        _ORIGINAL_WRITER_BUILD = writer._build_generated
+        _ORIGINAL_AI_REQUEST = writer._request_ai_candidates
 
 
 def activate_reach_recovery() -> None:
-    """Patch only the publication recovery gate; leave trade/ranking math stable."""
+    """Patch recovery policy and harden AI draft handoff; leave trade math stable."""
     prepare_originals()
     import recovery_guard
+    import writer
+
     recovery_guard.evaluate_recovery_candidate = evaluate_recovery_candidate_v118
+    writer._request_ai_candidates = _track_ai_provider_v118
+    writer._build_generated = _build_generated_v118
     logger.info(
         "v11.8 distribution recovery active: conservative ranking, no outage-fallback publishing, "
-        "30m initial-test + 2h expansion guard"
+        "30m initial-test + 2h expansion guard, resilient OpenRouter draft handoff"
     )
