@@ -1,14 +1,17 @@
 """Final production text guard for Binance Square posts.
 
 The AI is allowed to write the narrative, but Python owns every public trade-plan
-number.  This module removes AI-written plan fragments before the canonical
-Python plan is appended and catches malformed/duplicated plan text at the final
+number. This module removes AI-written plan fragments before the canonical Python
+plan is appended and catches malformed/duplicated plan text at the final
 publication boundary.
 """
 from __future__ import annotations
 
 import re
 from typing import Tuple
+
+from language_quality import language_quality_reasons
+from text_integrity import artifact_reasons
 
 
 _TP_RE = re.compile(r"(?iu)\bTP[123]\b")
@@ -31,14 +34,10 @@ def _looks_like_embedded_plan_line(line: str) -> bool:
     lowered = value.lower().replace("ё", "е")
     if _TP_RE.search(value) or _SIDE_PLAN_RE.search(value) or _PLAN_START_RE.search(value):
         return True
-    # AI sometimes writes a complete entry/stop pair in prose and then Python
-    # appends the authoritative plan, producing a visibly duplicated block.
     if re.search(r"(?iu)\bвход\w*\b", value) and re.search(r"(?iu)\bстоп\w*\b", value):
         return True
-    # Same problem with compact English-side plan rows.
     if re.search(r"(?iu)\b(?:LONG|SHORT)\b", value) and "|" in value and re.search(r"\d", value):
         return True
-    # A dangling numeric fragment such as "TP3 100," must never survive.
     if re.search(r"(?u)\b\d+[.,]\s*$", value) and any(token in lowered for token in ("tp", "цель", "вход", "стоп")):
         return True
     return False
@@ -56,7 +55,7 @@ def strip_embedded_trade_plan(text: str) -> str:
 
 
 def final_text_reasons(text: str) -> Tuple[str, ...]:
-    """Return structural defects that are unsafe to publish as-is."""
+    """Return structural, language and artifact defects unsafe to publish as-is."""
     value = str(text or "").strip()
     reasons: list[str] = []
     if not value:
@@ -73,12 +72,16 @@ def final_text_reasons(text: str) -> Tuple[str, ...]:
     if re.search(r"(?ium)\bTP[123]\s+[-+]?\d+(?:[.,]\d+)?[.,]\s*$", value):
         reasons.append("truncated-target-number")
 
-    # Catch a broken final numeric token in a plan-like line even if the TP label
-    # was lost by an upstream model/truncation artifact.
     for line in value.splitlines():
         lowered = line.lower().replace("ё", "е")
         if any(token in lowered for token in ("tp", "цель", "вход", "стоп")) and re.search(r"\b\d+[.,]\s*$", line.strip()):
             reasons.append("dangling-plan-number")
             break
+
+    # v11.9: final publication boundary is authoritative. A draft that fooled
+    # upstream scoring is still rejected if it contains malformed model prose,
+    # placeholder leakage, hallucinated handles or other integrity artifacts.
+    reasons.extend(f"language:{reason}" for reason in language_quality_reasons(value))
+    reasons.extend(f"artifact:{reason}" for reason in artifact_reasons(value))
 
     return tuple(dict.fromkeys(reasons))
