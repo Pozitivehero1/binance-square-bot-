@@ -1,4 +1,4 @@
-"""Focused regressions for the v11.4.5 production text guard."""
+"""Focused regressions for the production text guard."""
 from fact_consistency import fact_consistency_reasons
 from production_guard import final_text_reasons, strip_embedded_trade_plan
 from semantic_quality import semantic_quality_reasons
@@ -17,9 +17,6 @@ assert "$SOL" in cleaned
 assert "TP1" not in cleaned and "TP2" not in cleaned and "TP3" not in cleaned
 assert "LONG-план" not in cleaned
 assert "LONG | вход" not in cleaned
-
-# The malformed production example is caught even if it somehow reaches the
-# final publisher without canonicalization.
 assert final_text_reasons(BROKEN_SOL)
 
 CANONICAL = """$SOL — цена у рабочей зоны; смотрю на реакцию без прогноза.
@@ -27,6 +24,27 @@ CANONICAL = """$SOL — цена у рабочей зоны; смотрю на �
 LONG-план: зона 97.87–98.03, стоп 97.58
 Цели: TP1 98.99 → TP2 99.58 → TP3 100.2"""
 assert not final_text_reasons(CANONICAL)
+
+# Exact malformed production copy observed in v11.8 must now fail at the final
+# publication boundary even if an upstream quality score mistakenly approves it.
+BROKEN_ORCA = """$ORCA: Оверсаттеринг момента -- Окоражилась ошибка RSI при росте цены выше рабочего уровня
+
+Важно услышать про уровень XA/RVAB где текущая цена сидит высоко относительно динамики
+
+Cashtag @oracetrade
+
+План LONG: вход 1.582–1.594 | стоп 1.561
+TP1 1.666 | TP2 1.71 | TP3 1.757"""
+BROKEN_HEMI = """Это классическое срезы сопротивления перед возможным отскоком к рабочей зоне ШОРТА ($HEMI≈v00397).
+
+Всё включается автоматически через предварительно заданную схему:
+
+· Зона входа фиксирована как [v00389;v00405]
+
+SHORT только в зоне 0.009896–0.009964; отмена на 0.01031
+TP1 0.009464 · TP2 0.0092 · TP3 0.008916"""
+assert any(reason.startswith("language:") for reason in final_text_reasons(BROKEN_ORCA))
+assert any(reason.startswith("language:") for reason in final_text_reasons(BROKEN_HEMI))
 
 BAD_NARRATIVES = [
     "$XRP — покупатели Ripple решили именно сейчас заявить о себе, а продавцы не успели среагировать.",
@@ -53,7 +71,6 @@ EVENT_PACKAGE = {
     "optional_trade_plan": {"available": False},
 }
 
-# Exact failure classes observed in live copy.
 assert "unconfirmed-position-claim" in fact_consistency_reasons(
     "$TUT — пока сделка работает в нашу пользу.", TRADE_PACKAGE
 )
