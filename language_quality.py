@@ -35,9 +35,6 @@ _PLACEHOLDER_PATTERNS = (
 def language_quality_reasons(text: str) -> Tuple[str, ...]:
     """Return high-confidence mixed-language and malformed-prose markers."""
     value = str(text or "")
-    if not re.search(r"[А-Яа-яЁё]", value):
-        return tuple()
-
     reasons: list[str] = []
     lowered_value = value.lower().replace("ё", "е")
 

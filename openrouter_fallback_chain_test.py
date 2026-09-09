@@ -65,7 +65,7 @@ def main() -> None:
             os.environ,
             {
                 "OPENROUTER_MODEL": "nvidia/nemotron-3.5-lightning:free",
-                "OPENROUTER_MODELS": "",
+                "OPENROUTER_MODELS": ",".join(models_expected),
                 "OPENROUTER_MODEL_TIMEOUT": "17",
             },
             clear=False,

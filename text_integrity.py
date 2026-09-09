@@ -39,6 +39,8 @@ def artifact_reasons(text: str) -> Tuple[str, ...]:
         reasons.append("template-placeholder")
     if re.search(r"\{\{[^{}\n]{1,80}\}\}", value):
         reasons.append("template-braces")
+    if re.search(r"\$?\{[A-Za-z_][A-Za-z0-9_.]*(?:\s*:[^{}\n]+)?\}", value):
+        reasons.append("unexpanded-template")
 
     if re.search(r"[-_=~]{5,}", value):
         reasons.append("symbol-run")

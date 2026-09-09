@@ -43,6 +43,24 @@ _cache_expiry: Dict[str, float] = {}
 _cache_lock = threading.Lock()
 
 
+def candles_are_current(frame: pd.DataFrame, interval: str, now=None) -> bool:
+    """Closed candles must reach the latest expected interval, with API grace."""
+    durations = {"1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800,
+                 "1h": 3600, "2h": 7200, "4h": 14400, "6h": 21600,
+                 "12h": 43200, "1d": 86400, "1w": 604800}
+    seconds = durations.get(interval)
+    if frame is None or frame.empty:
+        return False
+    if seconds is None:
+        return True
+    last = pd.Timestamp(frame.index[-1])
+    last = last.tz_localize("UTC") if last.tzinfo is None else last.tz_convert("UTC")
+    now = pd.Timestamp(now) if now is not None else pd.Timestamp.now(tz="UTC")
+    now = now.tz_localize("UTC") if now.tzinfo is None else now.tz_convert("UTC")
+    age = (now - last).total_seconds()
+    return seconds <= age <= 2 * seconds + 90
+
+
 def _build_session() -> requests.Session:
     retry_policy = Retry(
         total=3,
@@ -251,7 +269,7 @@ class DataFetcher:
         with _cache_lock:
             cached = _cache.get(cache_key)
             expires = _cache_expiry.get(cache_key, 0.0)
-            if cached is not None and expires > now:
+            if cached is not None and expires > now and candles_are_current(cached, interval):
                 return cached.copy()
 
         frame: Optional[pd.DataFrame] = None
@@ -274,6 +292,10 @@ class DataFetcher:
 
         if frame is None:
             logger.info("No usable market history for %s %s", symbol, interval)
+            return None
+
+        if not candles_are_current(frame, interval):
+            logger.warning("Rejecting outdated/unclosed market history for %s %s", symbol, interval)
             return None
 
         with _cache_lock:

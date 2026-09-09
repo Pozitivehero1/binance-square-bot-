@@ -238,5 +238,11 @@ def write_status(status: str, detail: str = "", **extra: object) -> None:
     path = resolve_state_file("BOT_STATUS_FILE", "status.json")
     try:
         atomic_write_json(path, payload)
+        summary = os.getenv("GITHUB_STEP_SUMMARY")
+        if summary:
+            with open(summary, "a", encoding="utf-8") as handle:
+                handle.write(f"\nBot status: **{status}**\n\n{detail}\n")
+                if extra.get("symbol"):
+                    handle.write(f"\nSymbol: {extra['symbol']}\n")
     except OSError:
         logging.getLogger(__name__).exception("Cannot write status file: %s", path)

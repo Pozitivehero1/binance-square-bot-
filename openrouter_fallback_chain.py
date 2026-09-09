@@ -16,6 +16,7 @@ from typing import List
 import requests
 
 import ai_provider
+from provider_health import ProviderCooldown, account_limit
 
 logger = logging.getLogger(__name__)
 
@@ -25,8 +26,6 @@ logger = logging.getLogger(__name__)
 # ahead of it make analytics and behavior more predictable.
 DEFAULT_OPENROUTER_MODELS = (
     "nvidia/nemotron-3.5-lightning:free",
-    "z-ai/glm-5.2:free",
-    "z-ai/glm-5.1:free",
     "liquid/lfm-2.5-2.6b:free",
     "openrouter/free",
 )
@@ -80,8 +79,12 @@ def _request_batch(models: List[str], call_index: int) -> List[str]:
 
 
 def _model_error_is_fallbackable(exc: Exception) -> bool:
+    if isinstance(exc, ProviderCooldown):
+        return exc.scope == "model"
     if isinstance(exc, requests.HTTPError):
         response = exc.response
+        if account_limit(response):
+            return False
         status = int(response.status_code) if response is not None else 0
         # Auth/account failures are global. Model/rate/capacity/format failures
         # are local enough to justify immediately trying the next free model.

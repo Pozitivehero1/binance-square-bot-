@@ -12,6 +12,7 @@ from typing import Tuple
 
 from language_quality import language_quality_reasons
 from text_integrity import artifact_reasons
+from semantic_quality import semantic_quality_reasons
 
 
 _TP_RE = re.compile(r"(?iu)\bTP[123]\b")
@@ -69,12 +70,12 @@ def final_text_reasons(text: str) -> Tuple[str, ...]:
     if plan_markers > 1:
         reasons.append("duplicate-plan-block")
 
-    if re.search(r"(?ium)\bTP[123]\s+[-+]?\d+(?:[.,]\d+)?[.,]\s*$", value):
+    if re.search(r"(?ium)\bTP[123]\s+[-+]?\d+(?:[.,]\d+)?,\s*$", value):
         reasons.append("truncated-target-number")
 
     for line in value.splitlines():
         lowered = line.lower().replace("ё", "е")
-        if any(token in lowered for token in ("tp", "цель", "вход", "стоп")) and re.search(r"\b\d+[.,]\s*$", line.strip()):
+        if any(token in lowered for token in ("tp", "цель", "вход", "стоп")) and re.search(r"\b\d+,\s*$", line.strip()):
             reasons.append("dangling-plan-number")
             break
 
@@ -83,5 +84,6 @@ def final_text_reasons(text: str) -> Tuple[str, ...]:
     # placeholder leakage, hallucinated handles or other integrity artifacts.
     reasons.extend(f"language:{reason}" for reason in language_quality_reasons(value))
     reasons.extend(f"artifact:{reason}" for reason in artifact_reasons(value))
+    reasons.extend(f"semantic:{reason}" for reason in semantic_quality_reasons(value))
 
     return tuple(dict.fromkeys(reasons))

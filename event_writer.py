@@ -59,7 +59,7 @@ EVENT_FORMAT_SPECS: Dict[str, Dict[str, str]] = {
         "visual": "clean_chart",
     },
     "event_trade_bridge": {
-        "brief": "Начни с события. Если optional_trade_plan.available=true, обязательно дай полный готовый план: direction, entry/zone, stop, TP1/TP2/TP3. Если false — никаких входов/TP/стопа.",
+        "brief": "Начни с конкретного события и условия его проверки. При available=true Python добавит полный план; при false оставайся в наблюдении без сделки.",
         "visual": "scenario_chart",
     },
 }
@@ -286,7 +286,7 @@ def _request_ai_candidates(
         "attempt": attempt,
         "rules": [
             "Пиши на русском как живой практикующий трейдер, а не как бот/терминал.",
-            "Первая строка — сильный самостоятельный хук и обязательно содержит основной cashtag.",
+            "Первая строка: основной cashtag и конкретный факт из market_event, без пустых вводных и сенсаций.",
             "Используй только числа из semantic_package. Не пересчитывай, не округляй по-своему и не придумывай числа.",
             "Не обязан перечислять показатели. Выбери 1-3 факта, которые лучше всего объясняют, почему событие интересно сейчас.",
             "Не утверждай будущее. Только наблюдение и условные формулировки.",
@@ -296,11 +296,11 @@ def _request_ai_candidates(
             "Не выпрашивай лайки, комментарии, подписки, донаты или чаевые и не упоминай Write to Earn/вознаграждение автора.",
             "Не добавляй хэштеги и эмодзи. Код сам решит, нужен ли один акцент.",
             "Вопрос в конце не обязателен и допустим максимум в одном варианте партии.",
-            f"Длина каждого поста {POST_MIN_CHARS}-{POST_MAX_CHARS} символов.",
+            ("Длина авторской части 150–240 символов; Python добавит полный план." if plan_available else f"Длина каждого поста {POST_MIN_CHARS}-{POST_MAX_CHARS} символов."),
         ],
         "trade_rule": (
-            "optional_trade_plan.available=true: торговый план уже рассчитан Python. В КАЖДОМ кандидате обязательно покажи "
-            "direction, entry/entry_zone, stop_loss и TP1, TP2, TP3. Ничего не меняй и не скрывай; компактный блок в конце приветствуется."
+            "optional_trade_plan.available=true: напиши только наблюдаемые факты и условие сценария. "
+            "НЕ пиши вход, стоп и TP: Python добавит полный план сам. Не утверждай, что план уже исполнен."
             if plan_available else
             "optional_trade_plan.available=false: это observation-only пост. Запрещены LONG/SHORT, вход, стоп и TP. "
             "Не выдумывай сделку ради призыва к торговле."
@@ -360,6 +360,10 @@ def _validate_event_post(
 ) -> Tuple[bool, Tuple[str, ...]]:
     reasons: List[str] = []
     text = str(text or "").strip()
+    from production_guard import final_text_reasons
+    from fact_consistency import fact_consistency_reasons
+    reasons.extend(final_text_reasons(text))
+    reasons.extend(fact_consistency_reasons(text, package))
     lowered = text.lower().replace("ё", "е")
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     first = lines[0] if lines else ""
@@ -439,72 +443,25 @@ def _deterministic_event_candidate(
     format_id: str,
     index: int,
 ) -> str:
+    from factual_copy import market_narrative
+
     ind = mtf.tf_15m
-    ticker = _ticker(basic)
-    move5 = _fmt_pct(micro.change_5m)
-    move15 = _fmt_pct(attention.change_15m)
-    vol5 = _fmt_x(micro.volume_spike_5m)
-    vol15 = _fmt_x(attention.volume_spike)
-    level = _fmt_price(event_decision_level(ind))
-    variant = index % 4
     plan_available = bool(levels and levels.get("plan_valid", False))
-
-    if format_id == "event_price_volume":
-        heads = (
-            f"{ticker}: объём изменился заметнее цены — и именно это сейчас интересно",
-            f"В {ticker} активность выросла, но свеча пока не рассказывает всю историю",
-            f"{ticker}: смотрю не на сам x-объём, а на то, что цена делает рядом с {level}",
-            f"По {ticker} объём заметен, но решение пока больше в поведении цены",
-        )
-        bodies = (
-            f"За 5 минут {move5}, за 15 — {move15}. Объём на коротком участке около {vol5} нормы.\n\nПока слежу за {level}: если активность останется, именно реакция цены там даст больше информации, чем ещё одна цифра объёма.",
-            f"15-минутное изменение {move15}, объём около {vol15} обычного.\n\nДля меня это повод открыть график, а не автоматически открыть позицию. Район {level} сейчас полезнее любого поспешного ярлыка сделки.",
-            f"На 5 минутах {move5}, объём около {vol5} нормы.\n\nЕсли цена продолжит крутиться возле {level} при повышенной активности, там и будет следующий полезный ответ рынка.",
-            f"За 15 минут {move15}, объём около {vol15} нормы.\n\nСобытие есть, но чистой сделки из одного всплеска объёма я не делаю. Смотрю, как поведёт себя {level}.",
-        )
-    elif format_id == "event_one_price":
-        heads = (
-            f"{ticker}: сейчас мне достаточно одной цены — {level}",
-            f"В {ticker} вся короткая история для меня свелась к {level}",
-            f"{ticker} стал активнее; вместо десятка индикаторов смотрю на {level}",
-            f"По {ticker} сейчас важнее не прогноз, а реакция на {level}",
-        )
-        bodies = (
-            f"За 15 минут {move15}, объём около {vol15} нормы.\n\nПока цена рядом, мне интереснее увидеть, изменится ли поведение рынка у этой зоны. Чистой сделки до этого не форсирую.",
-            f"На 5 минутах {move5}, активность около {vol5} обычной.\n\nЭтот уровень сейчас даёт больше контекста, чем попытка угадать следующую свечу. Если рынок уйдёт от него без структуры, просто пропущу.",
-            f"Последние 15 минут дали {move15}.\n\nНе хочу превращать сам факт движения в сигнал. Сначала смотрю, как цена взаимодействует с {level}; дальше уже будет понятно, есть ли вообще что торговать.",
-            f"Короткий импульс: {move15}; объём примерно {vol15} нормы.\n\nПока {level} остаётся рядом с ценой, это моя точка наблюдения. Не обязан торговать каждое заметное движение.",
-        )
-    elif format_id == "event_no_trade":
-        heads = (
-            f"{ticker} привлёк внимание, но чистой сделки здесь пока нет — и это нормально",
-            f"По {ticker} событие есть; торговый план я бы пока не выжимал из него силой",
-            f"{ticker}: активность стала выше, а хороший вход пока не появился",
-            f"В {ticker} сейчас есть что наблюдать, но ещё нечего исполнять",
-        )
-        bodies = (
-            f"За 5 минут {move5}, за 15 — {move15}; объём около {vol15} нормы.\n\nДля меня этого достаточно, чтобы держать тикер на экране, но недостаточно, чтобы выдумывать сделку. Следующая полезная проверка — район {level}.",
-            f"Объём около {vol15} обычного, изменение за 15 минут {move15}.\n\nСейчас ценность скорее в наблюдении: если структура станет чище, вернусь к плану. Пока не заставляю рынок дать мне вход.",
-            f"На коротком участке {move5}, объём около {vol5} нормы.\n\nЭто заметное изменение режима, но не готовый сигнал. Смотрю, сохранится ли активность около {level}.",
-            f"15 минут: {move15}; объём около {vol15} нормы.\n\nСильнее всего здесь мне нравится возможность ничего не делать. Тикер интересный, сделка — пока нет.",
-        )
-    else:
-        heads = (
-            f"{ticker} сменил темп — пока это повод открыть график, а не нажать кнопку",
-            f"В {ticker} появилось движение, которое стоит проверить ещё одной свечой",
-            f"{ticker}: короткая активность выросла, но я пока читаю рынок, а не торгую его",
-            f"По {ticker} сейчас интересен сам переход к более активному режиму",
-        )
-        bodies = (
-            f"За 5 минут {move5}, за 15 — {move15}; объём около {vol15} нормы.\n\nСмотрю, сохранится ли этот темп возле {level}. Если нет — событие быстро потеряет для меня ценность.",
-            f"На 15 минутах {move15}, короткий объём около {vol5} обычного.\n\nПока это наблюдение, а не готовый прогноз. Район {level} покажет больше, чем попытка догнать текущую свечу.",
-            f"Свежие 5 минут дали {move5}, объём около {vol5} нормы.\n\nЕсли импульс быстро погаснет, ничего интересного не останется. Если рынок продолжит активно торговаться у {level}, вернусь к нему внимательнее.",
-            f"Изменение за 15 минут {move15}; объём около {vol15} обычного.\n\nМне важен не сам размер свечи, а то, что активность изменилась прямо сейчас. Слежу за {level} без обязательства входить.",
-        )
-
-    text = heads[variant] + "\n\n" + bodies[variant]
-    if plan_available and levels is not None:
-        text = _enforce_full_plan_block(text, levels, direction, seed=f"event|{format_id}|{index}")
+    text = market_narrative(
+        ticker=_ticker(basic),
+        move5=micro.change_5m if micro else None,
+        move15=attention.change_15m if attention else ind.change_1h / 4.0,
+        volume5=micro.volume_spike_5m if micro else None,
+        volume15=attention.volume_spike if attention else ind.volume_relative,
+        price=ind.price,
+        level=event_decision_level(ind),
+        plan_available=plan_available,
+        direction=direction,
+        decision_mode=str((levels or {}).get("decision_mode", "at_level")),
+        index=index,
+    )
+    if plan_available:
+        text = _enforce_full_plan_block(text, levels, direction, seed=f"facts|{format_id}|{index}")
     return text
 
 
