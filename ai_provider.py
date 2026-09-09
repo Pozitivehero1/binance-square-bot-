@@ -31,6 +31,26 @@ class ProviderResult:
     model: str
 
 
+_scan_deadline = None
+_scan_requests_left = None
+
+
+def start_scan_budget(deadline=None, max_requests=None):
+    """Share a single HTTP budget across providers, retries and candidates."""
+    global _scan_deadline, _scan_requests_left
+    _scan_deadline, _scan_requests_left = deadline, max_requests
+
+
+def _budget_timeout(timeout):
+    global _scan_requests_left
+    remaining = _scan_deadline - time.monotonic() if _scan_deadline is not None else float(timeout)
+    if remaining < 1 or (_scan_requests_left is not None and _scan_requests_left <= 0):
+        raise ValueError("scan AI request/time budget exhausted")
+    if _scan_requests_left is not None:
+        _scan_requests_left -= 1
+    return min(float(timeout), remaining)
+
+
 def _orcarouter_key() -> str:
     return (os.getenv("ORCAROUTER_API_KEY") or os.getenv("ORCA_API_KEY") or "").strip()
 
@@ -183,12 +203,12 @@ def _request(
 ) -> dict:
     check_cooldown(url, key, str(body.get("model", "")))
     headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
-    response = requests.post(url, headers=headers, json=body, timeout=timeout)
+    response = requests.post(url, headers=headers, json=body, timeout=_budget_timeout(timeout))
     if retry_without_response_format and response.status_code == 400 and "response_format" in body:
         logger.info("%s rejected response_format; retrying with plain JSON prompt", provider)
         retry_body = dict(body)
         retry_body.pop("response_format", None)
-        response = requests.post(url, headers=headers, json=retry_body, timeout=timeout)
+        response = requests.post(url, headers=headers, json=retry_body, timeout=_budget_timeout(timeout))
     remember_failure(url, key, str(body.get("model", "")), response)
     response.raise_for_status()
     payload = response.json()

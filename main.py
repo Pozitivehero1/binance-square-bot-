@@ -1081,456 +1081,478 @@ def _run_once() -> int:
         len(ranked), len(strict_symbols), max(0, len(ranked) - len(strict_symbols)), len(broad_scores),
     )
 
-    trade_chosen = (
-        _choose_market_candidate(
-            ranked, strict_symbols, btc, memory, primary_data, market_meta, trending_market
-        )
-        if ranked else None
-    )
-    event_chosen = _choose_event_candidate(
-        candidates, broad_scores, btc, memory, primary_data, market_meta, trending_market
-    )
-
-    if trade_chosen is None and event_chosen is None:
-        logger.info("No TRADE or EVENT candidate passed publication gates")
-        _log_near_misses(candidates)
-        write_status("skipped", "no candidate passed dual-lane market selection")
-        _try_outcome_fallback(memory=memory, guard=guard, recovery_mode=recovery_mode)
-        return 0
-
-    lane = "trade"
-    funding: Optional[float] = None
-    if trade_chosen is not None:
-        (
-            trade_mtf, trade_score, trade_funding, trade_attention, trade_micro,
-            trade_monetization, trade_opportunity, trade_levels, trade_selection_score, trade_adaptive,
-        ) = trade_chosen
-    else:
-        trade_selection_score = float("-inf")
-
-    if event_chosen is not None:
-        (
-            event_mtf, event_score, event_attention, event_micro, event_monetization,
-            event_opportunity, event_levels, event_selection_score, event_adaptive,
-        ) = event_chosen
-    else:
-        event_selection_score = float("-inf")
-
-    # Two consecutive TRADE publications saturate the feed. Prefer a genuinely
-    # eligible EVENT next; never manufacture an event merely for rotation.
-    recent_lanes = memory.get_last_lanes(2)
-    if recent_lanes == ["TRADE", "TRADE"] and event_chosen is not None:
-        event_selection_score += 8.0
-        logger.info("Lane saturation: two recent TRADE posts, EVENT receives +8.0")
-
-    if event_chosen is not None and (
-        trade_chosen is None or event_selection_score >= trade_selection_score + EVENT_LANE_ADVANTAGE
-    ):
-        lane = "event"
-        best_mtf = event_mtf
-        best_score = event_score
-        attention = event_attention
-        micro = event_micro
-        monetization = event_monetization
-        opportunity = event_opportunity
-        levels = event_levels
-        selection_score = event_selection_score
-        adaptive = event_adaptive
-    else:
-        lane = "trade"
-        best_mtf = trade_mtf
-        best_score = trade_score
-        funding = trade_funding
-        attention = trade_attention
-        micro = trade_micro
-        monetization = trade_monetization
-        opportunity = trade_opportunity
-        levels = trade_levels
-        selection_score = trade_selection_score
-        adaptive = trade_adaptive
-
-    symbol = best_mtf.symbol
-    basic = get_base_asset(symbol)
-    indicator = best_mtf.tf_15m
-    if indicator is None:
-        return 1
-    plan_valid = bool(levels.get("plan_valid", False))
-
-    logger.info(
-        "LANE WINNER=%s symbol=%s selection=%.1f trade_best=%s event_best=%s plan=%s",
-        lane.upper(), symbol, selection_score,
-        f"{trade_selection_score:.1f}" if trade_chosen is not None else "n/a",
-        f"{event_selection_score:.1f}" if event_chosen is not None else "n/a",
-        "valid" if plan_valid else "observation_only",
-    )
-
-    if plan_valid:
-        logger.info("PUBLIC PLAN %s", plan_summary(levels))
-    else:
-        logger.info(
-            "EVENT OBSERVATION %s: no clean public trade plan; writer may not invent entry/SL/TP",
-            symbol,
-        )
-
-    logger.info(
-        "BEST %s lane=%s tech=%.1f attention=%.1f micro=%.1f/%s demand=%.1f w2e=%.1f opportunity=%.1f adaptive=%+.1f "
-        "directional_bias=%s 5m=%+.2f%% 15m=%+.2f%% vol15=x%.2f vol5=x%.2f funding=%s",
-        symbol, lane, best_score.total, attention.score, micro.score, micro.phase,
-        opportunity.audience_demand, monetization.score, opportunity.score, adaptive.total, best_score.direction,
-        micro.change_5m, attention.change_15m, attention.volume_spike, micro.volume_spike_5m,
-        f"{funding * 100:.4f}%" if funding is not None else "n/a",
-    )
-
-    if lane == "event":
-        generated = _best_event_post_variant(
-            basic=basic,
-            mtf=best_mtf,
-            score=best_score,
-            levels=levels,
-            memory=memory,
-            btc=btc,
-            attention=attention,
-            micro=micro,
-            opportunity=opportunity,
-            monetization=monetization,
-        )
-    else:
-        generated = _best_post_variant(
-            symbol=symbol,
-            basic=basic,
-            mtf=best_mtf,
-            score=best_score,
-            levels=levels,
-            memory=memory,
-            btc=btc,
-            attention=attention,
-            micro=micro,
-            opportunity=opportunity,
-            monetization=monetization,
-        )
-
-    if generated is None:
-        logger.info("No publication-quality %s post was generated", lane)
-        write_status("skipped", "no publication-quality draft", symbol=symbol, lane=lane)
-        _try_outcome_fallback(memory=memory, guard=guard, recovery_mode=recovery_mode)
-        return 0
-    selected_post, quality_report = generated
-    # Store and fingerprint the same normalized text actually sent to Square.
-    post_text, final_reasons = _prepare_text_for_square(selected_post.text)
-    if final_reasons:
-        logger.warning("Final text rejected: %s", "; ".join(final_reasons))
-        write_status("skipped", "final text integrity failed", symbol=symbol, reasons=list(final_reasons))
-        return 0
-    logger.info(
-        "Selected post quality: %.1f | source=%s | format=%s | visual=%s | signal=%s",
-        quality_report.score,
-        selected_post.source,
-        selected_post.content_format,
-        selected_post.visual_style,
-        selected_post.signal_type,
-    )
-    logger.debug("Post preview:\n%s", post_text)
-
-    # Final pre-publication safety contract. Writers already enforce this, but the
-    # orchestrator independently blocks any valid-plan post that loses Entry/SL/TP1-3.
-    if plan_valid:
-        public_ok, public_reasons = validate_public_plan_text(post_text, levels, best_score.direction)
-        if not public_ok:
-            logger.error(
-                "HARD BLOCK %s: valid plan is not fully public in text (%s)",
-                symbol, "; ".join(public_reasons),
-            )
-            write_status(
-                "skipped", "full public trade plan contract failed",
-                symbol=symbol, lane=lane, reasons=list(public_reasons),
-            )
-            _try_outcome_fallback(memory=memory, guard=guard, recovery_mode=recovery_mode)
+    from publication_intent import unresolved_symbols
+    from ai_provider import start_scan_budget
+    scan_budget = max(60, int(os.getenv("MAX_SCAN_AGE_SECONDS", "300")))
+    start_scan_budget(scan_started + scan_budget, max_requests=8)
+    pending = unresolved_symbols()
+    attempted = {row.symbol for row in candidates if get_base_asset(row.symbol).upper() in pending}
+    for attempt in range(3):
+        if time.monotonic() - scan_started >= scan_budget:
+            write_status("skipped", "candidate search time budget exhausted")
             return 0
-        logger.info(
-            "PUBLIC TEXT CONTRACT PASS %s: direction + entry + SL + TP1/TP2/TP3 are explicit", symbol
+        logger.info("Publication candidate attempt %s/3", attempt + 1)
+        trade_chosen = (
+            _choose_market_candidate(
+                [row for row in ranked if row[0].symbol not in attempted], strict_symbols, btc, memory, primary_data, market_meta, trending_market
+            )
+            if ranked else None
+        )
+        event_chosen = _choose_event_candidate(
+            [row for row in candidates if row.symbol not in attempted], broad_scores, btc, memory, primary_data, market_meta, trending_market
         )
 
-    reach = guard.evaluate_candidate(
-        market_score=opportunity.score,
-        quality_score=quality_report.score,
-        volume_relative=max(indicator.volume_relative, attention.volume_spike),
-        change_1h=max(abs(indicator.change_1h), abs(attention.change_15m) * 2.0),
-    )
-    logger.info("Distribution gate: %s", reach.reason)
-    if not DRY_RUN and not reach.allowed:
-        write_status(
-            "skipped",
-            reach.reason,
-            symbol=symbol,
-            lane=lane,
-            reach_score=reach.score,
+        if trade_chosen is None and event_chosen is None:
+            logger.info("No TRADE or EVENT candidate passed publication gates")
+            _log_near_misses(candidates)
+            write_status("skipped", "no candidate passed dual-lane market selection")
+            break
+
+        lane = "trade"
+        funding: Optional[float] = None
+        if trade_chosen is not None:
+            (
+                trade_mtf, trade_score, trade_funding, trade_attention, trade_micro,
+                trade_monetization, trade_opportunity, trade_levels, trade_selection_score, trade_adaptive,
+            ) = trade_chosen
+        else:
+            trade_selection_score = float("-inf")
+
+        if event_chosen is not None:
+            (
+                event_mtf, event_score, event_attention, event_micro, event_monetization,
+                event_opportunity, event_levels, event_selection_score, event_adaptive,
+            ) = event_chosen
+        else:
+            event_selection_score = float("-inf")
+
+        # Two consecutive TRADE publications saturate the feed. Prefer a genuinely
+        # eligible EVENT next; never manufacture an event merely for rotation.
+        recent_lanes = memory.get_last_lanes(2)
+        if recent_lanes == ["TRADE", "TRADE"] and event_chosen is not None:
+            event_selection_score += 8.0
+            logger.info("Lane saturation: two recent TRADE posts, EVENT receives +8.0")
+
+        if event_chosen is not None and (
+            trade_chosen is None or event_selection_score >= trade_selection_score + EVENT_LANE_ADVANTAGE
+        ):
+            lane = "event"
+            best_mtf = event_mtf
+            best_score = event_score
+            attention = event_attention
+            micro = event_micro
+            monetization = event_monetization
+            opportunity = event_opportunity
+            levels = event_levels
+            selection_score = event_selection_score
+            adaptive = event_adaptive
+        else:
+            lane = "trade"
+            best_mtf = trade_mtf
+            best_score = trade_score
+            funding = trade_funding
+            attention = trade_attention
+            micro = trade_micro
+            monetization = trade_monetization
+            opportunity = trade_opportunity
+            levels = trade_levels
+            selection_score = trade_selection_score
+            adaptive = trade_adaptive
+
+        symbol = best_mtf.symbol
+        attempted.add(symbol)
+        basic = get_base_asset(symbol)
+        indicator = best_mtf.tf_15m
+        if indicator is None:
+            continue
+        plan_valid = bool(levels.get("plan_valid", False))
+
+        logger.info(
+            "LANE WINNER=%s symbol=%s selection=%.1f trade_best=%s event_best=%s plan=%s",
+            lane.upper(), symbol, selection_score,
+            f"{trade_selection_score:.1f}" if trade_chosen is not None else "n/a",
+            f"{event_selection_score:.1f}" if event_chosen is not None else "n/a",
+            "valid" if plan_valid else "observation_only",
+        )
+
+        if plan_valid:
+            logger.info("PUBLIC PLAN %s", plan_summary(levels))
+        else:
+            logger.info(
+                "EVENT OBSERVATION %s: no clean public trade plan; writer may not invent entry/SL/TP",
+                symbol,
+            )
+
+        logger.info(
+            "BEST %s lane=%s tech=%.1f attention=%.1f micro=%.1f/%s demand=%.1f w2e=%.1f opportunity=%.1f adaptive=%+.1f "
+            "directional_bias=%s 5m=%+.2f%% 15m=%+.2f%% vol15=x%.2f vol5=x%.2f funding=%s",
+            symbol, lane, best_score.total, attention.score, micro.score, micro.phase,
+            opportunity.audience_demand, monetization.score, opportunity.score, adaptive.total, best_score.direction,
+            micro.change_5m, attention.change_15m, attention.volume_spike, micro.volume_spike_5m,
+            f"{funding * 100:.4f}%" if funding is not None else "n/a",
+        )
+
+        if lane == "event":
+            generated = _best_event_post_variant(
+                basic=basic,
+                mtf=best_mtf,
+                score=best_score,
+                levels=levels,
+                memory=memory,
+                btc=btc,
+                attention=attention,
+                micro=micro,
+                opportunity=opportunity,
+                monetization=monetization,
+            )
+        else:
+            generated = _best_post_variant(
+                symbol=symbol,
+                basic=basic,
+                mtf=best_mtf,
+                score=best_score,
+                levels=levels,
+                memory=memory,
+                btc=btc,
+                attention=attention,
+                micro=micro,
+                opportunity=opportunity,
+                monetization=monetization,
+            )
+
+        if generated is None:
+            logger.info("No publication-quality %s post was generated", lane)
+            write_status("skipped", "no publication-quality draft", symbol=symbol, lane=lane)
+            continue
+        selected_post, quality_report = generated
+        # Store and fingerprint the same normalized text actually sent to Square.
+        post_text, final_reasons = _prepare_text_for_square(selected_post.text)
+        if final_reasons:
+            logger.warning("Final text rejected: %s", "; ".join(final_reasons))
+            write_status("skipped", "final text integrity failed", symbol=symbol, reasons=list(final_reasons))
+            continue
+        logger.info(
+            "Selected post quality: %.1f | source=%s | format=%s | visual=%s | signal=%s",
+            quality_report.score,
+            selected_post.source,
+            selected_post.content_format,
+            selected_post.visual_style,
+            selected_post.signal_type,
+        )
+        logger.debug("Post preview:\n%s", post_text)
+
+        # Final pre-publication safety contract. Writers already enforce this, but the
+        # orchestrator independently blocks any valid-plan post that loses Entry/SL/TP1-3.
+        if plan_valid:
+            public_ok, public_reasons = validate_public_plan_text(post_text, levels, best_score.direction)
+            if not public_ok:
+                logger.error(
+                    "HARD BLOCK %s: valid plan is not fully public in text (%s)",
+                    symbol, "; ".join(public_reasons),
+                )
+                write_status(
+                    "skipped", "full public trade plan contract failed",
+                    symbol=symbol, lane=lane, reasons=list(public_reasons),
+                )
+                continue
+            logger.info(
+                "PUBLIC TEXT CONTRACT PASS %s: direction + entry + SL + TP1/TP2/TP3 are explicit", symbol
+            )
+
+        reach = guard.evaluate_candidate(
             market_score=opportunity.score,
             quality_score=quality_report.score,
+            volume_relative=max(indicator.volume_relative, attention.volume_spike),
+            change_1h=max(abs(indicator.change_1h), abs(attention.change_15m) * 2.0),
         )
-        _try_outcome_fallback(memory=memory, guard=guard, recovery_mode=recovery_mode)
-        return 0
-
-    logger.info(
-        "Reach recovery mode=%s rolling24h=%.0f baseline=%.0f",
-        recovery_mode, rolling_reach, reach_baseline,
-    )
-
-    from recovery_guard import evaluate_recovery_candidate
-    recovery = evaluate_recovery_candidate(
-        lane=lane,
-        writer_source=selected_post.source,
-        event_class=opportunity.event_class,
-        micro_phase=micro.phase,
-        opportunity_score=opportunity.score,
-        audience_demand=opportunity.audience_demand,
-        attention_score=attention.score,
-        micro_score=micro.score,
-        monetization_score=monetization.score,
-        selection_score=selection_score,
-        reach_score=reach.score,
-        plan_valid=plan_valid,
-        recovery_mode=recovery_mode,
-        hour_affinity=adaptive.hour_affinity,
-        hour_samples=adaptive.hour_samples,
-    )
-    logger.info("v11.6 recovery gate: %s", recovery.reason)
-    if not DRY_RUN and not recovery.allowed:
-        write_status(
-            "skipped", "v11.6 recovery gate: " + recovery.reason,
-            symbol=symbol, lane=lane, recovery_mode=recovery_mode,
-            rolling_reach=rolling_reach, reach_baseline=reach_baseline,
-            reach_score=reach.score, selection_score=selection_score,
-        )
-        _try_outcome_fallback(memory=memory, guard=guard, recovery_mode=recovery_mode)
-        return 0
-
-    card_path: Optional[str] = None
-    chart_path: Optional[str] = None
-    images: List[str] = []
-    try:
-        if PUBLISH_IMAGES:
-            card_visuals = {
-                "headline_card", "split_scenario", "risk_card", "journal_card",
-                "indicator_card", "data_card", "followup_card", "pulse_card",
-            }
-            if PUBLISH_MEDIA_MODE == "adaptive":
-                human_chart_formats = {
-                    "hot_reaction", "one_problem", "crowd_trap", "chart_story",
-                    "why_wait", "level_story", "contrarian_take", "mistake_to_avoid",
-                    "signal_vs_trade", "two_scenarios", "liquidity_map", "trader_journal",
-                }
-                if selected_post.content_format in human_chart_formats:
-                    effective_media = "chart"
-                else:
-                    effective_media = "card" if selected_post.visual_style in card_visuals else "chart"
-            else:
-                effective_media = PUBLISH_MEDIA_MODE
-
-            # Observation-only events never show fake TP/SL cards.
-            if lane == "event" and not plan_valid:
-                effective_media = "chart"
-
-            if effective_media in {"card", "both"} and plan_valid:
-                try:
-                    card_path = generate_card(
-                        basic=basic,
-                        direction=best_score.direction,
-                        entry=levels.get("plan_entry", levels["entry"]),
-                        tp1=levels["tp1"],
-                        tp2=levels["tp2"],
-                        tp3=levels["tp3"],
-                        stop=levels["stop"],
-                        rr=levels.get("public_rr", levels["risk_reward"]),
-                        confidence=best_score.total,
-                        change_1h=indicator.change_1h,
-                        post_style=selected_post.style_id,
-                        signal_label=selected_post.angle_title,
-                        content_format=selected_post.content_format,
-                        visual_style=selected_post.visual_style,
-                        headline=selected_post.headline,
-                        rsi=indicator.rsi,
-                        adx=indicator.adx,
-                        volume_relative=indicator.volume_relative,
-                        change_15m=attention.change_15m,
-                        fresh_volume=attention.volume_spike,
-                        attention_score=attention.score,
-                    )
-                except Exception as exc:
-                    logger.warning("Card generation failed: %s", exc)
-
-            if effective_media in {"chart", "both"}:
-                raw_15m = primary_data.get(symbol, {}).get("15m")
-                if raw_15m is None:
-                    raw_15m = get_data(symbol, interval="15m", limit=KLINE_LIMIT)
-                try:
-                    chart_path = generate_chart(
-                        symbol,
-                        raw_15m,
-                        basic,
-                        entry=levels.get("plan_entry") if plan_valid else None,
-                        entry_zone_low=levels.get("entry_zone_low") if plan_valid else None,
-                        entry_zone_high=levels.get("entry_zone_high") if plan_valid else None,
-                        tp1=levels.get("tp1") if plan_valid else None,
-                        tp2=levels.get("tp2") if plan_valid else None,
-                        tp3=levels.get("tp3") if plan_valid else None,
-                        stop=levels.get("stop") if plan_valid else None,
-                        direction=best_score.direction,
-                        support=indicator.support,
-                        resistance=indicator.resistance,
-                        decision_level=(
-                            levels.get("decision") if plan_valid else event_decision_level(indicator)
-                        ),
-                        decision_mode=str(levels.get("decision_mode", "at_level")) if plan_valid else "at_level",
-                        vol_rel=attention.volume_spike,
-                        indicator=indicator,
-                        visual_style=selected_post.visual_style,
-                        headline=selected_post.headline,
-                        signal_label=selected_post.angle_title,
-                    )
-                except Exception as exc:
-                    logger.warning("Chart generation failed: %s", exc)
-
-            # Adaptive mode publishes one strong thumbnail. "both" remains available
-            # for users who explicitly want the card and the chart together.
-            images = [path for path in (card_path, chart_path) if path and os.path.isfile(path)]
-
-        if DRY_RUN:
-            logger.info("DRY_RUN enabled; publication skipped")
+        logger.info("Distribution gate: %s", reach.reason)
+        if not DRY_RUN and not reach.allowed:
             write_status(
-                "dry_run",
-                "post generated but not published",
+                "skipped",
+                reach.reason,
                 symbol=symbol,
                 lane=lane,
+                reach_score=reach.score,
+                market_score=opportunity.score,
+                quality_score=quality_report.score,
+            )
+            continue
+
+        logger.info(
+            "Reach recovery mode=%s rolling24h=%.0f baseline=%.0f",
+            recovery_mode, rolling_reach, reach_baseline,
+        )
+
+        from recovery_guard import evaluate_recovery_candidate
+        recovery = evaluate_recovery_candidate(
+            lane=lane,
+            writer_source=selected_post.source,
+            event_class=opportunity.event_class,
+            micro_phase=micro.phase,
+            opportunity_score=opportunity.score,
+            audience_demand=opportunity.audience_demand,
+            attention_score=attention.score,
+            micro_score=micro.score,
+            monetization_score=monetization.score,
+            selection_score=selection_score,
+            reach_score=reach.score,
+            plan_valid=plan_valid,
+            recovery_mode=recovery_mode,
+            hour_affinity=adaptive.hour_affinity,
+            hour_samples=adaptive.hour_samples,
+        )
+        logger.info("v11.6 recovery gate: %s", recovery.reason)
+        if not DRY_RUN and not recovery.allowed:
+            write_status(
+                "skipped", "v11.6 recovery gate: " + recovery.reason,
+                symbol=symbol, lane=lane, recovery_mode=recovery_mode,
+                rolling_reach=rolling_reach, reach_baseline=reach_baseline,
+                reach_score=reach.score, selection_score=selection_score,
+            )
+            continue
+
+        card_path: Optional[str] = None
+        chart_path: Optional[str] = None
+        images: List[str] = []
+        try:
+            if PUBLISH_IMAGES:
+                card_visuals = {
+                    "headline_card", "split_scenario", "risk_card", "journal_card",
+                    "indicator_card", "data_card", "followup_card", "pulse_card",
+                }
+                if PUBLISH_MEDIA_MODE == "adaptive":
+                    human_chart_formats = {
+                        "hot_reaction", "one_problem", "crowd_trap", "chart_story",
+                        "why_wait", "level_story", "contrarian_take", "mistake_to_avoid",
+                        "signal_vs_trade", "two_scenarios", "liquidity_map", "trader_journal",
+                    }
+                    if selected_post.content_format in human_chart_formats:
+                        effective_media = "chart"
+                    else:
+                        effective_media = "card" if selected_post.visual_style in card_visuals else "chart"
+                else:
+                    effective_media = PUBLISH_MEDIA_MODE
+
+                # Observation-only events never show fake TP/SL cards.
+                if lane == "event" and not plan_valid:
+                    effective_media = "chart"
+
+                if effective_media in {"card", "both"} and plan_valid:
+                    try:
+                        card_path = generate_card(
+                            basic=basic,
+                            direction=best_score.direction,
+                            entry=levels.get("plan_entry", levels["entry"]),
+                            tp1=levels["tp1"],
+                            tp2=levels["tp2"],
+                            tp3=levels["tp3"],
+                            stop=levels["stop"],
+                            rr=levels.get("public_rr", levels["risk_reward"]),
+                            confidence=best_score.total,
+                            change_1h=indicator.change_1h,
+                            post_style=selected_post.style_id,
+                            signal_label=selected_post.angle_title,
+                            content_format=selected_post.content_format,
+                            visual_style=selected_post.visual_style,
+                            headline=selected_post.headline,
+                            rsi=indicator.rsi,
+                            adx=indicator.adx,
+                            volume_relative=indicator.volume_relative,
+                            change_15m=attention.change_15m,
+                            fresh_volume=attention.volume_spike,
+                            attention_score=attention.score,
+                        )
+                    except Exception as exc:
+                        logger.warning("Card generation failed: %s", exc)
+
+                if effective_media in {"chart", "both"}:
+                    raw_15m = primary_data.get(symbol, {}).get("15m")
+                    if raw_15m is None:
+                        raw_15m = get_data(symbol, interval="15m", limit=KLINE_LIMIT)
+                    try:
+                        chart_path = generate_chart(
+                            symbol,
+                            raw_15m,
+                            basic,
+                            entry=levels.get("plan_entry") if plan_valid else None,
+                            entry_zone_low=levels.get("entry_zone_low") if plan_valid else None,
+                            entry_zone_high=levels.get("entry_zone_high") if plan_valid else None,
+                            tp1=levels.get("tp1") if plan_valid else None,
+                            tp2=levels.get("tp2") if plan_valid else None,
+                            tp3=levels.get("tp3") if plan_valid else None,
+                            stop=levels.get("stop") if plan_valid else None,
+                            direction=best_score.direction,
+                            support=indicator.support,
+                            resistance=indicator.resistance,
+                            decision_level=(
+                                levels.get("decision") if plan_valid else event_decision_level(indicator)
+                            ),
+                            decision_mode=str(levels.get("decision_mode", "at_level")) if plan_valid else "at_level",
+                            vol_rel=attention.volume_spike,
+                            indicator=indicator,
+                            visual_style=selected_post.visual_style,
+                            headline=selected_post.headline,
+                            signal_label=selected_post.angle_title,
+                        )
+                    except Exception as exc:
+                        logger.warning("Chart generation failed: %s", exc)
+
+                # Adaptive mode publishes one strong thumbnail. "both" remains available
+                # for users who explicitly want the card and the chart together.
+                images = [path for path in (card_path, chart_path) if path and os.path.isfile(path)]
+
+            if DRY_RUN:
+                logger.info("DRY_RUN enabled; publication skipped")
+                write_status(
+                    "dry_run",
+                    "post generated but not published",
+                    symbol=symbol,
+                    lane=lane,
+                    reach_score=reach.score,
+                    quality_score=quality_report.score,
+                    w2e_market_score=monetization.score,
+                    opportunity_score=opportunity.score,
+                    micro_freshness=micro.score,
+                    audience_demand=opportunity.audience_demand,
+                    public_rr=levels.get("public_rr"),
+                    decision_mode=levels.get("decision_mode"),
+                )
+                print(post_text)
+                return 0
+
+            age = time.monotonic() - scan_started
+            if age > max(60, int(os.getenv("MAX_SCAN_AGE_SECONDS", "300"))):
+                logger.warning("Discarding draft after %.0fs: market snapshot expired", age)
+                write_status("skipped", "market snapshot expired during generation", symbol=symbol, age_seconds=round(age))
+                return 0
+            if plan_valid:
+                from publication_preflight import check_live_plan
+                fresh, reason = check_live_plan(symbol, best_score.direction, levels, indicator.price)
+                if not fresh:
+                    logger.info("Live price rejected %s: %s", symbol, reason)
+                    write_status("skipped", reason, symbol=symbol, lane=lane)
+                    continue
+            if time.monotonic() - scan_started > scan_budget:
+                write_status("skipped", "market snapshot expired during live quote check", symbol=symbol)
+                return 0
+            published = publish(post_text, image_path=images if images else None)
+            if not published:
+                logger.error("Publication failed")
+                write_status("failed", "publisher did not confirm publication", symbol=symbol, lane=lane)
+                return 2
+
+            try:
+                record_publication(
+                    post_id=published.post_id,
+                    symbol=basic,
+                    market_symbol=symbol,
+                    text=post_text,
+                    lane=lane,
+                    direction=best_score.direction if plan_valid else "observation",
+                    content_format=selected_post.content_format,
+                    visual_style=selected_post.visual_style,
+                    event_class=opportunity.event_class,
+                    writer_source=selected_post.source,
+                    signal_type=selected_post.signal_type,
+                    opportunity_score=opportunity.score,
+                    audience_demand=opportunity.audience_demand,
+                    attention_score=attention.score,
+                    micro_freshness=micro.score,
+                    w2e_market_score=monetization.score,
+                    change_5m=micro.change_5m,
+                    change_15m=attention.change_15m,
+                    volume_5m=micro.volume_spike_5m,
+                    volume_15m=attention.volume_spike,
+                    public_rr=levels.get("public_rr") if plan_valid else None,
+                    decision_mode=str(levels.get("decision_mode", "")) if plan_valid else "observation",
+                    adaptive_total=adaptive.total,
+                    ticker_affinity=adaptive.ticker_affinity,
+                    hour_affinity=adaptive.hour_affinity,
+                    lane_affinity=adaptive.lane_affinity,
+                    adaptive_reason=adaptive.reason,
+                    w2e_proxy_score=monetization.score,
+                )
+            except Exception as exc:
+                logger.warning("Could not record publication analytics metadata: %s", exc)
+
+            # v11.1 Outcome Engine tracks only exact post_id-bound plans whose full
+            # Entry/SL/TP1/TP2/TP3 ladder is explicit in the published text. Media never
+            # substitutes for missing text, and no historical backfill is attempted.
+            if plan_valid:
+                try:
+                    tracked = record_trade_setup(
+                        post_id=published.post_id,
+                        symbol=basic,
+                        market_symbol=symbol,
+                        direction=best_score.direction,
+                        lane=lane,
+                        text=post_text,
+                        levels=levels,
+                        writer_source=selected_post.source,
+                    )
+                    if tracked is None:
+                        logger.error(
+                            "Outcome tracking refused for published post %s; publication remains valid but no follow-up will be generated",
+                            published.post_id,
+                        )
+                except Exception as exc:
+                    logger.warning("Could not record trade setup for Outcome Engine: %s", exc)
+
+            add_published(symbol)
+            memory.add_post(
+                symbol,
+                post_text,
+                post_style=selected_post.style_id,
+                signal_type=selected_post.signal_type,
+                content_format=selected_post.content_format,
+                visual_style=selected_post.visual_style,
+                direction=best_score.direction if plan_valid else "",
+                lane=lane,
+                levels=levels if plan_valid else {},
+                market_price=indicator.price,
+            )
+            guard.record_success(
+                symbol=symbol,
+                direction=best_score.direction if plan_valid else "observation",
+                content_format=selected_post.content_format,
+                visual_style=selected_post.visual_style,
+                market_score=opportunity.score,
+                quality_score=quality_report.score,
+                reach_score=float(reach.score or 0.0),
+                post_id=published.post_id,
+            )
+            write_status(
+                "published",
+                "publication completed",
+                symbol=symbol,
+                lane=lane,
+                direction=best_score.direction if plan_valid else "observation",
+                post_id=published.post_id,
                 reach_score=reach.score,
                 quality_score=quality_report.score,
                 w2e_market_score=monetization.score,
                 opportunity_score=opportunity.score,
-                micro_freshness=micro.score,
-                audience_demand=opportunity.audience_demand,
-                public_rr=levels.get("public_rr"),
-                decision_mode=levels.get("decision_mode"),
-            )
-            print(post_text)
-            return 0
-
-        age = time.monotonic() - scan_started
-        if age > max(60, int(os.getenv("MAX_SCAN_AGE_SECONDS", "300"))):
-            logger.warning("Discarding draft after %.0fs: market snapshot expired", age)
-            write_status("skipped", "market snapshot expired during generation", symbol=symbol, age_seconds=round(age))
-            return 0
-        published = publish(post_text, image_path=images if images else None)
-        if not published:
-            logger.error("Publication failed")
-            write_status("failed", "publisher did not confirm publication", symbol=symbol, lane=lane)
-            return 2
-
-        try:
-            record_publication(
-                post_id=published.post_id,
-                symbol=basic,
-                market_symbol=symbol,
-                text=post_text,
-                lane=lane,
-                direction=best_score.direction if plan_valid else "observation",
-                content_format=selected_post.content_format,
-                visual_style=selected_post.visual_style,
-                event_class=opportunity.event_class,
-                writer_source=selected_post.source,
-                signal_type=selected_post.signal_type,
-                opportunity_score=opportunity.score,
-                audience_demand=opportunity.audience_demand,
-                attention_score=attention.score,
-                micro_freshness=micro.score,
-                w2e_market_score=monetization.score,
-                change_5m=micro.change_5m,
-                change_15m=attention.change_15m,
-                volume_5m=micro.volume_spike_5m,
-                volume_15m=attention.volume_spike,
-                public_rr=levels.get("public_rr") if plan_valid else None,
-                decision_mode=str(levels.get("decision_mode", "")) if plan_valid else "observation",
                 adaptive_total=adaptive.total,
                 ticker_affinity=adaptive.ticker_affinity,
                 hour_affinity=adaptive.hour_affinity,
-                lane_affinity=adaptive.lane_affinity,
-                adaptive_reason=adaptive.reason,
-                w2e_proxy_score=monetization.score,
+                audience_demand=opportunity.audience_demand,
+                event_class=opportunity.event_class,
+                micro_freshness=micro.score,
+                writer_source=selected_post.source,
+                content_format=selected_post.content_format,
+                visual_style=selected_post.visual_style,
+                public_rr=levels.get("public_rr"),
+                decision_mode=levels.get("decision_mode"),
             )
-        except Exception as exc:
-            logger.warning("Could not record publication analytics metadata: %s", exc)
+            logger.info("Published %s successfully (post_id=%s)", symbol, published.post_id or "n/a")
+            return 0
+        finally:
+            _cleanup_files((card_path, chart_path))
 
-        # v11.1 Outcome Engine tracks only exact post_id-bound plans whose full
-        # Entry/SL/TP1/TP2/TP3 ladder is explicit in the published text. Media never
-        # substitutes for missing text, and no historical backfill is attempted.
-        if plan_valid:
-            try:
-                tracked = record_trade_setup(
-                    post_id=published.post_id,
-                    symbol=basic,
-                    market_symbol=symbol,
-                    direction=best_score.direction,
-                    lane=lane,
-                    text=post_text,
-                    levels=levels,
-                    writer_source=selected_post.source,
-                )
-                if tracked is None:
-                    logger.error(
-                        "Outcome tracking refused for published post %s; publication remains valid but no follow-up will be generated",
-                        published.post_id,
-                    )
-            except Exception as exc:
-                logger.warning("Could not record trade setup for Outcome Engine: %s", exc)
-
-        add_published(symbol)
-        memory.add_post(
-            symbol,
-            post_text,
-            post_style=selected_post.style_id,
-            signal_type=selected_post.signal_type,
-            content_format=selected_post.content_format,
-            visual_style=selected_post.visual_style,
-            direction=best_score.direction if plan_valid else "",
-            lane=lane,
-            levels=levels if plan_valid else {},
-            market_price=indicator.price,
-        )
-        guard.record_success(
-            symbol=symbol,
-            direction=best_score.direction if plan_valid else "observation",
-            content_format=selected_post.content_format,
-            visual_style=selected_post.visual_style,
-            market_score=opportunity.score,
-            quality_score=quality_report.score,
-            reach_score=float(reach.score or 0.0),
-            post_id=published.post_id,
-        )
-        write_status(
-            "published",
-            "publication completed",
-            symbol=symbol,
-            lane=lane,
-            direction=best_score.direction if plan_valid else "observation",
-            post_id=published.post_id,
-            reach_score=reach.score,
-            quality_score=quality_report.score,
-            w2e_market_score=monetization.score,
-            opportunity_score=opportunity.score,
-            adaptive_total=adaptive.total,
-            ticker_affinity=adaptive.ticker_affinity,
-            hour_affinity=adaptive.hour_affinity,
-            audience_demand=opportunity.audience_demand,
-            event_class=opportunity.event_class,
-            micro_freshness=micro.score,
-            writer_source=selected_post.source,
-            content_format=selected_post.content_format,
-            visual_style=selected_post.visual_style,
-            public_rr=levels.get("public_rr"),
-            decision_mode=levels.get("decision_mode"),
-        )
-        logger.info("Published %s successfully (post_id=%s)", symbol, published.post_id or "n/a")
-        return 0
-    finally:
-        _cleanup_files((card_path, chart_path))
+    write_status("skipped", "candidate pool or three-attempt budget exhausted")
+    if time.monotonic() - scan_started < scan_budget:
+        _try_outcome_fallback(memory=memory, guard=guard, recovery_mode=recovery_mode)
+    return 0
 
 
 def main() -> int:

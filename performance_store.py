@@ -270,6 +270,14 @@ def _capture_milestones(item: dict, now: datetime, stats: dict) -> None:
                 **stats,
             }
 
+    # Separate, tighter measurements for content comparisons. Existing adaptive
+    # learning milestones keep their historical semantics.
+    from content_metrics import WINDOWS
+    comparable = item.setdefault("content_milestones", {})
+    for label, (low, high) in WINDOWS.items():
+        if label not in comparable and low <= age_min <= high:
+            comparable[label] = {"captured_at": now.isoformat(), "age_minutes": round(age_min, 1), **stats}
+
 
 def merge_public_stats(rows: Iterable[PublicPostStats], profile_uid: str = "") -> dict:
     store = load_store()

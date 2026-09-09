@@ -158,6 +158,8 @@ def build_dashboard_payload() -> dict:
             }
         )
 
+    from content_metrics import build_content_metrics
+    content_metrics = build_content_metrics(store, now)
     learning = build_learning_summary(store)
     outcomes = summarize_journal()
     mature_med = float(median(mature_views)) if mature_views else 0.0
@@ -179,6 +181,7 @@ def build_dashboard_payload() -> dict:
             "learning_only": learning.get("learning_only", True),
             "timezone": "UTC+3",
         },
+        "content_metrics": content_metrics,
         "overview": overview,
         "learning": learning,
         "outcomes": outcomes,
@@ -227,6 +230,7 @@ def build_summary_payload(payload: dict) -> dict:
             "source": "dashboard/data.json",
             "note": "Compact analytics snapshot for external readers; the web dashboard still uses data.json.",
         },
+        "content_metrics": payload.get("content_metrics", {}),
         "overview": overview,
         "recent_posts": [
             compact

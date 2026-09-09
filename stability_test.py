@@ -31,7 +31,7 @@ class StabilityTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
-        self.env = patch.dict(os.environ, {"PROVIDER_HEALTH_FILE": self.directory.name + "/health.json"})
+        self.env = patch.dict(os.environ, {"PROVIDER_HEALTH_FILE": self.directory.name + "/health.json", "PUBLICATION_INTENT_FILE": self.directory.name + "/intents.json", "SQUARE_PROFILE_UID": ""})
         self.env.start()
         self.addCleanup(self.env.stop)
 
@@ -89,6 +89,7 @@ class StabilityTests(unittest.TestCase):
                                  ("Success!\nID: unavailable\nLink: unavailable", False),
                                  ("Success!\nID: 123456789\nLink: https://www.binance.com/square/post/123456789", True),
                                  ("Success! Content ID: 123456789", True)):
+            Path(os.environ["PUBLICATION_INTENT_FILE"]).unlink(missing_ok=True)
             with self.subTest(stdout=stdout), patch("publisher.find_skill_dir", return_value=str(root)), \
                     patch.dict(os.environ, {"SQUARE_API": "fake"}), \
                     patch("publisher.subprocess.run", return_value=Mock(stdout=stdout, stderr="", returncode=0)):
