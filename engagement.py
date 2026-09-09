@@ -46,12 +46,16 @@ class FeedAppealEvaluator:
     )
 
     def report(self, text: str) -> FeedAppealReport:
+        from production_guard import strip_embedded_trade_plan
+        narrative = strip_embedded_trade_plan(text)
         first = next((x.strip() for x in text.splitlines() if x.strip()), "")
         lowered = text.lower().replace("ё", "е")
         first_lower = first.lower().replace("ё", "е")
-        words = re.findall(r"[a-zа-я0-9$%./+\-]+", lowered)
+        words = re.findall(r"[a-zа-я0-9$%./+\-]+", narrative.lower())
         word_count = max(1, len(words))
-        numbers = re.findall(r"(?<!\w)[+-]?\d+(?:[.,]\d+)?%?", text)
+        # The mandatory Entry/SL/TP ladder is not editorial clutter. Counting
+        # it here penalized concise factual posts and rewarded filler padding.
+        numbers = re.findall(r"(?<!\w)[+-]?\d+(?:[.,]\d+)?%?", narrative)
         paragraphs = [x.strip() for x in text.split("\n\n") if x.strip()]
 
         hook = 44.0
@@ -74,6 +78,8 @@ class FeedAppealEvaluator:
         if any(marker in lowered for marker in self.ROBOTIC_LABELS):
             human -= 28.0
         human = max(0.0, min(100.0, human))
+        if re.search(r"\d+(?:[.,]\d+)?%", narrative) and re.search(r"(?iu)объ[её]м|уровн", narrative):
+            human = max(human, 72.0)
 
         clarity = 100.0
         numeric_ratio = len(numbers) / word_count

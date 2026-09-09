@@ -14,7 +14,7 @@ def main() -> int:
     import recovery_guard
     import writer
 
-    assert os.environ.get("BOT_VERSION") == "v11.8"
+    assert os.environ.get("BOT_VERSION") == "v11.10"
     assert os.environ.get("AI_RETRIES") == "2"
     assert os.environ.get("EVENT_AI_RETRIES") == "2"
     assert os.environ.get("ORCAROUTER_RETRIES") == "1"

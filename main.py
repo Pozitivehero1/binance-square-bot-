@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, Iterable, List, Optional, Tuple
 
@@ -34,7 +35,7 @@ from filters import SignalFilter, SignalScore, get_top_candidates
 from history import add_published, cleanup_history, get_recently_published
 from indicators import MultiTimeframeIndicators, calculate_multi_timeframe
 from memory import PostMemory
-from publisher import publish
+from publisher import publish, _prepare_text_for_square
 from publication_guard import PublicationGuard
 from quality import PostQualityEvaluator, QualityReport
 from engagement import FeedAppealEvaluator
@@ -985,6 +986,7 @@ def _try_outcome_fallback(*, memory: PostMemory, guard: PublicationGuard, recove
 
 
 def _run_once() -> int:
+    scan_started = time.monotonic()
     cleanup_history()
     memory = PostMemory()
     guard = PublicationGuard(memory.items)
@@ -1209,10 +1211,16 @@ def _run_once() -> int:
 
     if generated is None:
         logger.info("No publication-quality %s post was generated", lane)
+        write_status("skipped", "no publication-quality draft", symbol=symbol, lane=lane)
         _try_outcome_fallback(memory=memory, guard=guard, recovery_mode=recovery_mode)
         return 0
     selected_post, quality_report = generated
-    post_text = selected_post.text
+    # Store and fingerprint the same normalized text actually sent to Square.
+    post_text, final_reasons = _prepare_text_for_square(selected_post.text)
+    if final_reasons:
+        logger.warning("Final text rejected: %s", "; ".join(final_reasons))
+        write_status("skipped", "final text integrity failed", symbol=symbol, reasons=list(final_reasons))
+        return 0
     logger.info(
         "Selected post quality: %.1f | source=%s | format=%s | visual=%s | signal=%s",
         quality_report.score,
@@ -1405,9 +1413,15 @@ def _run_once() -> int:
             print(post_text)
             return 0
 
+        age = time.monotonic() - scan_started
+        if age > max(60, int(os.getenv("MAX_SCAN_AGE_SECONDS", "300"))):
+            logger.warning("Discarding draft after %.0fs: market snapshot expired", age)
+            write_status("skipped", "market snapshot expired during generation", symbol=symbol, age_seconds=round(age))
+            return 0
         published = publish(post_text, image_path=images if images else None)
         if not published:
             logger.error("Publication failed")
+            write_status("failed", "publisher did not confirm publication", symbol=symbol, lane=lane)
             return 2
 
         try:

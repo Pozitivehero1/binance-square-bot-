@@ -52,11 +52,11 @@ FORMAT_SPECS: Dict[str, Dict[str, str]] = {
         "visual": "event_chart",
     },
     "trade_map": {
-        "brief": "Практичный торговый план без канцелярита. Естественно укажи зону входа, стоп и TP1/TP2/TP3.",
+        "brief": "Объясни наблюдаемый факт и условие сценария. Таблицу входа, стопа и целей добавит Python.",
         "visual": "trade_map",
     },
     "one_level": {
-        "brief": "Сделай центром поста один решающий уровень. Коротко объясни, почему он важен; TP1 и стоп обязательны.",
+        "brief": "Сделай центром поста один переданный уровень. Объясни реакцию на него, без собственного блока торговых чисел.",
         "visual": "minimal_chart",
     },
     "no_chase": {
@@ -68,7 +68,7 @@ FORMAT_SPECS: Dict[str, Dict[str, str]] = {
         "visual": "scenario_chart",
     },
     "risk_first": {
-        "brief": "Начни с цены ошибки/риска. Укажи вход, стоп и три цели, но пиши как человек, а не терминал.",
+        "brief": "Начни с ограничения сценария: какое наблюдение его ослабляет. Полный торговый план добавит Python.",
         "visual": "trade_map",
     },
     "market_story": {
@@ -76,7 +76,7 @@ FORMAT_SPECS: Dict[str, Dict[str, str]] = {
         "visual": "context_chart",
     },
     "micro_note": {
-        "brief": "Очень короткая заметка трейдера: одна мысль + конкретный вход/TP1/стоп. Без лишнего объяснения.",
+        "brief": "Одна конкретная мысль из рыночного снимка и условие её проверки. Не дублируй торговые строки Python.",
         "visual": "minimal_chart",
     },
     "volume_read": {
@@ -208,6 +208,8 @@ def _enforce_full_plan_block(text: str, levels: Dict[str, Any], direction: str, 
     clean = re.sub(r"\n{3,}", "\n\n", str(text or "").strip())
     if _full_plan_is_present(clean, levels, direction):
         return clean
+    from production_guard import strip_embedded_trade_plan
+    clean = strip_embedded_trade_plan(clean)
     return _fit_narrative_with_plan(clean, _plan_block(levels, direction, seed or clean[:80]))
 
 
@@ -510,6 +512,10 @@ def _validate_ai_post(
 ) -> Tuple[bool, Tuple[str, ...]]:
     reasons: List[str] = []
     text = str(text or "").strip()
+    from production_guard import final_text_reasons
+    from fact_consistency import fact_consistency_reasons
+    reasons.extend(final_text_reasons(text))
+    reasons.extend(fact_consistency_reasons(text, package))
     lowered = text.lower().replace("ё", "е")
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     first = lines[0] if lines else ""
@@ -624,18 +630,19 @@ def _request_ai_candidates(
         "attempt": attempt,
         "rules": [
             "Пиши на русском как живой практикующий трейдер. Без канцелярита и без одинакового ритма абзацев.",
-            "Первая строка — самостоятельный хук и обязательно содержит основной cashtag.",
+            "Первая строка: cashtag и конкретное изменение рынка. Никаких вводных о том, как важно иметь план.",
+            "Текст объясняет наблюдаемый факт, его ограничение и условие сценария. Не описывай собственную торговлю или прибыль.",
             "Используй только числа из semantic_package и не пересчитывай их. Можно использовать запятую вместо точки в десятичной дроби.",
             "Направление, entry, entry_zone, stop_loss, TP1/TP2/TP3 заданы Python и не могут быть изменены.",
-            "Каждый пост с valid trade_plan ОБЯЗАТЕЛЬНО содержит направление, вход/зону входа, stop_loss и TP1, TP2, TP3. Нельзя выбрасывать TP2/TP3 ради красивого текста.",
-            "Лучше вынести план в компактные 2 строки в конце. Не обязан перечислять все рыночные показатели: обычно достаточно одного события и полного торгового плана.",
+            "Напиши только вступление и объяснение события. НЕ пиши строки входа, стопа и TP: Python добавит полный план сам.",
+            "Обязательно включи хотя бы один конкретный рыночный факт из market с его периодом. Никаких общих советов вместо события.",
             "Не утверждай будущее. Только условия: если/пока/при закреплении/при потере уровня.",
             "Следуй trade_plan.state_rule. Если цена уже у уровня, не обещай будущий ретест этого же уровня.",
             "Не используй штампы: 'направление идеи', 'граница ошибки', 'диапазон контроля', 'параметры сценария'.",
             "Не выпрашивай лайки, комментарии, подписки, донаты или чаевые и не упоминай Write to Earn/вознаграждение автора.",
             "Не заканчивай каждый пост вопросом. В этой партии вопрос допустим максимум в одном варианте.",
             "Не добавляй хэштеги и эмодзи. Код сам решит, нужен ли один визуальный акцент.",
-            f"Длина каждого поста {POST_MIN_CHARS}-{POST_MAX_CHARS} символов.",
+            "Длина авторской части 150–240 символов, 2 коротких абзаца. Полный план будет добавлен программой.",
             "Не ссылайся на новости, китов, инсайды, ликвидации или причины движения, если их нет в semantic_package.",
             "Не копируй синтаксис, открывающие фразы и смысловую композицию recent_posts_to_avoid.",
         ],
@@ -725,209 +732,27 @@ def _deterministic_candidate(
     format_id: str,
     index: int,
 ) -> str:
-    """Fact-perfect outage fallback with enough editorial entropy for a long run.
+    from factual_copy import market_narrative
 
-    Mistral is the primary author in production, but an API outage must not turn
-    the account back into nine obvious templates.  Each format therefore has
-    several independent headline/body rhythms selected from a deterministic
-    sequence.  Numbers still come only from Python.
-    """
-    ticker = _ticker(basic)
     ind = mtf.tf_15m
-    entry = _fmt_price(levels["plan_entry"])
-    low = _fmt_price(levels["entry_zone_low"])
-    high = _fmt_price(levels["entry_zone_high"])
-    stop = _fmt_price(levels["stop"])
-    tp1, tp2, tp3 = (_fmt_price(levels[name]) for name in ("tp1", "tp2", "tp3"))
-    move = _fmt_pct(attention.change_15m) if attention else _fmt_pct(ind.change_1h / 4.0)
-    vol = _fmt_x_human(attention.volume_spike) if attention else _fmt_x_human(ind.volume_relative)
-    state = _natural_state_line(levels, direction, index)
-    side = direction.upper()
-    variant = index % 4
+    plan_available = bool(levels and levels.get("plan_valid", False))
+    text = market_narrative(
+        ticker=_ticker(basic),
+        move5=micro.change_5m if micro else None,
+        move15=attention.change_15m if attention else ind.change_1h / 4.0,
+        volume5=micro.volume_spike_5m if micro else None,
+        volume15=attention.volume_spike if attention else ind.volume_relative,
+        price=ind.price,
+        level=levels["plan_entry"],
+        plan_available=plan_available,
+        direction=direction,
+        decision_mode=str((levels or {}).get("decision_mode", "at_level")),
+        index=index,
+    )
+    if plan_available:
+        text = _enforce_full_plan_block(text, levels, direction, seed=f"facts|{format_id}|{index}")
+    return text
 
-    state_alt = _natural_state_line(levels, direction, index + 1)
-    trade_compact = (
-        f"Если условие для {side} сработает, TP1 у меня {tp1}; стоп {stop}.",
-        f"Первый ориентир по {side} — {tp1}. Стоп для этой идеи — {stop}.",
-        f"Для сделки {side} ближайшая цель {tp1}, а стоп стоит на {stop}.",
-        f"По плану {side}: сначала {tp1}; на {stop} сценарий для меня закрыт.",
-    )[variant]
-
-    if format_id == "trade_map":
-        headlines = (
-            f"{ticker}: здесь мне важнее заранее знать весь план, чем угадывать следующую свечу",
-            f"По {ticker} раскладываю сделку до входа — без импровизации после открытия",
-            f"{ticker}: идея есть, но сначала фиксирую цены входа, риска и выхода",
-            f"В {ticker} мне нравится только сценарий, который понятен ещё до нажатия кнопки",
-        )
-        intros = (
-            f"За 15 минут {move}, объём около {vol} нормы. {state}",
-            f"Рынок дал {move} за 15 минут при объёме около {vol}. {state_alt}",
-            f"Свежая картина: {move} за 15 минут и около {vol} обычного объёма. {state}",
-            f"На коротком участке цена изменилась на {move}; активность около {vol} нормы. {state_alt}",
-        )
-        zone_lines = (
-            f"Зона, где готов рассматривать вход: {low}–{high}. Стоп {stop}.",
-            f"Рабочий диапазон для входа — {low}–{high}; дальше риска для меня нет после {stop}.",
-            f"Исполнение ищу внутри {low}–{high}. Защитный стоп — {stop}.",
-            f"Вход мне нужен в районе {low}–{high}; если цена дойдёт до {stop}, план закрыт.",
-        )
-        target_lines = (
-            f"Цели по {side}: TP1 {tp1}, TP2 {tp2}, TP3 {tp3}.",
-            f"Выходы распределяю так: TP1 {tp1} → TP2 {tp2} → TP3 {tp3}.",
-            f"Для {side} лестница целей: {tp1}, затем {tp2}, финальная {tp3}.",
-            f"План фиксации по {side}: TP1 {tp1}; TP2 {tp2}; TP3 {tp3}.",
-        )
-        headline = headlines[variant]
-        body = [intros[variant], zone_lines[variant], target_lines[variant]]
-
-    elif format_id == "risk_first":
-        headlines = (
-            f"В {ticker} сначала считаю, где ошибусь — прибыль обсуждаю уже после этого",
-            f"{ticker}: хороший вход для меня начинается со стопа, а не с красивой цели",
-            f"По {ticker} первым делом отмечаю цену, после которой идея мне больше не нужна",
-            f"В {ticker} сейчас проще оценить риск, чем пытаться впечатлиться движением",
-        )
-        zone_lines = (
-            f"Рабочая зона {low}–{high}; стоп {stop}. Если цена не даёт такой риск, сделку не беру.",
-            f"Вход рассматриваю в {low}–{high}; стоп {stop} — точка, где я перестаю спорить с рынком.",
-            f"Для меня цена исполнения — {low}–{high}. Стоп заранее стоит на {stop}.",
-            f"План имеет смысл только около {low}–{high}; защитный стоп — {stop}.",
-        )
-        targets = (
-            f"Если {side} активируется, цели {tp1} → {tp2} → {tp3}.",
-            f"Фиксацию по {side} раскладываю на TP1 {tp1}, TP2 {tp2} и TP3 {tp3}.",
-            f"Дальше всё просто: TP1 {tp1}, TP2 {tp2}, TP3 {tp3}.",
-            f"Три ориентира по {side}: {tp1}, {tp2}, {tp3}.",
-        )
-        headline = headlines[variant]
-        body = [zone_lines[variant], targets[variant]]
-
-    elif format_id == "one_level":
-        headlines = (
-            f"В {ticker} сейчас вся моя идея помещается в одну цену — {entry}",
-            f"{ticker}: вместо десяти индикаторов мне сейчас достаточно уровня {entry}",
-            f"Для {ticker} я бы убрал с графика почти всё и оставил {entry}",
-            f"{ticker} сейчас проверяет цену {entry} — для меня это центр всей сделки",
-        )
-        body = [
-            (state, state_alt, f"Смотрю именно на {entry}: {state.lower()}", f"Пока важнее всего {entry}. {state_alt}")[variant],
-            trade_compact,
-        ]
-        headline = headlines[variant]
-
-    elif format_id == "no_chase":
-        headlines = (
-            f"{ticker} двигается, но платить за поздний вход я бы не стал",
-            f"В {ticker} свеча уже сделала часть работы — догонять её мне неинтересно",
-            f"{ticker}: движение заметное, а мой лучший ход сейчас может быть вообще не входить",
-            f"По {ticker} я скорее пропущу импульс, чем куплю или продам его слишком поздно",
-        )
-        context_lines = (
-            f"За 15 минут {move}; объём около {vol} нормы. Это повод смотреть внимательнее, а не прыгать за свечой.",
-            f"Последние 15 минут дали {move}, активность около {vol} нормы. Сам импульс уже не является для меня точкой входа.",
-            f"Цена прошла {move} за 15 минут при объёме около {vol}. Мне важнее качество следующего решения, чем скорость погони.",
-            f"Короткий импульс — {move}, объём около {vol} нормы. Опоздать на сделку дешевле, чем оплачивать FOMO.",
-        )
-        headline = headlines[variant]
-        body = [context_lines[variant], state if variant % 2 == 0 else state_alt, trade_compact]
-
-    elif format_id == "two_paths":
-        headlines = (
-            f"По {ticker} мне сейчас важны два исхода, а не попытка угадать следующую свечу",
-            f"{ticker}: у меня нет одного прогноза — есть два понятных действия",
-            f"В {ticker} я заранее знаю, что сделаю при обоих вариантах движения",
-            f"{ticker} не требует предсказания: достаточно разделить сценарий на два исхода",
-        )
-        success = (
-            f"Рабочий вариант: {state.lower()} Тогда по {side} смотрю TP1 {tp1}.",
-            f"Сценарий сделки начинается так: {state.lower()} Первая цель — {tp1}.",
-            f"Если рынок даст нужную реакцию, идея {side} ведёт сначала к {tp1}.",
-            f"Для активации {side} мне достаточно этого условия: {state.lower()} Ориентир — {tp1}.",
-        )
-        fail = (
-            f"Второй исход проще: на {stop} идею закрываю.",
-            f"Если рынок идёт к {stop}, спорить не буду — сценарий снят.",
-            f"Цена {stop} означает для меня отсутствие сделки дальше.",
-            f"Обратная сторона плана — {stop}: там идея перестаёт быть рабочей.",
-        )
-        headline = headlines[variant]
-        body = [success[variant], fail[variant]]
-
-    elif format_id == "market_story":
-        headlines = (
-            f"В {ticker} изменился темп — теперь интереснее цена исполнения, чем сам импульс",
-            f"{ticker} стал заметно активнее, но история для меня начинается не с размера свечи",
-            f"В {ticker} рынок сменил ритм; теперь смотрю, где это движение можно проверить ценой",
-            f"{ticker}: на графике появилось событие, но мне важнее, во что оно превратится у уровня",
-        )
-        context = (
-            f"Последние 15 минут: {move}; объём около {vol} нормы.",
-            f"За 15 минут цена изменилась на {move}, активность — около {vol} обычной.",
-            f"Короткий импульс составляет {move}; объём сейчас около {vol} нормы.",
-            f"Свежий участок дал {move}, а объём держится примерно на {vol} от обычного.",
-        )
-        headline = headlines[variant]
-        body = [context[variant], state if variant % 2 == 0 else state_alt, trade_compact]
-
-    elif format_id == "volume_read":
-        headlines = (
-            f"Объём в {ticker} вырос до {vol} нормы, но сам по себе он ещё не даёт мне сделку",
-            f"В {ticker} сейчас заметен объём около {vol} нормы — важнее понять, что с ним делает цена",
-            f"{ticker}: повышенный объём есть, а вывод я делаю только вместе с ценой",
-            f"По {ticker} активность выросла примерно до {vol} нормы; одной этой цифры мне мало",
-        )
-        notes = (
-            state,
-            f"Объём замечаю, но решение привязываю к цене. {state_alt}",
-            f"Для меня это лишь фон сделки. {state}",
-            f"Сначала цена, потом объём: {state_alt}",
-        )
-        headline = headlines[variant]
-        body = [notes[variant], f"Если план {side} активируется: вход около {entry}, TP1 {tp1}, стоп {stop}."]
-
-    elif format_id == "micro_note":
-        headlines = (
-            f"{ticker}: коротко — мне нужен вход около {entry}, а не ещё одна красивая свеча",
-            f"По {ticker} мой план сегодня можно уместить в три цены",
-            f"{ticker}: без длинного разбора — смотрю только исполнение сделки",
-            f"В {ticker} сейчас не усложняю: цена сама покажет, нужен ли мне {side}",
-        )
-        compact = (
-            f"{state} Для {side} TP1 {tp1}; стоп {stop}.",
-            f"Вход около {entry}. TP1 {tp1}; на {stop} идею закрываю.",
-            f"{state_alt} Первый ориентир {tp1}, защитный стоп {stop}.",
-            f"Если условие сработает, беру {side} около {entry}: TP1 {tp1}, стоп {stop}.",
-        )
-        headline = headlines[variant]
-        body = [compact[variant]]
-
-    else:  # hot_take
-        headlines = (
-            f"{ticker}: движение есть, но меня сейчас больше интересует цена сделки, чем сама свеча",
-            f"В {ticker} легко смотреть на импульс и забыть про место, где идея становится плохой",
-            f"{ticker} привлёк внимание, но я бы не превращал одно движение в готовый прогноз",
-            f"По {ticker} картинка стала интереснее — этого всё ещё мало, чтобы нажать кнопку",
-        )
-        context = (
-            f"За 15 минут {move}; объём около {vol} нормы.",
-            f"Короткий участок дал {move}, активность около {vol} обычной.",
-            f"Сейчас на 15 минутах {move}; объём примерно {vol} нормы.",
-            f"Последние 15 минут: {move}. По объёму — около {vol} нормы.",
-        )
-        headline = headlines[variant]
-        body = [context[variant], state if variant % 2 == 0 else state_alt, trade_compact]
-
-    if index % QUESTION_EVERY == 0 and format_id not in FULL_PLAN_FORMATS:
-        questions = (
-            "Вы бы здесь брали только исполненный сценарий или просто пропустили движение?",
-            "Для вас такая точка уже рабочая или рынок должен показать больше?",
-            "Вы бы исполняли этот план или оставили монету без сделки?",
-            "Здесь для вас важнее шанс продолжения или цена ошибки?",
-        )
-        body.append(questions[variant])
-    raw = "\n\n".join([headline, *body])
-    return _enforce_full_plan_block(raw, levels, direction, seed=f"det|{format_id}|{index}")
 
 def _build_generated(
     *,

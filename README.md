@@ -1,10 +1,10 @@
-# Binance Square Bot — v11.6 Evidence-Weighted Reach Engine
+# Binance Square Bot — v11.10 Stable Factual Posts
 
 Production bot for `PozitiveHero`: live TRADE/EVENT selection, fact-locked AI
 copy, public-performance learning, a hard full-plan contract and exact
 post-bound trade outcomes.
 
-No bot can guarantee views or a fixed W2E payout. v11.6 improves the parts the
+No bot can guarantee views or a fixed W2E payout. v11.10 improves the parts the
 bot controls—candidate quality, copy selection, repetition, timing and feedback—
 and keeps the 20-minute external scan while allowing weak slots to be skipped.
 
@@ -18,7 +18,7 @@ and keeps the 20-minute external scan while allowing weak slots to be skipped.
   `1.25/1.12/1.04`; mature 24h views take precedence.
 - Recovery mode compares projected rolling reach with mature daily baselines,
   tightens weak candidates and weak historical hours, and never forces cadence.
-- Target copy length is 220–430 characters. Specific live facts beat generic
+- Target copy length is 220–430 characters. The AI writes the narrative; Python appends one canonical plan. Specific live facts beat generic
   prose; repetition and structural similarity remain hard constraints.
 - DeepSeek is primary and Mistral is fallback. Deterministic templates are used
   only when a healthy AI draft pool is unavailable.
@@ -38,12 +38,15 @@ are final-only by default (`TP3`); partial targets and stops remain internal.
 
 ## Production settings
 
+See [CHANGES_V11_10.md](CHANGES_V11_10.md) for the audit, failure evidence and new outage policy.
+
 The active configuration is in `.github/workflows/run.yml`; `env.example`
 contains safe local defaults (`DRY_RUN=1`). Required GitHub secrets are:
 
 - `SQUARE_API`
 - `ORCAROUTER_API_KEY`
 - `MISTRAL_API`
+- `OPENROUTER_API_KEY` (optional independent fallback)
 
 The publishing workflow is externally dispatched approximately every 20
 minutes. The analytics dashboard refreshes hourly through
@@ -62,4 +65,4 @@ RUN_STRESS_TESTS=1 python run_tests.py
 ```
 
 All offline tests avoid market, AI-author and publishing network calls unless a
-test explicitly mocks them. See `CHANGES_V11_6.md` for this release.
+test explicitly mocks them. See `CHANGES_V11_10.md` for this release.

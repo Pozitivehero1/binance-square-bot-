@@ -155,6 +155,9 @@ def evaluate_recovery_candidate_v118(*args, **kwargs):
     )
 
     if deterministic and (recovery_mode or distribution_depressed):
+        from publication_continuity import allow_outage_probe
+        if base.allowed and allow_outage_probe(**kwargs):
+            return replace(base, reason="bounded factual outage publication after quiet period" + suffix)
         return replace(
             base,
             allowed=False,
@@ -271,9 +274,17 @@ def _repair_ai_narrative_v118(
     if not _meaningful_ai_residue(narrative, ticker):
         return "", False
     if len(narrative) > 235:
-        narrative = narrative[:235].rstrip(" ,;:-") + "."
+        # Never cut an unfinished model sentence into something that merely
+        # looks complete after adding a dot.
+        parts = re.split(r"(?<=[.!?])\s+", narrative)
+        kept = []
+        for part in parts:
+            if len(" ".join([*kept, part])) > 235:
+                break
+            kept.append(part)
+        narrative = " ".join(kept)
     if len(narrative) < 105:
-        narrative += "\n\nМне важна реакция рынка у рабочей зоны: если сценарий не подтверждается, догонять движение не буду."
+        return "", False
     return narrative, True
 
 

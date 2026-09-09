@@ -11,7 +11,8 @@ from pathlib import Path
 from typing import Iterable, List, Optional, Union
 
 from runtime import PROJECT_DIR
-from text_integrity import artifact_reasons, sanitize_safe_markup
+from text_integrity import sanitize_safe_markup
+from production_guard import final_text_reasons
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +56,7 @@ def _extract_post_id(stdout: str) -> str:
             current = stack.pop()
             if isinstance(current, dict):
                 for key, value in current.items():
-                    if str(key).lower() in {"contentid", "postid", "id"} and value not in (None, ""):
+                    if str(key).lower() in {"contentid", "postid"} and value not in (None, ""):
                         return str(value)
                     stack.append(value)
             elif isinstance(current, list):
@@ -63,8 +64,9 @@ def _extract_post_id(stdout: str) -> str:
     except (ValueError, TypeError):
         pass
     patterns = (
-        r'"(?:contentId|postId|id)"\s*:\s*"?([A-Za-z0-9_-]+)',
-        r"(?:Content ID|Post ID|ID)\s*[:=]\s*([A-Za-z0-9_-]+)",
+        r'"(?:contentId|postId)"\s*:\s*"?([A-Za-z0-9_-]+)',
+        r"(?:Content ID|Post ID)\s*[:=]\s*([A-Za-z0-9_-]+)",
+        r"Success!\s*ID\s*[:=]\s*([A-Za-z0-9_-]+)",
     )
     for pattern in patterns:
         match = re.search(pattern, text, flags=re.IGNORECASE)
@@ -84,7 +86,7 @@ def _prepare_text_for_square(text: str) -> tuple[str, tuple[str, ...]]:
     original = str(text or "")
     text = sanitize_safe_markup(original)
     normalized = normalize_square_cashtags(text)
-    reasons = artifact_reasons(normalized)
+    reasons = final_text_reasons(normalized)
     return normalized, reasons
 
 
@@ -157,12 +159,13 @@ def publish(text: str, image_path: ImageInput = None) -> PublishResult:
     if stderr:
         logger.warning("Publisher stderr: %s", stderr[:1200])
 
-    success_markers = ("Success!", "Content ID", "contentId", "postId")
-    success = result.returncode == 0 and (
-        any(marker.lower() in stdout.lower() for marker in success_markers)
-        or not any(word in stdout.lower() for word in ("error", "failed", "exception"))
-    )
     post_id = _extract_post_id(stdout)
+    if post_id.lower() in {"unavailable", "undefined", "null", "none", "false", "n/a", "0"}:
+        post_id = ""
+    # Exit 0 (including empty stdout or a help message) is not confirmation.
+    # Never add a fictitious success to cooldown/history/outcome tracking.
+    explicit_failure = bool(re.search(r'"success"\s*:\s*false|"error"\s*:\s*[{"\[]', stdout, re.I))
+    success = result.returncode == 0 and bool(post_id) and not explicit_failure
     if success:
         return PublishResult(True, post_id=post_id, stdout=stdout, stderr=stderr, returncode=result.returncode)
 

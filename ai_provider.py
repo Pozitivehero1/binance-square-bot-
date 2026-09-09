@@ -19,6 +19,7 @@ import time
 from typing import Any, Dict, List, Optional
 
 import requests
+from provider_health import account_limit, check_cooldown, remember_failure
 
 logger = logging.getLogger(__name__)
 
@@ -180,6 +181,7 @@ def _request(
     provider: str,
     retry_without_response_format: bool = False,
 ) -> dict:
+    check_cooldown(url, key, str(body.get("model", "")))
     headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
     response = requests.post(url, headers=headers, json=body, timeout=timeout)
     if retry_without_response_format and response.status_code == 400 and "response_format" in body:
@@ -187,6 +189,7 @@ def _request(
         retry_body = dict(body)
         retry_body.pop("response_format", None)
         response = requests.post(url, headers=headers, json=retry_body, timeout=timeout)
+    remember_failure(url, key, str(body.get("model", "")), response)
     response.raise_for_status()
     payload = response.json()
     if not isinstance(payload, dict) or not payload.get("choices"):
@@ -206,7 +209,7 @@ def _retry_delay(exc: Exception, attempt: int, prefix: str = "ORCAROUTER") -> tu
         status = int(response.status_code) if response is not None else 0
         body = _safe_error_body(response)
         diagnostic = f"HTTP {status}" + (f" body={body}" if body else "")
-        retryable = status in {408, 409, 425, 429, 500, 502, 503, 504}
+        retryable = status in {408, 409, 425, 429, 500, 502, 503, 504} and not account_limit(response)
         if retryable and response is not None:
             retry_after = response.headers.get("Retry-After")
             if retry_after:
