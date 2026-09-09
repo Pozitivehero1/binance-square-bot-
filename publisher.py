@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Iterable, List, Optional, Union
 
 from runtime import PROJECT_DIR
+import publication_intent as intents
 from text_integrity import sanitize_safe_markup
 from production_guard import final_text_reasons
 
@@ -136,6 +137,21 @@ def publish(text: str, image_path: ImageInput = None) -> PublishResult:
         return PublishResult(False, stderr=f"script missing: {script}")
 
     try:
+        rows = intents.load_intents()
+        previous = rows.get(intents.fingerprint(text))
+        if previous:
+            # A prior confirmed receipt is not a new publication success: do not
+            # duplicate cooldowns, analytics or outcome metadata in the caller.
+            post_id = previous.get("post_id") or intents.reconcile(text, previous)
+            return PublishResult(False, post_id=post_id, stderr="prior send already exists; resend blocked")
+        symbols = set(re.findall(r"\$([A-Za-z][A-Za-z0-9]{0,19})", text.upper()))
+        if any(row.get("status") == "pending" and symbols.intersection(row.get("symbols", [])) for row in rows.values()):
+            return PublishResult(False, stderr="unresolved send for this symbol; publication blocked")
+        intent = intents.begin(text)
+    except (OSError, ValueError, TypeError) as exc:
+        return PublishResult(False, stderr=f"send journal unavailable: {exc}")
+
+    try:
         result = subprocess.run(
             command,
             cwd=skill_dir,
@@ -147,7 +163,10 @@ def publish(text: str, image_path: ImageInput = None) -> PublishResult:
         )
     except subprocess.TimeoutExpired:
         logger.error("Binance Square publication timed out")
-        return PublishResult(False, stderr="timeout")
+        post_id = intents.reconcile(text, intent)
+        if post_id:
+            return PublishResult(True, post_id=post_id, stderr="timeout reconciled from public profile")
+        return PublishResult(False, stderr="timeout; unresolved send saved, resend blocked")
     except (OSError, ValueError) as exc:
         logger.error("Publication process failed: %s", exc)
         return PublishResult(False, stderr=str(exc))
@@ -167,9 +186,13 @@ def publish(text: str, image_path: ImageInput = None) -> PublishResult:
     explicit_failure = bool(re.search(r'"success"\s*:\s*false|"error"\s*:\s*[{"\[]', stdout, re.I))
     success = result.returncode == 0 and bool(post_id) and not explicit_failure
     if success:
+        intents.confirm(text, post_id)
         return PublishResult(True, post_id=post_id, stdout=stdout, stderr=stderr, returncode=result.returncode)
 
-    logger.error("Publication rejected (exit code %s)", result.returncode)
+    post_id = intents.reconcile(text, intent)
+    if post_id:
+        return PublishResult(True, post_id=post_id, stdout=stdout, stderr=stderr, returncode=result.returncode)
+    logger.error("Publication unconfirmed (exit code %s); intent retained", result.returncode)
     return PublishResult(False, post_id=post_id, stdout=stdout, stderr=stderr, returncode=result.returncode)
 
 

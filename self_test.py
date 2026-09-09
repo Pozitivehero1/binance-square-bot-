@@ -286,7 +286,7 @@ def _test_publisher_command() -> None:
         image = Path(td) / "chart.png"
         image.write_bytes(b"test-image")
         completed = Mock(returncode=0, stdout="Success! ID: test", stderr="")
-        with patch.dict(os.environ, {"SQUARE_API": "test-square-key"}, clear=False), \
+        with patch.dict(os.environ, {"SQUARE_API": "test-square-key", "PUBLICATION_INTENT_FILE": str(Path(td) / "intents.json")}, clear=False), \
              patch("publisher.find_skill_dir", return_value=str(skill_dir)), \
              patch("publisher.subprocess.run", return_value=completed) as mocked_run:
             assert publish("$TEST — test post", image_path=str(image))
