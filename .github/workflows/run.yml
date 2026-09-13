@@ -2,6 +2,9 @@ name: Binance Square Bot
 
 on:
   workflow_dispatch:
+  schedule:
+    # Native fallback cadence: external cron is no longer a single point of failure.
+    - cron: "*/20 * * * *"
 
 permissions:
   contents: read
@@ -55,10 +58,11 @@ jobs:
       STATS_REFRESH_PAGES: "4"
       ANALYTICS_TZ_OFFSET: "3"
 
-      # External cron can call every ~20 minutes. Weak cycles may be skipped by
-      # the reach/recovery gates rather than forcing a low-value publication.
+      # Cadence is controlled by the 20-minute trigger. Keep hard editorial,
+      # fact-lock and publish-safety checks, but do not suppress an otherwise
+      # valid post only because the predictive reach score is below a threshold.
       ENABLE_PACING_LIMITS: "0"
-      ENABLE_REACH_GATE: "1"
+      ENABLE_REACH_GATE: "0"
       MIN_REACH_SCORE: "69"
       COOLDOWN_MIN: "240"
 
