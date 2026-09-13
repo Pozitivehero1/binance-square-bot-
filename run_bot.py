@@ -19,12 +19,14 @@ from reach_recovery_v11_8 import activate_reach_recovery
 from author_pool_policy import install_author_pool_policy, verify_author_policy
 from reach_recovery_live_exit import activate_live_recovery_exit
 from v11_9_writer_policy import install_v119_writer_policy, verify_v119_writer_policy
+from throughput_policy import install_throughput_policy, verify_throughput_policy
 
 install_openrouter_fallback_chain()
 activate_reach_recovery()
 install_author_pool_policy()
 install_v119_writer_policy()
 activate_live_recovery_exit()
+install_throughput_policy()
 
 # Fail before an expensive market scan if patch ordering silently broke a core
 # production invariant. A workflow failure is diagnosable; a silent no-post loop
@@ -32,6 +34,7 @@ activate_live_recovery_exit()
 verify_openrouter_fallback_chain()
 verify_author_policy()
 verify_v119_writer_policy()
+verify_throughput_policy()
 
 import recovery_guard
 import writer
