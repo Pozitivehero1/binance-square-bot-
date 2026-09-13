@@ -64,7 +64,9 @@ jobs:
       ENABLE_PACING_LIMITS: "0"
       ENABLE_REACH_GATE: "0"
       MIN_REACH_SCORE: "69"
-      COOLDOWN_MIN: "240"
+      # Re-open a symbol after two hours instead of four. Text similarity,
+      # freshness and market gates still prevent blind repetition.
+      COOLDOWN_MIN: "120"
 
       # AI author chain: OrcaRouter/DeepSeek -> explicit current OpenRouter free
       # model walk -> OpenRouter free router -> Mistral. One valid AI draft is
@@ -97,7 +99,8 @@ jobs:
       EVENT_MIN_VALID_AI_DRAFTS: "1"
       EVENT_DETERMINISTIC_COMPARE_SLOTS: "0"
 
-      # Editorial controls
+      # Editorial controls stay unchanged: higher throughput must come from a
+      # larger candidate pool, not from publishing broken or low-quality copy.
       EMOJI_RATE: "0.16"
       QUESTION_EVERY: "9"
       USE_HASHTAGS: "0"
@@ -109,21 +112,23 @@ jobs:
       MAX_POST_SIMILARITY: "0.46"
       MIN_CONVERSION_INTENT: "75"
 
-      # Audience / freshness selection
-      MIN_OPPORTUNITY_SCORE: "63"
-      MIN_AUDIENCE_DEMAND: "24"
-      MIN_EVENT_SCORE: "60"
-      EVENT_W2E_FLOOR: "42"
-      EVENT_MIN_DEMAND: "20"
-      EVENT_LANE_ADVANTAGE: "1.5"
+      # Throughput-oriented market selection. These are discovery/ranking gates;
+      # final text, fact-lock, live-price and public-plan checks remain strict.
+      PRELIM_MIN_SCORE: "34"
+      MIN_OPPORTUNITY_SCORE: "60"
+      MIN_AUDIENCE_DEMAND: "20"
+      MIN_EVENT_SCORE: "56"
+      EVENT_W2E_FLOOR: "38"
+      EVENT_MIN_DEMAND: "16"
+      EVENT_LANE_ADVANTAGE: "0.5"
       EVENT_MIN_POST_QUALITY: "80"
       EVENT_MIN_FEED_APPEAL: "74"
       EVENT_MIN_CONVERSION: "72"
       VALID_PLAN_EVENT_BONUS: "0"
       OBSERVATION_ONLY_EVENT_PENALTY: "0"
-      MIN_W2E_MARKET_SCORE: "56"
-      W2E_SOFT_FLOOR: "40"
-      HOT_W2E_FLOOR: "34"
+      MIN_W2E_MARKET_SCORE: "52"
+      W2E_SOFT_FLOOR: "36"
+      HOT_W2E_FLOOR: "30"
       STRICT_BTC_FILTER: "0"
 
       # Public trade plan. Every plan_valid post exposes direction + entry zone
@@ -153,11 +158,11 @@ jobs:
       OUTCOME_MAX_FOLLOWUPS_PER_TRADE: "2"
       OUTCOME_MAX_KLINE_PAGES: "7"
 
-      # Broad scan: 5m freshness + 15m/1h setup; 4h/1d only for shortlist.
-      TOP_SYMBOLS: "120"
-      SHORTLIST_SIZE: "36"
-      FINAL_CANDIDATES: "20"
-      DATA_WORKERS: "8"
+      # Wider scan gives each 20-minute cycle more publishable alternatives.
+      TOP_SYMBOLS: "180"
+      SHORTLIST_SIZE: "54"
+      FINAL_CANDIDATES: "30"
+      DATA_WORKERS: "10"
       MIN_QUOTE_VOLUME: "5000000"
       PUBLISH_MEDIA_MODE: "chart"
 
