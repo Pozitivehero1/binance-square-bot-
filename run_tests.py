@@ -28,6 +28,7 @@ STANDARD_TESTS = [
     "cron_test.py",
     "analytics_test.py",
     "provider_test.py",
+    "groq_primary_test.py",
     "openrouter_fallback_chain_test.py",
     "adaptive_test.py",
     "outcome_test.py",
