@@ -24,6 +24,7 @@ _CORRUPT_FRAGMENTS = (
     "оверсаттеринг", "окоражилась", "классическое срезы", "реализовать эту",
     "цeлая структура правила", "целая структура правила", "cashtag @",
     "xa/rvab", "предварительно заданную схему",
+    "уровню текущего цены", "вырос вдвое почти",
 )
 _PLACEHOLDER_PATTERNS = (
     r"(?iu)(?<![A-Za-zА-Яа-я0-9])v\d{3,}(?![A-Za-zА-Яа-я0-9])",
@@ -59,6 +60,17 @@ def language_quality_reasons(text: str) -> Tuple[str, ...]:
     ]
     if len(latin_tokens) >= 5 and len(unexpected) >= 3 and len(unexpected) / len(latin_tokens) >= 0.45:
         reasons.append("unexpected-english-density")
+
+    # The production language is Russian. A single accidental CJK token from a
+    # free multilingual model is enough to make the post visibly broken, so this
+    # is a hard reject rather than a density-based style warning.
+    if re.search(r"[\u3400-\u4DBF\u4E00-\u9FFF]", value):
+        reasons.append("cjk-language-leak")
+
+    # Broken signed-change placeholders such as "+ + +" / "+++" have appeared
+    # in otherwise valid-looking drafts. They must never survive the final guard.
+    if re.search(r"(?<!\d)[+-](?:\s*[+-]){2,}(?!\d)", value):
+        reasons.append("broken-signed-change")
 
     if any(fragment in lowered_value for fragment in _CORRUPT_FRAGMENTS):
         reasons.append("known-gibberish-fragment")
