@@ -38,6 +38,9 @@ def main() -> int:
     assert os.environ["ORCAROUTER_RETRIES"] == "1"
     assert os.environ["MISTRAL_MODEL"] == "mistral-small-2603"
     assert os.environ["MISTRAL_RETRIES"] == "2"
+    assert os.environ["AI_VARIANTS"] == "3"
+    assert os.environ["EVENT_AI_VARIANTS"] == "3"
+    assert os.environ["AI_MAX_TOKENS"] == "1400"
     assert os.environ["AI_AUTHOR_REQUIRED"] == "1"
 
     policy._ORIGINAL_RECOVERY_GATE = _gate
