@@ -1,11 +1,13 @@
 """Resilient AI author provider chain.
 
-Primary: DeepSeek V4 Pro through OrcaRouter (OpenAI-compatible API).
-Fallback 1: OpenRouter Free Models Router (independent provider pool).
-Fallback 2: Mistral.
+Primary: Mistral. The production MISTRAL_API token is authoritative and is
+always tried before routed/free providers.
+Fallback 1: DeepSeek V4 Pro through OrcaRouter.
+Fallback 2: OpenRouter Free Models Router.
 
-Transient 429/5xx failures use bounded retry/backoff. Deterministic copy remains
-outside this module and is handled by the writer/recovery policy.
+Transient 429/5xx and malformed JSON failures use bounded retry/backoff.
+Deterministic copy remains outside this module and can be disabled by the
+writer policy when an AI token is configured.
 """
 from __future__ import annotations
 
@@ -68,12 +70,12 @@ def has_ai_provider() -> bool:
 
 
 def preferred_provider_name() -> str:
+    if _mistral_key():
+        return "mistral"
     if _orcarouter_key():
         return "deepseek_v4_pro"
     if _openrouter_key():
         return "openrouter_free"
-    if _mistral_key():
-        return "mistral"
     return "deterministic"
 
 
@@ -261,12 +263,83 @@ def request_candidates(
     presence_penalty: Optional[float] = None,
     frequency_penalty: Optional[float] = None,
 ) -> ProviderResult:
-    """Return AI candidates using DeepSeek -> OpenRouter Free -> Mistral."""
+    """Return AI candidates using Mistral -> DeepSeek -> OpenRouter Free."""
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False)},
     ]
     failures: List[str] = []
+
+    mistral_key = _mistral_key()
+    if mistral_key:
+        model = os.getenv("MISTRAL_MODEL", "mistral-large-latest").strip()
+        mistral_system = (
+            system_prompt
+            + "\n\nКРИТИЧЕСКИЙ КОНТРАКТ ОТВЕТА: верни ровно один валидный JSON-объект "
+            + "с массивом candidates. Никакого Markdown, пояснений до/после JSON и "
+            + "никаких полей вне запрошенной схемы. Выполни внутреннюю проверку молча."
+        )
+        attempts = max(1, min(5, int(os.getenv("MISTRAL_RETRIES", "3"))))
+        last_exc: Optional[Exception] = None
+        for attempt in range(1, attempts + 1):
+            mistral_messages = [
+                {"role": "system", "content": mistral_system},
+                {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False)},
+            ]
+            if attempt > 1:
+                mistral_messages.append({
+                    "role": "system",
+                    "content": (
+                        "Предыдущий ответ не прошёл машинный контроль. Сгенерируй заново: "
+                        "строго JSON, только факты из semantic_package, естественный русский "
+                        "язык, без шаблонных фраз и без новых чисел."
+                    ),
+                })
+            body = {
+                "model": model,
+                "messages": mistral_messages,
+                "response_format": {"type": "json_object"},
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+            }
+            if presence_penalty is not None:
+                body["presence_penalty"] = presence_penalty
+            if frequency_penalty is not None:
+                body["frequency_penalty"] = frequency_penalty
+            try:
+                payload = _request(
+                    url="https://api.mistral.ai/v1/chat/completions",
+                    key=mistral_key,
+                    body=body,
+                    timeout=timeout,
+                    provider="Mistral",
+                )
+                candidates = _parse_candidates(payload)
+                _annotate(candidates, "mistral", model)
+                logger.info(
+                    "AI author provider=mistral primary=true model=%s candidates=%s attempt=%s/%s",
+                    model, len(candidates), attempt, attempts,
+                )
+                return ProviderResult(candidates, "mistral", model)
+            except (requests.RequestException, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
+                last_exc = exc
+                retryable, delay, diagnostic = _retry_delay(exc, attempt, "MISTRAL")
+                failures.append(f"mistral:{diagnostic}")
+                if retryable and attempt < attempts:
+                    logger.warning(
+                        "Mistral attempt %s/%s failed: %s; retrying in %.1fs",
+                        attempt, attempts, diagnostic, delay,
+                    )
+                    time.sleep(delay)
+                    continue
+                logger.warning(
+                    "Mistral primary unavailable/unusable after %s/%s attempt(s): %s; trying AI fallback",
+                    attempt, attempts, diagnostic,
+                )
+                break
+        if last_exc is not None:
+            logger.debug("Mistral final exception type=%s", type(last_exc).__name__)
+
 
     orca_key = _orcarouter_key()
     if orca_key:
@@ -310,7 +383,7 @@ def request_candidates(
                     time.sleep(delay)
                     continue
                 logger.warning(
-                    "DeepSeek primary unavailable/unusable after %s/%s attempt(s): %s; trying OpenRouter fallback",
+                    "DeepSeek fallback unavailable/unusable after %s/%s attempt(s): %s; trying OpenRouter fallback",
                     attempt, attempts, diagnostic,
                 )
                 break
@@ -381,36 +454,6 @@ def request_candidates(
                 break
         if last_exc is not None:
             logger.debug("OpenRouter final exception type=%s", type(last_exc).__name__)
-
-    mistral_key = _mistral_key()
-    if mistral_key:
-        model = os.getenv("MISTRAL_MODEL", "mistral-small-latest").strip()
-        body = {
-            "model": model,
-            "messages": messages,
-            "response_format": {"type": "json_object"},
-            "temperature": temperature,
-            "max_tokens": max_tokens,
-        }
-        if presence_penalty is not None:
-            body["presence_penalty"] = presence_penalty
-        if frequency_penalty is not None:
-            body["frequency_penalty"] = frequency_penalty
-        try:
-            payload = _request(
-                url="https://api.mistral.ai/v1/chat/completions",
-                key=mistral_key,
-                body=body,
-                timeout=timeout,
-                provider="Mistral",
-            )
-            candidates = _parse_candidates(payload)
-            _annotate(candidates, "mistral", model)
-            logger.info("AI author provider=mistral fallback=true model=%s candidates=%s", model, len(candidates))
-            return ProviderResult(candidates, "mistral", model)
-        except (requests.RequestException, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
-            failures.append(f"mistral:{type(exc).__name__}:{exc}")
-            logger.warning("Mistral fallback unavailable/unusable: %s", exc)
 
     reason = " | ".join(failures[-10:]) if failures else "no AI provider key configured"
     raise RuntimeError(reason)

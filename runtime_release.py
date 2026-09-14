@@ -7,11 +7,11 @@ import os
 def activate_release() -> None:
     from reach_recovery_v11_8 import configure_environment
 
-    # v11.12 keeps the proven writer/fact-lock stack but removes the self-locking
-    # distribution hard gate for AI-authored posts. Distribution remains useful
-    # telemetry; deterministic outage copy is still bounded aggressively.
+    # v11.13 makes Mistral Large the authoritative author and keeps the proven
+    # writer/fact-lock stack. Deterministic templates are disabled whenever an
+    # AI token is configured.
     configure_environment()
-    os.environ["BOT_VERSION"] = "v11.12"
+    os.environ["BOT_VERSION"] = "v11.13"
 
     from production_guard import final_text_reasons
     from semantic_quality import semantic_quality_reasons
@@ -23,16 +23,20 @@ def activate_release() -> None:
     if not final_text_reasons("$ORCA: Оверсаттеринг момента. Cashtag @oracetrade"):
         raise RuntimeError("malformed-language guard is incomplete")
     if not final_text_reasons("$ZEC — цена увеличилась на +++ за пять минут. The市场目前显示出动能."):
-        raise RuntimeError("v11.12 multilingual/broken-sign guard is incomplete")
-    if os.environ.get("BOT_VERSION") != "v11.12":
-        raise RuntimeError("v11.12 version defaults were not activated")
+        raise RuntimeError("v11.13 multilingual/broken-sign guard is incomplete")
+    if os.environ.get("BOT_VERSION") != "v11.13":
+        raise RuntimeError("v11.13 version defaults were not activated")
     if os.environ.get("ADAPTIVE_HOUR_MAX") != "5":
         raise RuntimeError("conservative ranking bounds were not preserved")
-    if os.environ.get("AI_RETRIES") != "2" or os.environ.get("EVENT_AI_RETRIES") != "2":
-        raise RuntimeError("author retry policy was not activated")
+    if os.environ.get("AI_RETRIES") != "3" or os.environ.get("EVENT_AI_RETRIES") != "3":
+        raise RuntimeError("Mistral author retry policy was not activated")
+    if os.environ.get("MISTRAL_MODEL") != "mistral-large-latest":
+        raise RuntimeError("Mistral Large primary model was not activated")
+    if os.environ.get("AI_AUTHOR_REQUIRED") != "1":
+        raise RuntimeError("AI-only author policy was not activated")
     if os.environ.get("ORCAROUTER_RETRIES") != "1":
         raise RuntimeError("Orca capacity retry guard was not activated")
-    print("[v11.12] cumulative release verified: cadence recovery + writer hardening active")
+    print("[v11.13] cumulative release verified: Mistral primary + AI-only author policy active")
 
 
 if __name__ == "__main__":

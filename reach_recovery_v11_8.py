@@ -39,13 +39,17 @@ def configure_environment() -> None:
     os.environ["ADAPTIVE_EVENT_CLASS_MAX"] = "2"
     os.environ["ADAPTIVE_DIRECTION_MAX"] = "1.5"
 
-    # Provider retry and author retry are different things. Orca stays one-shot
-    # because its current 503 is a capacity problem. Two author passes are kept
-    # because OpenRouter may return valid JSON whose prose fails the local fact
-    # lock; the second pass then rotates to another free-model batch.
+    # Mistral is the authoritative author. Three provider attempts cover
+    # transient API/JSON failures; three author passes cover locally rejected
+    # prose. Routed providers remain AI-only fallbacks.
+    os.environ["MISTRAL_MODEL"] = "mistral-large-latest"
+    os.environ["MISTRAL_RETRIES"] = "3"
+    os.environ["MISTRAL_RETRY_BASE_SECONDS"] = "1"
+    os.environ["MISTRAL_RETRY_CAP_SECONDS"] = "4"
     os.environ["ORCAROUTER_RETRIES"] = "1"
-    os.environ["AI_RETRIES"] = "2"
-    os.environ["EVENT_AI_RETRIES"] = "2"
+    os.environ["AI_RETRIES"] = "3"
+    os.environ["EVENT_AI_RETRIES"] = "3"
+    os.environ["AI_AUTHOR_REQUIRED"] = "1"
     os.environ["DETERMINISTIC_COMPARE_SLOTS"] = "0"
     os.environ["EVENT_DETERMINISTIC_COMPARE_SLOTS"] = "0"
 

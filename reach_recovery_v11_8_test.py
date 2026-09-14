@@ -1,4 +1,4 @@
-"""Offline regression checks for v11.8/v11.12 distribution recovery."""
+"""Offline regression checks for v11.8/v11.13 distribution recovery."""
 from __future__ import annotations
 
 import os
@@ -33,9 +33,12 @@ def main() -> int:
     assert os.environ["ADAPTIVE_MAX_TOTAL"] == "14"
     assert os.environ["ADAPTIVE_TICKER_MAX"] == "10"
     assert os.environ["ADAPTIVE_HOUR_MAX"] == "5"
-    assert os.environ["AI_RETRIES"] == "2"
-    assert os.environ["EVENT_AI_RETRIES"] == "2"
+    assert os.environ["AI_RETRIES"] == "3"
+    assert os.environ["EVENT_AI_RETRIES"] == "3"
     assert os.environ["ORCAROUTER_RETRIES"] == "1"
+    assert os.environ["MISTRAL_MODEL"] == "mistral-large-latest"
+    assert os.environ["MISTRAL_RETRIES"] == "3"
+    assert os.environ["AI_AUTHOR_REQUIRED"] == "1"
 
     policy._ORIGINAL_RECOVERY_GATE = _gate
     policy.distribution_health = lambda now=None: _health()
@@ -105,7 +108,7 @@ def main() -> int:
     )
     assert empty == "" and not meaningful
 
-    print("v11.12 cadence recovery tests passed | truthful repaired-AI contract passed")
+    print("v11.13 Mistral-primary recovery tests passed | truthful repaired-AI contract passed")
     return 0
 
 
