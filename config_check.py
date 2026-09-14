@@ -12,8 +12,9 @@ load_project_env()
 from publication_guard import PublicationGuard
 from publisher import find_skill_dir
 from openrouter_fallback_chain import configured_openrouter_models
+from groq_primary import configured_groq_models
 
-VALID_CONTENT_MODES = {"ai_author", "ai", "ai_first", "mistral", "deterministic"}
+VALID_CONTENT_MODES = {"ai_author", "ai", "ai_first", "groq", "mistral", "deterministic"}
 VALID_MEDIA_MODES = {"adaptive", "card", "chart", "both", "none"}
 VALID_VOICES = {"calm", "direct", "analytical", "contrarian"}
 
@@ -52,15 +53,17 @@ def main() -> int:
     errors: list[str] = []
     warnings: list[str] = []
 
+    groq_key = bool((os.getenv("GROQ_API_KEY") or "").strip())
     orca_key = bool((os.getenv("ORCAROUTER_API_KEY") or os.getenv("ORCA_API_KEY") or "").strip())
     openrouter_key = bool((os.getenv("OPENROUTER_API_KEY") or "").strip())
     mistral_key = bool((os.getenv("MISTRAL_API") or os.getenv("MISTRAL_API_KEY") or "").strip())
-    ai_key = orca_key or openrouter_key or mistral_key
+    ai_key = groq_key or mistral_key or orca_key or openrouter_key
     default_content_mode = "ai_author" if ai_key else "deterministic"
     content_mode = os.getenv("CONTENT_MODE", default_content_mode).strip().lower()
     media_mode = os.getenv("PUBLISH_MEDIA_MODE", "chart").strip().lower()
     author_voice = os.getenv("AUTHOR_VOICE", "direct").strip().lower()
     dry_run = _bool("DRY_RUN", "1")
+    ai_required = _bool("AI_AUTHOR_REQUIRED", "1")
     enable_pacing = _bool("ENABLE_PACING_LIMITS", "0")
     enable_reach_gate = _bool("ENABLE_REACH_GATE", "1")
     publish_images = _bool("PUBLISH_IMAGES", "1")
@@ -115,6 +118,9 @@ def main() -> int:
     adaptive_saturation = _number("ADAPTIVE_SATURATION_MAX", "5", float, 0, 10, errors)
     w2e_proxy_bonus = _number("W2E_PROXY_MAX_BONUS", "5", float, 0, 10, errors)
     w2e_proxy_penalty = _number("W2E_PROXY_MAX_PENALTY", "3", float, 0, 10, errors)
+    groq_retries = _number("GROQ_RETRIES", "2", int, 1, 3, errors)
+    groq_timeout = _number("GROQ_MODEL_TIMEOUT", "25", int, 8, 120, errors)
+    groq_max_tokens = _number("GROQ_MAX_TOKENS", "1100", int, 300, 1600, errors)
     orca_retries = _number("ORCAROUTER_RETRIES", "1", int, 1, 6, errors)
     openrouter_retries = _number("OPENROUTER_RETRIES", "2", int, 1, 6, errors)
     ai_retries = _number("AI_RETRIES", "2", int, 1, 6, errors)
@@ -152,9 +158,11 @@ def main() -> int:
         errors.append("PUBLISH_WINDOWS: не удалось распознать HH:MM-HH:MM")
 
     if content_mode != "deterministic" and not ai_key:
-        warnings.append("AI-режим выбран без OrcaRouter/OpenRouter/Mistral ключей")
+        warnings.append("AI-режим выбран без Groq/Mistral/OrcaRouter/OpenRouter ключей")
+    if content_mode != "deterministic" and ai_required and not groq_key:
+        errors.append("AI_AUTHOR_REQUIRED=1, но основной GROQ_API_KEY не задан")
     if content_mode != "deterministic" and not openrouter_key:
-        warnings.append("OPENROUTER_API_KEY не задан: бесплатная multi-model fallback цепочка недоступна")
+        warnings.append("OPENROUTER_API_KEY не задан: последняя бесплатная multi-model fallback цепочка недоступна")
     if not publish_images and media_mode != "none":
         warnings.append("PUBLISH_IMAGES=0: режим медиа будет проигнорирован")
 
@@ -179,12 +187,14 @@ def main() -> int:
             errors.append("Не найден установленный Binance square-post skill")
 
     providers = []
+    if groq_key:
+        providers.append(f"Groq[{len(configured_groq_models())} models]")
+    if mistral_key:
+        providers.append("Mistral")
     if orca_key:
         providers.append("DeepSeek/Orca")
     if openrouter_key:
         providers.append(f"OpenRouter[{len(configured_openrouter_models())} models]")
-    if mistral_key:
-        providers.append("Mistral")
     provider_chain = " -> ".join(providers) if providers else "deterministic only"
 
     print("CONFIGURATION")
@@ -192,7 +202,8 @@ def main() -> int:
     print(f"  cron command=python {PROJECT_DIR / 'run_bot.py'}")
     print(f"  CONTENT_MODE={content_mode} | AI chain={provider_chain}")
     print(
-        f"  retries: ORCA={orca_retries} OPENROUTER={openrouter_retries} "
+        f"  retries: GROQ={groq_retries} (timeout={groq_timeout}s max_tokens={groq_max_tokens}) "
+        f"ORCA={orca_retries} OPENROUTER={openrouter_retries} "
         f"TRADE_AUTHOR={ai_retries} EVENT_AUTHOR={event_ai_retries} | min-valid={min_valid_ai}/{event_min_valid_ai}"
     )
     print(f"  AUTHOR_VOICE={author_voice} | ALLOW_TECHNICAL_FORMATS={int(allow_technical)}")
@@ -226,7 +237,11 @@ def main() -> int:
         f"  OUTCOME_ENGINE={int(outcome_enabled)} | gap={outcome_gap}m | pending={outcome_pending}h | "
         f"max_age={outcome_max_age}h | max_followups={outcome_max_followups}"
     )
-    print(f"  DRY_RUN={int(dry_run)} | Square key={'yes' if square_key else 'no'} | skill={'found' if skill_dir else 'not found'}")
+    print(
+        f"  DRY_RUN={int(dry_run)} | AI_AUTHOR_REQUIRED={int(ai_required)} | "
+        f"Groq key={'yes' if groq_key else 'no'} | Square key={'yes' if square_key else 'no'} | "
+        f"skill={'found' if skill_dir else 'not found'}"
+    )
     for label, path in paths.items():
         print(f"  {label}={path}")
     for warning in warnings:
