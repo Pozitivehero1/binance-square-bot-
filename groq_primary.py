@@ -16,6 +16,7 @@ import json
 import logging
 import os
 import random
+import re
 import time
 from typing import Any, Dict, List, Optional
 
@@ -33,7 +34,10 @@ DEFAULT_GROQ_MODELS = (
 _ORIGINAL_REQUEST_CANDIDATES = None
 _ORIGINAL_HAS_AI_PROVIDER = None
 _ORIGINAL_PREFERRED_PROVIDER = None
+_ORIGINAL_START_SCAN_BUDGET = None
 _LAST_PROVIDER = ""
+_MODEL_COOLDOWN_UNTIL: Dict[str, float] = {}
+_MODEL_REQUESTS: Dict[str, int] = {}
 
 
 def _groq_key() -> str:
@@ -65,23 +69,116 @@ def configured_groq_models() -> List[str]:
     return unique or list(DEFAULT_GROQ_MODELS)
 
 
+def _reset_scan_state() -> None:
+    """Reset in-process Groq throttles at the beginning of each market scan."""
+    _MODEL_COOLDOWN_UNTIL.clear()
+    _MODEL_REQUESTS.clear()
+
+
+def _start_scan_budget_groq_first(deadline=None, max_requests=None):
+    _reset_scan_state()
+    return _ORIGINAL_START_SCAN_BUDGET(deadline, max_requests)
+
+
+def _retry_after_seconds(response: Optional[requests.Response]) -> Optional[float]:
+    if response is None:
+        return None
+    raw = response.headers.get("Retry-After")
+    if raw:
+        try:
+            return max(0.0, float(raw))
+        except (TypeError, ValueError):
+            pass
+
+    try:
+        body = str(response.text or "")
+    except Exception:
+        body = ""
+    match = re.search(
+        r"try\s+again\s+in\s+([0-9]+(?:\.[0-9]+)?)\s*(ms|milliseconds?|s|sec(?:onds?)?)",
+        body,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return None
+    value = float(match.group(1))
+    unit = match.group(2).lower()
+    if unit.startswith("ms") or unit.startswith("millisecond"):
+        value /= 1000.0
+    return max(0.0, value)
+
+
 def _retry_delay(response: Optional[requests.Response], attempt: int) -> float:
     base = max(0.2, float(os.getenv("GROQ_RETRY_BASE_SECONDS", "1")))
     cap = max(base, float(os.getenv("GROQ_RETRY_CAP_SECONDS", "4")))
     max_retry_after = max(cap, float(os.getenv("GROQ_MAX_RETRY_AFTER", "8")))
     delay = min(cap, base * (2 ** max(0, attempt - 1))) + random.uniform(0.0, 0.25)
-    if response is not None:
-        raw = response.headers.get("Retry-After")
-        if raw:
-            try:
-                retry_after = float(raw)
-                if retry_after <= max_retry_after:
-                    delay = max(0.2, retry_after)
-                else:
-                    return -1.0
-            except ValueError:
-                pass
+    retry_after = _retry_after_seconds(response)
+    if retry_after is not None:
+        if retry_after <= max_retry_after:
+            delay = max(0.2, retry_after)
+        else:
+            return -1.0
     return delay
+
+
+def _model_completion_cap(model: str, requested: int) -> int:
+    """Keep expected output below free-tier per-model minute limits.
+
+    Qwen currently enforces a tight output-token-per-minute window. Asking it
+    for 1100 completion tokens can be rejected before generation begins, so the
+    primary model has a deliberately conservative cap. GPT-OSS has a larger TPM
+    window but is also capped because several ~2.7k-total-token calls in one
+    scan can otherwise exhaust that window.
+    """
+    requested_max = max(256, int(requested))
+    generic = max(256, min(int(os.getenv("GROQ_MAX_TOKENS", "700")), 1200))
+    lowered = str(model or "").lower()
+    if lowered.startswith("qwen/"):
+        model_cap = max(320, min(int(os.getenv("GROQ_QWEN_MAX_TOKENS", "520")), 900))
+    elif lowered.startswith("openai/gpt-oss"):
+        model_cap = max(400, min(int(os.getenv("GROQ_GPT_OSS_MAX_TOKENS", "700")), 1200))
+    else:
+        model_cap = generic
+    return min(requested_max, generic, model_cap)
+
+
+def _model_request_limit(model: str) -> int:
+    default = max(1, min(int(os.getenv("GROQ_MAX_REQUESTS_PER_MODEL_PER_SCAN", "2")), 4))
+    lowered = str(model or "").lower()
+    if lowered.startswith("qwen/"):
+        return max(1, min(int(os.getenv("GROQ_QWEN_REQUESTS_PER_SCAN", str(default))), 4))
+    if lowered.startswith("openai/gpt-oss"):
+        return max(1, min(int(os.getenv("GROQ_GPT_OSS_REQUESTS_PER_SCAN", str(default))), 4))
+    return default
+
+
+def _reserve_model_request(model: str) -> None:
+    # Outside the production scan budget (unit tests/diagnostics), do not impose
+    # a sticky per-scan quota. Production calls start_scan_budget first.
+    if getattr(ai_provider, "_scan_deadline", None) is None:
+        return
+    used = int(_MODEL_REQUESTS.get(model, 0))
+    limit = _model_request_limit(model)
+    if used >= limit:
+        raise RuntimeError(f"Groq model request budget exhausted for current scan ({model}: {used}/{limit})")
+    _MODEL_REQUESTS[model] = used + 1
+
+
+def _mark_model_cooldown(model: str, response: Optional[requests.Response]) -> None:
+    retry_after = _retry_after_seconds(response)
+    if retry_after is None:
+        retry_after = 5.0
+    cap = max(2.0, float(os.getenv("GROQ_RATE_LIMIT_COOLDOWN_CAP_SECONDS", "30")))
+    seconds = min(cap, max(0.5, float(retry_after)))
+    _MODEL_COOLDOWN_UNTIL[model] = max(
+        float(_MODEL_COOLDOWN_UNTIL.get(model, 0.0)),
+        time.monotonic() + seconds,
+    )
+
+
+def _cooldown_remaining(model: str) -> float:
+    return max(0.0, float(_MODEL_COOLDOWN_UNTIL.get(model, 0.0)) - time.monotonic())
 
 
 def _groq_body(
@@ -101,14 +198,12 @@ def _groq_body(
         + "новых фактов или чисел. Не показывай рассуждения.\n\nINPUT_JSON:\n"
         + json.dumps(user_payload, ensure_ascii=False, separators=(",", ":"))
     )
-    requested_max = max(300, int(max_tokens))
-    groq_max = max(300, min(int(os.getenv("GROQ_MAX_TOKENS", "1100")), 1600))
     body = {
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
         "response_format": {"type": "json_object"},
         "temperature": max(0.15, min(float(temperature), 0.8)),
-        "max_completion_tokens": min(requested_max, groq_max),
+        "max_completion_tokens": _model_completion_cap(model, max_tokens),
         "top_p": 0.9,
     }
     lowered = model.lower()
@@ -143,10 +238,18 @@ def _request_groq_model(
         max_tokens=max_tokens,
     )
 
+    remaining = _cooldown_remaining(model)
+    if remaining > 0:
+        raise RuntimeError(f"Groq model cooldown active ({model}: {remaining:.1f}s)")
+
     last_exc: Optional[Exception] = None
     for attempt in range(1, attempts + 1):
         response: Optional[requests.Response] = None
         try:
+            remaining = _cooldown_remaining(model)
+            if remaining > 0:
+                raise RuntimeError(f"Groq model cooldown active ({model}: {remaining:.1f}s)")
+            _reserve_model_request(model)
             per_request_timeout = max(8, min(int(os.getenv("GROQ_MODEL_TIMEOUT", "25")), int(timeout)))
             response = requests.post(
                 url,
@@ -163,14 +266,15 @@ def _request_groq_model(
                 raise ValueError("Groq response contained zero candidate rows")
             ai_provider._annotate(candidates, "groq", str(payload.get("model") or model))
             logger.info(
-                "AI author provider=groq model=%s candidates=%s attempt=%s/%s",
+                "AI author provider=groq model=%s candidates=%s attempt=%s/%s max_completion_tokens=%s",
                 str(payload.get("model") or model),
                 len(candidates),
                 attempt,
                 attempts,
+                body.get("max_completion_tokens"),
             )
             return candidates
-        except (requests.RequestException, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
+        except (requests.RequestException, ValueError, KeyError, TypeError, json.JSONDecodeError, RuntimeError) as exc:
             last_exc = exc
             status = 0
             if isinstance(exc, requests.HTTPError) and exc.response is not None:
@@ -183,7 +287,19 @@ def _request_groq_model(
             if status in {401, 403}:
                 raise RuntimeError(f"Groq authorization failed HTTP {status}: {diagnostic}") from exc
 
-            retryable = status in {408, 409, 425, 429, 500, 502, 503, 504} or isinstance(
+            # A rate-limited model is never retried immediately. The fallback
+            # model has its own independent budget, so switching is both faster
+            # and substantially cheaper than repeatedly burning the same TPM/OTPM.
+            if status == 429:
+                _mark_model_cooldown(model, response)
+                logger.warning(
+                    "Groq model=%s rate-limited: %s; switching model immediately",
+                    model,
+                    diagnostic,
+                )
+                break
+
+            retryable = status in {408, 409, 425, 500, 502, 503, 504} or isinstance(
                 exc, (requests.Timeout, requests.ConnectionError, ValueError, KeyError, TypeError, json.JSONDecodeError)
             )
             delay = _retry_delay(response, attempt)
@@ -279,6 +395,7 @@ def _preferred_provider_groq_first() -> str:
 def install_groq_primary() -> None:
     """Install Groq before writer/event_writer import provider functions by name."""
     global _ORIGINAL_REQUEST_CANDIDATES, _ORIGINAL_HAS_AI_PROVIDER, _ORIGINAL_PREFERRED_PROVIDER
+    global _ORIGINAL_START_SCAN_BUDGET
     current = ai_provider.request_candidates
     if getattr(current, "_groq_primary", False):
         return
@@ -286,6 +403,7 @@ def install_groq_primary() -> None:
     _ORIGINAL_REQUEST_CANDIDATES = current
     _ORIGINAL_HAS_AI_PROVIDER = ai_provider.has_ai_provider
     _ORIGINAL_PREFERRED_PROVIDER = ai_provider.preferred_provider_name
+    _ORIGINAL_START_SCAN_BUDGET = ai_provider.start_scan_budget
 
     wrapped = wraps(current)(_request_candidates_groq_first)
     wrapped._groq_primary = True  # type: ignore[attr-defined]
@@ -293,11 +411,84 @@ def install_groq_primary() -> None:
     ai_provider.has_ai_provider = _has_ai_provider_groq_first
     ai_provider.preferred_provider_name = _preferred_provider_groq_first
 
+    budget_wrapper = wraps(_ORIGINAL_START_SCAN_BUDGET)(_start_scan_budget_groq_first)
+    budget_wrapper._groq_scan_budget = True  # type: ignore[attr-defined]
+    ai_provider.start_scan_budget = budget_wrapper
+
     # Once Groq is primary, a known-broken free Mistral quota must not stall a
     # publishing slot for two 60-second retries. It remains one-shot fallback.
     os.environ["MISTRAL_RETRIES"] = os.getenv("GROQ_MISTRAL_FALLBACK_RETRIES", "1")
-    os.environ["BOT_VERSION"] = "v11.14"
+    os.environ["BOT_VERSION"] = "v11.14.1"
     logger.info("Groq primary installed models=%s", " -> ".join(configured_groq_models()))
+
+
+def _install_generation_retry_guard() -> None:
+    """Do not request another AI batch after at least one valid draft exists.
+
+    The legacy writers try to collect three drafts even though production only
+    requires one valid draft. On a tight free-tier TPM budget that turns a valid
+    first response into several unnecessary Groq calls. Run each writer with one
+    internal AI pass, and allow exactly one second pass only when the first call
+    returned zero valid drafts.
+    """
+    import writer
+    import event_writer
+
+    current_trade = writer.generate_post_candidates
+    if not getattr(current_trade, "_groq_retry_guard", False):
+        @wraps(current_trade)
+        def trade_generate(*args, **kwargs):
+            configured = max(1, int(getattr(writer, "AI_RETRIES", 1)))
+            if configured <= 1:
+                return current_trade(*args, **kwargs)
+            writer.AI_RETRIES = 1
+            try:
+                drafts = current_trade(*args, **kwargs)
+            finally:
+                writer.AI_RETRIES = configured
+            if drafts:
+                logger.info(
+                    "Groq TRADE retry guard: first batch produced %s valid draft(s); no extra AI batch",
+                    len(drafts),
+                )
+                return drafts
+            logger.warning("Groq TRADE retry guard: zero valid drafts; allowing one guarded retry")
+            writer.AI_RETRIES = 1
+            try:
+                return current_trade(*args, **kwargs)
+            finally:
+                writer.AI_RETRIES = configured
+
+        trade_generate._groq_retry_guard = True  # type: ignore[attr-defined]
+        writer.generate_post_candidates = trade_generate
+
+    current_event = event_writer.generate_event_candidates
+    if not getattr(current_event, "_groq_retry_guard", False):
+        @wraps(current_event)
+        def event_generate(*args, **kwargs):
+            configured = max(1, int(getattr(event_writer, "EVENT_AI_RETRIES", 1)))
+            if configured <= 1:
+                return current_event(*args, **kwargs)
+            event_writer.EVENT_AI_RETRIES = 1
+            try:
+                drafts = current_event(*args, **kwargs)
+            finally:
+                event_writer.EVENT_AI_RETRIES = configured
+            if drafts:
+                logger.info(
+                    "Groq EVENT retry guard: first batch produced %s valid draft(s); no extra AI batch",
+                    len(drafts),
+                )
+                return drafts
+            logger.warning("Groq EVENT retry guard: zero valid drafts; allowing one guarded retry")
+            event_writer.EVENT_AI_RETRIES = 1
+            try:
+                return current_event(*args, **kwargs)
+            finally:
+                event_writer.EVENT_AI_RETRIES = configured
+
+        event_generate._groq_retry_guard = True  # type: ignore[attr-defined]
+        event_writer.generate_event_candidates = event_generate
 
 
 def install_provider_source_tracking() -> None:
@@ -344,11 +535,15 @@ def install_provider_source_tracking() -> None:
         event_source._groq_source_tracking = True  # type: ignore[attr-defined]
         author_pool_policy._truthful_event_source = event_source
 
+    _install_generation_retry_guard()
+
 
 def verify_groq_primary(*, require_key: Optional[bool] = None) -> None:
     """Fail fast in production if startup ordering or the Groq secret is wrong."""
     if not getattr(ai_provider.request_candidates, "_groq_primary", False):
         raise RuntimeError("Groq primary provider was not installed")
+    if not getattr(ai_provider.start_scan_budget, "_groq_scan_budget", False):
+        raise RuntimeError("Groq scan budget reset was not installed")
     models = configured_groq_models()
     if not models:
         raise RuntimeError("Groq model chain is empty")
@@ -362,9 +557,9 @@ def verify_groq_primary(*, require_key: Optional[bool] = None) -> None:
         raise RuntimeError("GROQ_API_KEY is missing in production; add GitHub Secret GROQ_API_KEY")
 
     print(
-        "[v11.14] Groq primary verified: "
+        "[v11.14.1] Groq primary verified: "
         + " -> ".join(models)
-        + " -> Mistral -> OrcaRouter -> OpenRouter; deterministic author disabled"
+        + " -> Mistral -> OrcaRouter -> OpenRouter; rate-limit guards active; deterministic author disabled"
     )
 
 
