@@ -7,7 +7,7 @@ import os
 def activate_release() -> None:
     from reach_recovery_v11_8 import configure_environment
 
-    # v11.13 makes Mistral Small the authoritative author and keeps the proven
+    # v11.13.2 uses the exact account-enabled Mistral Large 2512 model and keeps the proven
     # writer/fact-lock stack. Deterministic templates are disabled whenever an
     # AI token is configured.
     configure_environment()
