@@ -4,6 +4,10 @@ The market engine stays authoritative. This layer watches the account's initial
 30m distribution and 30m->2h expansion, keeps deterministic outage copy from
 flooding a depressed account, and hardens the TRADE AI handoff without allowing
 models to own public Entry/SL/TP numbers.
+
+Distribution health is telemetry for AI-authored posts, not a second hard gate.
+A depressed feed must not create a self-sustaining no-post loop where the bot
+cannot publish enough fresh samples to recover its own distribution statistics.
 """
 from __future__ import annotations
 
@@ -124,18 +128,24 @@ def distribution_health(now: Optional[datetime] = None) -> dict[str, float | int
 
 
 def evaluate_recovery_candidate_v118(*args, **kwargs):
-    """Block weak outage copy and react to depressed distribution stages."""
-    base = _ORIGINAL_RECOVERY_GATE(*args, **kwargs)
+    """Keep distribution recovery from becoming a self-sustaining publication outage.
 
+    Upstream market selection, quality, fact-lock, public-plan and live-price
+    checks remain authoritative. For AI-authored candidates we therefore evaluate
+    the base recovery guard in normal mode even when the slow rolling reach state
+    says recovery_mode=True. Distribution health is recorded in the reason only.
+
+    Deterministic outage copy remains stricter and may still be blocked while
+    distribution is depressed so provider failures cannot flood the feed.
+    """
     source = str(kwargs.get("writer_source") or "").strip().lower()
-    event = str(kwargs.get("event_class") or "ordinary").strip().lower()
+    deterministic = source.startswith("deterministic")
     recovery_mode = bool(kwargs.get("recovery_mode", False))
-    reach = float(kwargs.get("reach_score", 0.0) or 0.0)
-    selection = float(kwargs.get("selection_score", 0.0) or 0.0)
-    opportunity = float(kwargs.get("opportunity_score", 0.0) or 0.0)
-    demand = float(kwargs.get("audience_demand", 0.0) or 0.0)
-    attention = float(kwargs.get("attention_score", 0.0) or 0.0)
-    micro = float(kwargs.get("micro_score", 0.0) or 0.0)
+
+    base_kwargs = dict(kwargs)
+    if not deterministic:
+        base_kwargs["recovery_mode"] = False
+    base = _ORIGINAL_RECOVERY_GATE(*args, **base_kwargs)
 
     health = distribution_health()
     early_n = int(health["early_n"])
@@ -145,7 +155,6 @@ def evaluate_recovery_candidate_v118(*args, **kwargs):
     initial_depressed = early_n >= 4 and early_ratio < 0.78
     expansion_depressed = expansion_n >= 4 and expansion_ratio < 0.80
     distribution_depressed = initial_depressed or expansion_depressed
-    deterministic = source.startswith("deterministic")
 
     suffix = (
         f"; v11.8 30m={float(health['recent30']):.0f}/{float(health['baseline30']):.0f} "
@@ -164,35 +173,22 @@ def evaluate_recovery_candidate_v118(*args, **kwargs):
             threshold=max(float(base.threshold), 82.0),
             reason="v11.8 provider-outage fallback blocked during reach recovery" + suffix,
         )
+
     if not base.allowed:
         return replace(base, reason=base.reason + suffix)
 
-    strong_event = event in {"fresh_event", "audience_breakout", "high_demand_active"}
-    activity = max(attention, micro)
-    rescue_quality = (
-        strong_event and reach >= 78.0 and selection >= 71.0 and opportunity >= 65.0
-        and demand >= 62.0 and activity >= 58.0
-    )
-    exceptional = (
-        strong_event and reach >= 83.0 and selection >= 76.0 and opportunity >= 70.0
-        and demand >= 72.0 and activity >= 68.0
-    )
+    if distribution_depressed:
+        stage = "initial+expansion" if initial_depressed and expansion_depressed else (
+            "initial" if initial_depressed else "expansion"
+        )
+        return replace(
+            base,
+            reason=(
+                f"v11.12 {stage} distribution depressed (advisory only; cadence not blocked); "
+                + base.reason + suffix
+            ),
+        )
 
-    if distribution_depressed and not rescue_quality:
-        stage = "initial" if initial_depressed else "expansion"
-        return replace(
-            base,
-            allowed=False,
-            threshold=max(float(base.threshold), 78.0),
-            reason=f"v11.8 {stage}-distribution rescue block" + suffix,
-        )
-    if initial_depressed and expansion_depressed and not exceptional:
-        return replace(
-            base,
-            allowed=False,
-            threshold=max(float(base.threshold), 83.0),
-            reason="v11.8 dual-stage distribution block" + suffix,
-        )
     return replace(base, reason=base.reason + suffix)
 
 
@@ -357,5 +353,5 @@ def activate_reach_recovery() -> None:
     writer._request_ai_candidates = _track_ai_provider_v118
     writer._build_generated = _build_generated_v118
     logger.info(
-        "v11.8 distribution recovery active: conservative ranking, 30m/2h guard, truthful repaired-AI attribution"
+        "v11.12 cadence recovery active: distribution telemetry is advisory for AI, deterministic outage copy stays bounded"
     )
