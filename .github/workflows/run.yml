@@ -68,7 +68,7 @@ jobs:
       # freshness and market gates still prevent blind repetition.
       COOLDOWN_MIN: "120"
 
-      # AI author chain: Mistral Large is authoritative and always runs first.
+      # AI author chain: Mistral Small is authoritative and always runs first.
       # DeepSeek/OpenRouter remain AI fallbacks. With any AI token configured,
       # deterministic templates are disabled instead of silently replacing Mistral.
       CONTENT_MODE: "ai_author"
@@ -86,7 +86,7 @@ jobs:
       OPENROUTER_RETRY_BASE_SECONDS: "1"
       OPENROUTER_RETRY_CAP_SECONDS: "3"
       OPENROUTER_MAX_RETRY_AFTER: "6"
-      MISTRAL_MODEL: "mistral-large-latest"
+      MISTRAL_MODEL: "mistral-small-latest"
       MISTRAL_RETRIES: "3"
       MISTRAL_RETRY_BASE_SECONDS: "1"
       MISTRAL_RETRY_CAP_SECONDS: "4"
