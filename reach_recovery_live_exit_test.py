@@ -1,4 +1,4 @@
-"""Regression checks for fresh-distribution recovery exit."""
+"""Regression checks for fresh-distribution recovery annotations and outage safety."""
 from __future__ import annotations
 
 import reach_recovery_live_exit as live_exit
@@ -83,9 +83,13 @@ def main() -> int:
     policy._ORIGINAL_RECOVERY_GATE = base_recovery_gate
     policy.distribution_health = lambda now=None: _health()
 
-    blocked = policy.evaluate_recovery_candidate_v118(**_prom_kwargs())
-    assert not blocked.allowed
+    # v11.12: rolling recovery is no longer a second hard gate for valid AI copy.
+    direct_ai = policy.evaluate_recovery_candidate_v118(**_prom_kwargs())
+    assert direct_ai.allowed, direct_ai.reason
 
+    # The legacy live-exit layer may still add a useful diagnostic annotation when
+    # fresh distribution has clearly recovered, but it is no longer required to
+    # unlock an otherwise valid AI post.
     released = live_exit._evaluate_with_live_exit(
         policy.evaluate_recovery_candidate_v118,
         **_prom_kwargs(),
@@ -109,8 +113,7 @@ def main() -> int:
     assert deterministic_strong.allowed
     assert "exceptional outage fallback" in deterministic_strong.reason
 
-    # Today's production restart case: one very strong 30m sample (115 vs 70)
-    # plus seven healthy 30m->2h expansion samples must release a valid AI EVENT.
+    # One very strong fresh sample still gets the restart annotation.
     policy.distribution_health = lambda now=None: _health(
         early=115.0 / 70.0,
         early_n=1,
@@ -124,31 +127,33 @@ def main() -> int:
     assert restart.allowed, restart.reason
     assert "restart" in restart.reason
 
-    # A merely average singleton is still insufficient, even with healthy expansion.
+    # These weaker distribution states previously caused a self-sustaining
+    # no-post loop. They must no longer veto an AI candidate that passed the
+    # normal market/content guard.
     policy.distribution_health = lambda now=None: _health(early=1.02, early_n=1, expansion=1.05, expansion_n=7)
     insufficient = live_exit._evaluate_with_live_exit(
         policy.evaluate_recovery_candidate_v118,
         **_prom_kwargs(),
     )
-    assert not insufficient.allowed
+    assert insufficient.allowed, insufficient.reason
 
-    # Strong 30m alone cannot release recovery if second-stage expansion is weak.
-    policy.distribution_health = lambda now=None: _health(early=1.30, early_n=1, expansion=0.82, expansion_n=7)
+    policy.distribution_health = lambda now=None: _health(early=1.30, early_n=1, expansion=0.75, expansion_n=7)
     weak_expansion = live_exit._evaluate_with_live_exit(
         policy.evaluate_recovery_candidate_v118,
         **_pump_kwargs(),
     )
-    assert not weak_expansion.allowed
+    assert weak_expansion.allowed, weak_expansion.reason
+    assert "advisory only" in weak_expansion.reason
 
-    # Multi-sample but genuinely depressed fresh distribution remains blocked.
-    policy.distribution_health = lambda now=None: _health(early=0.82, early_n=2)
-    still_blocked = live_exit._evaluate_with_live_exit(
+    policy.distribution_health = lambda now=None: _health(early=0.82, early_n=2, expansion=0.75, expansion_n=7)
+    depressed = live_exit._evaluate_with_live_exit(
         policy.evaluate_recovery_candidate_v118,
         **_prom_kwargs(),
     )
-    assert not still_blocked.allowed
+    assert depressed.allowed, depressed.reason
+    assert "advisory only" in depressed.reason
 
-    print("LIVE RECOVERY EXIT: OK | normal + confident restart | outage continuity guarded")
+    print("LIVE RECOVERY EXIT: OK | AI cadence non-blocking | deterministic outage continuity guarded")
     return 0
 
 

@@ -14,7 +14,7 @@ def main() -> int:
     import recovery_guard
     import writer
 
-    assert os.environ.get("BOT_VERSION") == "v11.11"
+    assert os.environ.get("BOT_VERSION") == "v11.12"
     assert os.environ.get("AI_RETRIES") == "2"
     assert os.environ.get("EVENT_AI_RETRIES") == "2"
     assert os.environ.get("ORCAROUTER_RETRIES") == "1"
@@ -31,7 +31,7 @@ def main() -> int:
     assert writer.DETERMINISTIC_COMPARE_SLOTS == 0
     assert event_writer.EVENT_DETERMINISTIC_COMPARE_SLOTS == 0
 
-    print("RUNTIME POLICY: OK | production startup order and all critical patches active")
+    print("RUNTIME POLICY: OK | v11.12 startup order and all critical patches active")
     return 0
 
 

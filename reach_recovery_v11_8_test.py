@@ -1,4 +1,4 @@
-"""Offline regression checks for v11.8 distribution recovery."""
+"""Offline regression checks for v11.8/v11.12 distribution recovery."""
 from __future__ import annotations
 
 import os
@@ -8,6 +8,9 @@ from recovery_guard import RecoveryDecision
 
 
 def _gate(*_args, **_kwargs):
+    recovery_mode = bool(_kwargs.get("recovery_mode", False))
+    if recovery_mode:
+        return RecoveryDecision(False, "base recovery uplift blocked", 78.0)
     return RecoveryDecision(True, "base passed", 74.0)
 
 
@@ -47,6 +50,8 @@ def main() -> int:
     assert not deterministic.allowed
     assert "provider-outage fallback" in deterministic.reason
 
+    # Depressed distribution is telemetry for AI-authored content, not a hard
+    # publication stop. The wrapper must re-evaluate the base gate in normal mode.
     ordinary = policy.evaluate_recovery_candidate_v118(
         lane="event", writer_source="mistral_event", event_class="ordinary",
         micro_phase="ordinary", opportunity_score=68.0, audience_demand=78.0,
@@ -54,8 +59,8 @@ def main() -> int:
         selection_score=74.0, reach_score=80.0, plan_valid=False,
         recovery_mode=True, hour_affinity=55.0, hour_samples=30,
     )
-    assert not ordinary.allowed
-    assert "distribution" in ordinary.reason
+    assert ordinary.allowed
+    assert "advisory only" in ordinary.reason
 
     rescue = policy.evaluate_recovery_candidate_v118(
         lane="event", writer_source="mistral_event", event_class="audience_breakout",
@@ -100,7 +105,7 @@ def main() -> int:
     )
     assert empty == "" and not meaningful
 
-    print("v11.8 distribution recovery tests passed | truthful repaired-AI contract passed")
+    print("v11.12 cadence recovery tests passed | truthful repaired-AI contract passed")
     return 0
 
 
