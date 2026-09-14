@@ -30,8 +30,8 @@ def activate_release() -> None:
         raise RuntimeError("conservative ranking bounds were not preserved")
     if os.environ.get("AI_RETRIES") != "3" or os.environ.get("EVENT_AI_RETRIES") != "3":
         raise RuntimeError("Mistral author retry policy was not activated")
-    if os.environ.get("MISTRAL_MODEL") != "mistral-small-latest":
-        raise RuntimeError("Mistral Small primary model was not activated")
+    if os.environ.get("MISTRAL_MODEL") != "mistral-large-2512":
+        raise RuntimeError("Mistral Large 2512 primary model was not activated")
     if os.environ.get("AI_AUTHOR_REQUIRED") != "1":
         raise RuntimeError("AI-only author policy was not activated")
     if os.environ.get("ORCAROUTER_RETRIES") != "1":
