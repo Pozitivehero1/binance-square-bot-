@@ -42,9 +42,9 @@ def configure_environment() -> None:
     # Mistral is the authoritative author. Three provider attempts cover
     # transient API/JSON failures; three author passes cover locally rejected
     # prose. Routed providers remain AI-only fallbacks.
-    os.environ["MISTRAL_MODEL"] = "mistral-small-latest"
+    os.environ["MISTRAL_MODEL"] = "mistral-large-2512"
     os.environ["MISTRAL_RETRIES"] = "3"
-    os.environ["MISTRAL_RETRY_BASE_SECONDS"] = "1"
+    os.environ["MISTRAL_RETRY_BASE_SECONDS"] = "2"
     os.environ["MISTRAL_RETRY_CAP_SECONDS"] = "4"
     os.environ["ORCAROUTER_RETRIES"] = "1"
     os.environ["AI_RETRIES"] = "3"
