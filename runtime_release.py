@@ -7,7 +7,7 @@ import os
 def activate_release() -> None:
     from reach_recovery_v11_8 import configure_environment
 
-    # v11.13.2 uses the exact account-enabled Mistral Large 2512 model and keeps the proven
+    # v11.13.3 uses the exact free-tier Mistral Small 2603 model and keeps the proven
     # writer/fact-lock stack. Deterministic templates are disabled whenever an
     # AI token is configured.
     configure_environment()
@@ -28,10 +28,10 @@ def activate_release() -> None:
         raise RuntimeError("v11.13 version defaults were not activated")
     if os.environ.get("ADAPTIVE_HOUR_MAX") != "5":
         raise RuntimeError("conservative ranking bounds were not preserved")
-    if os.environ.get("AI_RETRIES") != "3" or os.environ.get("EVENT_AI_RETRIES") != "3":
+    if os.environ.get("AI_RETRIES") != "2" or os.environ.get("EVENT_AI_RETRIES") != "2":
         raise RuntimeError("Mistral author retry policy was not activated")
-    if os.environ.get("MISTRAL_MODEL") != "mistral-large-2512":
-        raise RuntimeError("Mistral Large 2512 primary model was not activated")
+    if os.environ.get("MISTRAL_MODEL") != "mistral-small-2603":
+        raise RuntimeError("Mistral Small 2603 primary model was not activated")
     if os.environ.get("AI_AUTHOR_REQUIRED") != "1":
         raise RuntimeError("AI-only author policy was not activated")
     if os.environ.get("ORCAROUTER_RETRIES") != "1":
