@@ -38,7 +38,7 @@ def _http_error(status: int, body: str = "temporarily unavailable") -> Mock:
 def main() -> None:
     env = {
         "MISTRAL_API": "mistral-test",
-        "MISTRAL_MODEL": "mistral-large-2512",
+        "MISTRAL_MODEL": "mistral-small-2603",
         "MISTRAL_RETRIES": "3",
         "MISTRAL_RETRY_BASE_SECONDS": "0.01",
         "MISTRAL_RETRY_CAP_SECONDS": "0.01",
@@ -65,12 +65,12 @@ def main() -> None:
         assert preferred_provider_name() == "mistral"
         result = request_candidates(**kwargs)
         assert result.provider == "mistral"
-        assert result.model == "mistral-large-2512"
+        assert result.model == "mistral-small-2603"
         assert result.candidates[0]["_provider"] == "mistral"
         assert post.call_count == 1
         assert "mistral.ai" in post.call_args.args[0]
         body = post.call_args.kwargs["json"]
-        assert body["model"] == "mistral-large-2512"
+        assert body["model"] == "mistral-small-2603"
         assert "КРИТИЧЕСКИЙ КОНТРАКТ ОТВЕТА" in body["messages"][0]["content"]
 
     with patch.dict(os.environ, env, clear=False), patch(
@@ -105,7 +105,7 @@ def main() -> None:
         assert result.provider == "deepseek_v4_pro"
         assert post.call_count == 1
 
-    print("AI PROVIDER: OK | Mistral Large 2512 primary | 3 retries | AI fallbacks preserved")
+    print("AI PROVIDER: OK | Mistral Small 2603 primary | 3 retries | AI fallbacks preserved")
 
 
 if __name__ == "__main__":

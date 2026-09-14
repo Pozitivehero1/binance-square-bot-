@@ -15,11 +15,14 @@ def main() -> int:
     import writer
 
     assert os.environ.get("BOT_VERSION") == "v11.13"
-    assert os.environ.get("AI_RETRIES") == "3"
-    assert os.environ.get("EVENT_AI_RETRIES") == "3"
+    assert os.environ.get("AI_RETRIES") == "2"
+    assert os.environ.get("EVENT_AI_RETRIES") == "2"
     assert os.environ.get("ORCAROUTER_RETRIES") == "1"
-    assert os.environ.get("MISTRAL_MODEL") == "mistral-large-2512"
-    assert os.environ.get("MISTRAL_RETRIES") == "3"
+    assert os.environ.get("MISTRAL_MODEL") == "mistral-small-2603"
+    assert os.environ.get("MISTRAL_RETRIES") == "2"
+    assert os.environ.get("AI_VARIANTS") == "3"
+    assert os.environ.get("EVENT_AI_VARIANTS") == "3"
+    assert os.environ.get("AI_MAX_TOKENS") == "1400"
     assert os.environ.get("AI_AUTHOR_REQUIRED") == "1"
 
     assert getattr(ai_provider._request, "_openrouter_multi_model_fallback", False)
@@ -34,7 +37,7 @@ def main() -> int:
     assert writer.DETERMINISTIC_COMPARE_SLOTS == 0
     assert event_writer.EVENT_DETERMINISTIC_COMPARE_SLOTS == 0
 
-    print("RUNTIME POLICY: OK | v11.13 Mistral Large 2512 startup policy active")
+    print("RUNTIME POLICY: OK | v11.13 Mistral Small 2603 startup policy active")
     return 0
 
 

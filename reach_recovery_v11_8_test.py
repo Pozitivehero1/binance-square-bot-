@@ -33,11 +33,14 @@ def main() -> int:
     assert os.environ["ADAPTIVE_MAX_TOTAL"] == "14"
     assert os.environ["ADAPTIVE_TICKER_MAX"] == "10"
     assert os.environ["ADAPTIVE_HOUR_MAX"] == "5"
-    assert os.environ["AI_RETRIES"] == "3"
-    assert os.environ["EVENT_AI_RETRIES"] == "3"
+    assert os.environ["AI_RETRIES"] == "2"
+    assert os.environ["EVENT_AI_RETRIES"] == "2"
     assert os.environ["ORCAROUTER_RETRIES"] == "1"
-    assert os.environ["MISTRAL_MODEL"] == "mistral-large-2512"
-    assert os.environ["MISTRAL_RETRIES"] == "3"
+    assert os.environ["MISTRAL_MODEL"] == "mistral-small-2603"
+    assert os.environ["MISTRAL_RETRIES"] == "2"
+    assert os.environ["AI_VARIANTS"] == "3"
+    assert os.environ["EVENT_AI_VARIANTS"] == "3"
+    assert os.environ["AI_MAX_TOKENS"] == "1400"
     assert os.environ["AI_AUTHOR_REQUIRED"] == "1"
 
     policy._ORIGINAL_RECOVERY_GATE = _gate

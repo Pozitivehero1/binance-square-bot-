@@ -689,7 +689,7 @@ def _request_ai_candidates(
         ),
         user_payload=payload,
         temperature=AI_TEMPERATURE,
-        max_tokens=2800,
+        max_tokens=max(600, min(int(os.getenv("AI_MAX_TOKENS", "1400")), 1800)),
         timeout=AI_TIMEOUT,
         presence_penalty=0.45,
         frequency_penalty=0.35,
