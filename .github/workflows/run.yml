@@ -68,7 +68,7 @@ jobs:
       # freshness and market gates still prevent blind repetition.
       COOLDOWN_MIN: "120"
 
-      # AI author chain: the exact account-enabled Mistral Large 2512 model runs first.
+      # AI author chain: exact free-tier Mistral Small 2603 runs first.
       # DeepSeek/OpenRouter remain AI fallbacks. With any AI token configured,
       # deterministic templates are disabled instead of silently replacing Mistral.
       CONTENT_MODE: "ai_author"
@@ -86,20 +86,21 @@ jobs:
       OPENROUTER_RETRY_BASE_SECONDS: "1"
       OPENROUTER_RETRY_CAP_SECONDS: "3"
       OPENROUTER_MAX_RETRY_AFTER: "6"
-      MISTRAL_MODEL: "mistral-large-2512"
-      MISTRAL_RETRIES: "3"
-      MISTRAL_RETRY_BASE_SECONDS: "2"
-      MISTRAL_RETRY_CAP_SECONDS: "4"
-      MISTRAL_MAX_RETRY_AFTER: "8"
+      MISTRAL_MODEL: "mistral-small-2603"
+      MISTRAL_RETRIES: "2"
+      MISTRAL_RETRY_BASE_SECONDS: "60"
+      MISTRAL_RETRY_CAP_SECONDS: "65"
+      MISTRAL_MAX_RETRY_AFTER: "70"
       AI_AUTHOR_REQUIRED: "1"
-      AI_VARIANTS: "6"
-      AI_RETRIES: "3"
+      AI_VARIANTS: "3"
+      AI_RETRIES: "2"
       AI_TEMPERATURE: "0.65"
       MIN_VALID_AI_DRAFTS: "1"
       DETERMINISTIC_COMPARE_SLOTS: "0"
-      AI_TIMEOUT: "55"
-      EVENT_AI_VARIANTS: "6"
-      EVENT_AI_RETRIES: "3"
+      AI_TIMEOUT: "75"
+      AI_MAX_TOKENS: "1400"
+      EVENT_AI_VARIANTS: "3"
+      EVENT_AI_RETRIES: "2"
       EVENT_AI_TEMPERATURE: "0.65"
       EVENT_MIN_VALID_AI_DRAFTS: "1"
       EVENT_DETERMINISTIC_COMPARE_SLOTS: "0"
