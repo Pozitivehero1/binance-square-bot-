@@ -41,7 +41,8 @@ AI_RETRIES = max(1, min(int(os.getenv("AI_RETRIES", "2")), 3))
 MIN_VALID_AI_DRAFTS = max(1, min(int(os.getenv("MIN_VALID_AI_DRAFTS", "2")), 6))
 DETERMINISTIC_COMPARE_SLOTS = max(0, min(int(os.getenv("DETERMINISTIC_COMPARE_SLOTS", "0")), 3))
 AI_TIMEOUT = max(10, min(int(os.getenv("AI_TIMEOUT", "55")), 120))
-AI_TEMPERATURE = max(0.15, min(float(os.getenv("AI_TEMPERATURE", "0.70")), 0.85))
+AI_TEMPERATURE = max(0.15, min(float(os.getenv("AI_TEMPERATURE", "0.65")), 0.85))
+AI_AUTHOR_REQUIRED = os.getenv("AI_AUTHOR_REQUIRED", "1").strip().lower() in {"1", "true", "yes"}
 
 # Legacy style hint only. In v11.1 every valid public trade plan carries the full ladder.
 FULL_PLAN_FORMATS: set[str] = set(FORMAT_SPECS) if False else {"trade_map", "risk_first"}
@@ -621,53 +622,79 @@ def _request_ai_candidates(
     if not has_ai_provider():
         return []
 
-    format_briefs = [{"format_id": fmt, "brief": FORMAT_SPECS[fmt]["brief"]} for fmt in formats]
+    requested = [{"format_id": fmt, "brief": FORMAT_SPECS[fmt]["brief"]} for fmt in formats]
     payload = {
-        "task": "Напиши готовые посты для Binance Square. Не редактируй шаблон — каждый текст придумай с нуля по фактам.",
+        "task": (
+            "Создай отдельный готовый авторский текст для каждого элемента requested_formats. "
+            "Это посты в ленту Binance Square, а не отчёт индикаторов и не инвестиционный совет."
+        ),
         "semantic_package": package,
-        "formats_in_order": format_briefs,
+        "requested_formats": requested,
+        "candidate_count": len(requested),
         "recent_posts_to_avoid": [str(item)[:650] for item in recent_posts[-8:]],
-        "attempt": attempt,
-        "rules": [
-            "Пиши на русском как живой практикующий трейдер. Без канцелярита и без одинакового ритма абзацев.",
-            "Первая строка: cashtag и конкретное изменение рынка. Никаких вводных о том, как важно иметь план.",
-            "Текст объясняет наблюдаемый факт, его ограничение и условие сценария. Не описывай собственную торговлю или прибыль.",
-            "Используй только числа из semantic_package и не пересчитывай их. Можно использовать запятую вместо точки в десятичной дроби.",
-            "Направление, entry, entry_zone, stop_loss, TP1/TP2/TP3 заданы Python и не могут быть изменены.",
-            "Напиши только вступление и объяснение события. НЕ пиши строки входа, стопа и TP: Python добавит полный план сам.",
-            "Обязательно включи хотя бы один конкретный рыночный факт из market с его периодом. Никаких общих советов вместо события.",
-            "Не утверждай будущее. Только условия: если/пока/при закреплении/при потере уровня.",
-            "Следуй trade_plan.state_rule. Если цена уже у уровня, не обещай будущий ретест этого же уровня.",
-            "Не используй штампы: 'направление идеи', 'граница ошибки', 'диапазон контроля', 'параметры сценария'.",
-            "Не выпрашивай лайки, комментарии, подписки, донаты или чаевые и не упоминай Write to Earn/вознаграждение автора.",
-            "Не заканчивай каждый пост вопросом. В этой партии вопрос допустим максимум в одном варианте.",
-            "Не добавляй хэштеги и эмодзи. Код сам решит, нужен ли один визуальный акцент.",
-            "Длина авторской части 150–240 символов, 2 коротких абзаца. Полный план будет добавлен программой.",
-            "Не ссылайся на новости, китов, инсайды, ликвидации или причины движения, если их нет в semantic_package.",
-            "Не копируй синтаксис, открывающие фразы и смысловую композицию recent_posts_to_avoid.",
+        "revision_pass": attempt,
+        "writing_brief": {
+            "voice": (
+                "Русский язык. Спокойный практикующий трейдер: конкретно, естественно, "
+                "без канцелярита, пафоса, телеграфного набора метрик и ощущения шаблона."
+            ),
+            "structure": (
+                "2 коротких абзаца, 150–240 символов авторской части. Первая строка начинается "
+                "с основного cashtag и сразу сообщает самое интересное наблюдение. Затем объясни, "
+                "что подтверждает или отменяет идею. Полный блок сделки добавит Python."
+            ),
+            "selection": (
+                "Для каждого текста выбери только 1–2 связанных факта с периодом. Не перечисляй "
+                "все показатели и не повторяй одну мысль разными словами."
+            ),
+        },
+        "hard_constraints": [
+            "Один candidate на каждый requested_formats, в том же порядке; format_id копируй дословно.",
+            "Используй только факты и числа из semantic_package. Не считай, не округляй и не добавляй числа.",
+            "Не пиши entry, вход, стоп, stop-loss, TP1/TP2/TP3: канонический план добавляет Python.",
+            "Не утверждай будущее и прибыль. Допустимы только наблюдение и ясное условие если/пока/при.",
+            "Учитывай trade_plan.state_rule: не обещай будущий ретест уровня, возле которого цена уже находится.",
+            "Запрещены новости, киты, инсайды, ликвидации и причины движения, если их нет во входных фактах.",
+            "Запрещены просьбы о лайках, комментариях, подписках, донатах и упоминания Write to Earn.",
+            "Без хэштегов, Markdown, заголовков полей, эмодзи и вопроса в каждом варианте.",
+            "Не используй фразы: направление идеи, граница ошибки, диапазон контроля, параметры сценария.",
+            "Не копируй начало, синтаксис или композицию recent_posts_to_avoid.",
         ],
-        "json_shape": {
+        "silent_check_before_answer": [
+            "Русский текст звучит как человек, а не терминал.",
+            "Знак изменения согласован со словами вырос/упал.",
+            "Нет новых чисел и торгового блока.",
+            "Все варианты заметно отличаются друг от друга.",
+            "Ответ является одним валидным JSON-объектом.",
+        ],
+        "output_schema": {
             "candidates": [
-                {"format_id": formats[0] if formats else "hot_take", "text": "готовый многоабзацный пост"}
+                {"format_id": "точный format_id из requested_formats", "text": "готовый текст"}
             ]
         },
     }
+    if attempt > 1:
+        payload["revision_instruction"] = (
+            "Предыдущая партия не прошла локальную проверку. Перепиши все варианты полностью, "
+            "сделай язык проще и естественнее; особенно проверь числа, длину, знак движения, "
+            "отсутствие торгового блока и точное совпадение format_id."
+        )
+
     result = request_candidates(
         system_prompt=(
-            "Ты автор трейдерского аккаунта Binance Square. Твоя задача — живой, разнообразный, полезный текст, "
-            "который помогает читателю понять сделку. Все торговые числа уже рассчитаны программой: никогда не меняй их "
-            "и не придумывай новые. Не обещай доходность, не дави на читателя и не проси донаты/лайки/комментарии. "
-            "Верни только валидный JSON."
+            "Ты сильный русскоязычный редактор крипторынка и автор Binance Square. "
+            "Пиши короткие полезные посты, которые хочется дочитать и открыть указанный рынок. "
+            "Факты неизменяемы: разрешено только превратить semantic_package в ясный живой текст. "
+            "Не показывай рассуждения. Верни только JSON по output_schema."
         ),
         user_payload=payload,
         temperature=AI_TEMPERATURE,
-        max_tokens=3200,
+        max_tokens=2800,
         timeout=AI_TIMEOUT,
-        presence_penalty=0.55,
-        frequency_penalty=0.45,
+        presence_penalty=0.45,
+        frequency_penalty=0.35,
     )
     return result.candidates
-
 
 def _natural_state_line(levels: Dict[str, Any], direction: str, variant: int) -> str:
     entry = _fmt_price(levels["plan_entry"])
@@ -890,7 +917,13 @@ def generate_post_candidates(
     # instead of quietly filling half the ranking pool with weaker templates.
     target_count = max(6, min(int(variant_count), 24))
     healthy_ai_pool = len(drafts) >= MIN_VALID_AI_DRAFTS
-    deterministic_limit = DETERMINISTIC_COMPARE_SLOTS if healthy_ai_pool else target_count
+    ai_was_requested = mode in {"ai_author", "ai_first", "ai", "mistral"} and bool(_api_key())
+    if AI_AUTHOR_REQUIRED and ai_was_requested:
+        deterministic_limit = 0
+        if not healthy_ai_pool:
+            logger.error("AI author is required but produced no valid TRADE drafts; skipping deterministic copy")
+    else:
+        deterministic_limit = DETERMINISTIC_COMPARE_SLOTS if healthy_ai_pool else target_count
     deterministic_added = 0
     for index, fmt in enumerate(formats):
         if len(drafts) >= target_count or deterministic_added >= deterministic_limit:

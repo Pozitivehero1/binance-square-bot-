@@ -34,7 +34,8 @@ EVENT_AI_RETRIES = max(1, min(int(os.getenv("EVENT_AI_RETRIES", "2")), 3))
 EVENT_MIN_VALID_AI_DRAFTS = max(1, min(int(os.getenv("EVENT_MIN_VALID_AI_DRAFTS", "2")), 6))
 EVENT_DETERMINISTIC_COMPARE_SLOTS = max(0, min(int(os.getenv("EVENT_DETERMINISTIC_COMPARE_SLOTS", "0")), 3))
 AI_TIMEOUT = max(10, min(int(os.getenv("AI_TIMEOUT", "55")), 120))
-AI_TEMPERATURE = max(0.20, min(float(os.getenv("EVENT_AI_TEMPERATURE", "0.70")), 0.90))
+AI_TEMPERATURE = max(0.20, min(float(os.getenv("EVENT_AI_TEMPERATURE", "0.65")), 0.90))
+AI_AUTHOR_REQUIRED = os.getenv("AI_AUTHOR_REQUIRED", "1").strip().lower() in {"1", "true", "yes"}
 EMOJI_RATE = max(0.0, min(float(os.getenv("EMOJI_RATE", "0.16")), 0.30))
 
 EVENT_FORMAT_SPECS: Dict[str, Dict[str, str]] = {
@@ -275,58 +276,90 @@ def _request_ai_candidates(
 ) -> List[dict]:
     if not has_ai_provider():
         return []
+
     plan_available = bool(package.get("optional_trade_plan", {}).get("available"))
+    requested = [{"format_id": fmt, "brief": EVENT_FORMAT_SPECS[fmt]["brief"]} for fmt in formats]
     payload = {
-        "task": "Напиши готовые посты для Binance Square по живому рыночному событию. Каждый текст придумай с нуля.",
-        "semantic_package": package,
-        "formats_in_order": [
-            {"format_id": fmt, "brief": EVENT_FORMAT_SPECS[fmt]["brief"]} for fmt in formats
-        ],
-        "recent_posts_to_avoid": [str(item)[:650] for item in recent_posts[-10:]],
-        "attempt": attempt,
-        "rules": [
-            "Пиши на русском как живой практикующий трейдер, а не как бот/терминал.",
-            "Первая строка: основной cashtag и конкретный факт из market_event, без пустых вводных и сенсаций.",
-            "Используй только числа из semantic_package. Не пересчитывай, не округляй по-своему и не придумывай числа.",
-            "Не обязан перечислять показатели. Выбери 1-3 факта, которые лучше всего объясняют, почему событие интересно сейчас.",
-            "Не утверждай будущее. Только наблюдение и условные формулировки.",
-            "Не используй одинаковую композицию, открывающую фразу и финал из recent_posts_to_avoid.",
-            "Не пиши шаблон 'жду подтверждения → уровень → цель → отмена' просто по привычке.",
-            "Не добавляй новости, китов, ликвидации, инсайды, причины движения и другие факты, которых нет в пакете.",
-            "Не выпрашивай лайки, комментарии, подписки, донаты или чаевые и не упоминай Write to Earn/вознаграждение автора.",
-            "Не добавляй хэштеги и эмодзи. Код сам решит, нужен ли один акцент.",
-            "Вопрос в конце не обязателен и допустим максимум в одном варианте партии.",
-            ("Длина авторской части 150–240 символов; Python добавит полный план." if plan_available else f"Длина каждого поста {POST_MIN_CHARS}-{POST_MAX_CHARS} символов."),
-        ],
-        "trade_rule": (
-            "optional_trade_plan.available=true: напиши только наблюдаемые факты и условие сценария. "
-            "НЕ пиши вход, стоп и TP: Python добавит полный план сам. Не утверждай, что план уже исполнен."
-            if plan_available else
-            "optional_trade_plan.available=false: это observation-only пост. Запрещены LONG/SHORT, вход, стоп и TP. "
-            "Не выдумывай сделку ради призыва к торговле."
+        "task": (
+            "Создай отдельный готовый пост для каждого элемента requested_formats по одному "
+            "реальному рыночному событию. Не превращай текст в перечень индикаторов."
         ),
-        "json_shape": {
+        "semantic_package": package,
+        "requested_formats": requested,
+        "candidate_count": len(requested),
+        "recent_posts_to_avoid": [str(item)[:650] for item in recent_posts[-10:]],
+        "revision_pass": attempt,
+        "writing_brief": {
+            "voice": (
+                "Русский язык. Живой наблюдательный трейдер: уверенно, конкретно и без пафоса, "
+                "канцелярита, сенсаций и роботизированных формулировок."
+            ),
+            "opening": (
+                "Первая строка начинается с основного cashtag и сразу называет конкретное "
+                "изменение или противоречие в market_event."
+            ),
+            "body": (
+                "Выбери 1–3 связанных факта, объясни, почему за тикером стоит наблюдать сейчас, "
+                "и закончи проверяемым условием. Не пересказывай весь semantic_package."
+            ),
+            "length": (
+                "150–240 символов авторской части; Python добавит план."
+                if plan_available else
+                f"{POST_MIN_CHARS}–{POST_MAX_CHARS} символов, 2–4 коротких абзаца."
+            ),
+        },
+        "trade_mode": (
+            "PLAN_AVAILABLE: не пиши вход, стоп или TP; Python добавит точный план. "
+            "Не утверждай, что вход уже исполнен."
+            if plan_available else
+            "OBSERVATION_ONLY: запрещены LONG/SHORT, вход, стоп и TP. Честно опиши наблюдение без сделки."
+        ),
+        "hard_constraints": [
+            "Один candidate на каждый requested_formats, в том же порядке; format_id копируй дословно.",
+            "Только факты и числа из semantic_package; ничего не вычисляй, не округляй и не придумывай.",
+            "Слова вырос/упал/ускорился/ослабли обязаны соответствовать знаку и фактам.",
+            "Не утверждай будущее, гарантии и прибыль; формулируй наблюдение и условие.",
+            "Не добавляй новости, китов, ликвидации, инсайды или причины, которых нет во входных данных.",
+            "Не проси лайки, комментарии, подписки, донаты; не упоминай Write to Earn.",
+            "Без хэштегов, Markdown, служебных подписей и эмодзи.",
+            "Не копируй начало, ритм абзацев или финал recent_posts_to_avoid.",
+            "Не используй дежурный шаблон «жду подтверждения — уровень — цель — отмена».",
+        ],
+        "silent_check_before_answer": [
+            "Текст естественный и закончен, без обрывков и повреждённых слов.",
+            "Все числа взяты дословно из semantic_package.",
+            "Направление слов совпадает со знаком движения.",
+            "В observation-only нет торгового плана.",
+            "Все варианты различаются по подаче.",
+            "Ответ — один валидный JSON-объект.",
+        ],
+        "output_schema": {
             "candidates": [
-                {"format_id": formats[0] if formats else "event_pulse", "text": "готовый многоабзацный пост"}
+                {"format_id": "точный format_id из requested_formats", "text": "готовый пост"}
             ]
         },
     }
+    if attempt > 1:
+        payload["revision_instruction"] = (
+            "Предыдущая партия не прошла локальный контроль. Полностью перепиши варианты более "
+            "простым естественным русским языком; проверь знаки, числа, длину, завершённость фраз "
+            "и ограничения trade_mode."
+        )
+
     result = request_candidates(
         system_prompt=(
-            "Ты автор трейдерского аккаунта Binance Square. Пиши живые и разные посты из строго заданных фактов. "
-            "Никаких выдуманных рыночных данных и обещаний. Если чистой сделки нет, ценность поста — в наблюдении, "
-            "а не в искусственно придуманном сигнале. Не проси донаты, лайки, комментарии или подписки. "
-            "Верни только валидный JSON."
+            "Ты сильный русскоязычный редактор крипторынка и автор Binance Square. "
+            "Превращай строго заданные факты в короткие живые посты с ясной причиной открыть рынок, "
+            "но без кликбейта и выдумок. Не показывай рассуждения. Верни только JSON по output_schema."
         ),
         user_payload=payload,
         temperature=AI_TEMPERATURE,
-        max_tokens=3200,
+        max_tokens=2800,
         timeout=AI_TIMEOUT,
-        presence_penalty=0.65,
-        frequency_penalty=0.50,
+        presence_penalty=0.50,
+        frequency_penalty=0.40,
     )
     return result.candidates
-
 
 def _decorate_headline(text: str, *, format_id: str, attention: AttentionSnapshot, micro: MicroAttentionSnapshot, index: int) -> Tuple[str, str]:
     parts = text.splitlines()
@@ -561,7 +594,13 @@ def generate_event_candidates(
     # simply through hand-tuned quality heuristics.
     target_count = max(6, min(count, 14))
     healthy_ai_pool = len(drafts) >= EVENT_MIN_VALID_AI_DRAFTS
-    deterministic_limit = EVENT_DETERMINISTIC_COMPARE_SLOTS if healthy_ai_pool else target_count
+    ai_was_requested = mode in {"ai_author", "ai_first", "ai", "mistral"} and bool(_api_key())
+    if AI_AUTHOR_REQUIRED and ai_was_requested:
+        deterministic_limit = 0
+        if not healthy_ai_pool:
+            logger.error("AI author is required but produced no valid EVENT drafts; skipping deterministic copy")
+    else:
+        deterministic_limit = EVENT_DETERMINISTIC_COMPARE_SLOTS if healthy_ai_pool else target_count
     deterministic_added = 0
     for index, fmt in enumerate(formats):
         if len(drafts) >= target_count or deterministic_added >= deterministic_limit:
