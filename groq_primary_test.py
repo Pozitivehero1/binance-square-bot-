@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
@@ -43,9 +44,13 @@ def main() -> None:
         "GROQ_MODEL": "qwen/qwen3.8-27b",
         "GROQ_BACKUP_MODEL": "openai/gpt-oss-120b",
         "GROQ_MODELS": "qwen/qwen3.8-27b,openai/gpt-oss-120b",
-        "GROQ_RETRIES": "1",
+        "GROQ_RETRIES": "2",
         "GROQ_MODEL_TIMEOUT": "10",
-        "GROQ_MAX_TOKENS": "900",
+        "GROQ_MAX_TOKENS": "700",
+        "GROQ_QWEN_MAX_TOKENS": "520",
+        "GROQ_GPT_OSS_MAX_TOKENS": "700",
+        "GROQ_MAX_REQUESTS_PER_MODEL_PER_SCAN": "1",
+        "GROQ_RATE_LIMIT_COOLDOWN_CAP_SECONDS": "30",
         "MISTRAL_API": "",
         "ORCAROUTER_API_KEY": "",
         "OPENROUTER_API_KEY": "",
@@ -63,6 +68,7 @@ def main() -> None:
 
     groq_primary.install_groq_primary()
 
+    # The Qwen request must stay comfortably below its observed 1000 OTPM cap.
     with patch.dict(os.environ, env, clear=False), patch(
         "groq_primary.requests.post",
         return_value=_ok("groq-primary", "qwen/qwen3.8-27b"),
@@ -79,16 +85,17 @@ def main() -> None:
         assert body["response_format"] == {"type": "json_object"}
         assert body["reasoning_effort"] == "none"
         assert body["reasoning_format"] == "hidden"
-        assert body["max_completion_tokens"] == 900
+        assert body["max_completion_tokens"] == 520
         assert "presence_penalty" not in body
         assert "frequency_penalty" not in body
 
-    # A long Retry-After must not burn the whole 20-minute publishing slot.
-    # Move immediately to the second Groq model instead.
+    # Any Groq 429 must switch models immediately. Retrying the same model in
+    # the same second only burns its TPM/OTPM window and was the production bug.
+    groq_primary._reset_scan_state()
     with patch.dict(os.environ, env, clear=False), patch(
         "groq_primary.requests.post",
         side_effect=[
-            _http_error(429, "tokens per day limit reached", retry_after="120"),
+            _http_error(429, "Please try again in 10.2s", retry_after="10.2"),
             _ok("groq-backup", "openai/gpt-oss-120b"),
         ],
     ) as post, patch("groq_primary.time.sleep") as sleeper:
@@ -101,11 +108,33 @@ def main() -> None:
         second_body = post.call_args.kwargs["json"]
         assert second_body["model"] == "openai/gpt-oss-120b"
         assert second_body["reasoning_effort"] == "low"
+        assert second_body["max_completion_tokens"] == 700
 
-    # Source reporting must say Groq, not the legacy hard-coded Mistral label.
+    # During a real scan, each model has a small request budget. A second call
+    # cannot hammer Qwen again; it moves directly to GPT-OSS.
+    with patch.dict(os.environ, env, clear=False), patch(
+        "groq_primary.requests.post",
+        side_effect=[
+            _ok("first-qwen", "qwen/qwen3.8-27b"),
+            _ok("second-gpt", "openai/gpt-oss-120b"),
+        ],
+    ) as post:
+        ai_provider.start_scan_budget(time.monotonic() + 60, max_requests=5)
+        first = ai_provider.request_candidates(**kwargs)
+        second = ai_provider.request_candidates(**kwargs)
+        assert first.model == "qwen/qwen3.8-27b"
+        assert second.model == "openai/gpt-oss-120b"
+        assert post.call_count == 2
+        assert post.call_args.kwargs["json"]["model"] == "openai/gpt-oss-120b"
+        ai_provider.start_scan_budget(None, None)
+
+    # Source reporting must say Groq, not the legacy hard-coded Mistral label,
+    # and the production writers must have the no-waste retry guard installed.
     groq_primary.install_provider_source_tracking()
     import reach_recovery_v11_8
     import author_pool_policy
+    import writer
+    import event_writer
 
     reach_recovery_v11_8._LAST_AI_PROVIDER = "groq"
     assert reach_recovery_v11_8._source_name_v118("mistral") == "groq"
@@ -113,9 +142,14 @@ def main() -> None:
     event = SimpleNamespace(style_id="groq_event_hot_take_0", source="mistral_event")
     normalized = author_pool_policy._truthful_event_source(event)
     assert normalized.source == "groq_event"
+    assert getattr(writer.generate_post_candidates, "_groq_retry_guard", False)
+    assert getattr(event_writer.generate_event_candidates, "_groq_retry_guard", False)
 
     groq_primary.verify_groq_primary(require_key=False)
-    print("GROQ PRIMARY: OK | Qwen 3.8 -> GPT-OSS 120B -> legacy AI fallbacks | truthful source labels")
+    print(
+        "GROQ PRIMARY: OK | Qwen 520-token cap -> GPT-OSS 700-token cap -> legacy AI fallbacks | "
+        "429 instant failover | per-scan model budgets | no-waste writer retries"
+    )
 
 
 if __name__ == "__main__":
