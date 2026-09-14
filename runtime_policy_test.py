@@ -18,7 +18,7 @@ def main() -> int:
     assert os.environ.get("AI_RETRIES") == "3"
     assert os.environ.get("EVENT_AI_RETRIES") == "3"
     assert os.environ.get("ORCAROUTER_RETRIES") == "1"
-    assert os.environ.get("MISTRAL_MODEL") == "mistral-large-latest"
+    assert os.environ.get("MISTRAL_MODEL") == "mistral-small-latest"
     assert os.environ.get("MISTRAL_RETRIES") == "3"
     assert os.environ.get("AI_AUTHOR_REQUIRED") == "1"
 

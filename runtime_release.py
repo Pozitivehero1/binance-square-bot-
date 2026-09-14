@@ -7,7 +7,7 @@ import os
 def activate_release() -> None:
     from reach_recovery_v11_8 import configure_environment
 
-    # v11.13 makes Mistral Large the authoritative author and keeps the proven
+    # v11.13 makes Mistral Small the authoritative author and keeps the proven
     # writer/fact-lock stack. Deterministic templates are disabled whenever an
     # AI token is configured.
     configure_environment()
@@ -30,8 +30,8 @@ def activate_release() -> None:
         raise RuntimeError("conservative ranking bounds were not preserved")
     if os.environ.get("AI_RETRIES") != "3" or os.environ.get("EVENT_AI_RETRIES") != "3":
         raise RuntimeError("Mistral author retry policy was not activated")
-    if os.environ.get("MISTRAL_MODEL") != "mistral-large-latest":
-        raise RuntimeError("Mistral Large primary model was not activated")
+    if os.environ.get("MISTRAL_MODEL") != "mistral-small-latest":
+        raise RuntimeError("Mistral Small primary model was not activated")
     if os.environ.get("AI_AUTHOR_REQUIRED") != "1":
         raise RuntimeError("AI-only author policy was not activated")
     if os.environ.get("ORCAROUTER_RETRIES") != "1":

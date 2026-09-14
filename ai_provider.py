@@ -272,7 +272,7 @@ def request_candidates(
 
     mistral_key = _mistral_key()
     if mistral_key:
-        model = os.getenv("MISTRAL_MODEL", "mistral-large-latest").strip()
+        model = os.getenv("MISTRAL_MODEL", "mistral-small-latest").strip()
         mistral_system = (
             system_prompt
             + "\n\nКРИТИЧЕСКИЙ КОНТРАКТ ОТВЕТА: верни ровно один валидный JSON-объект "
