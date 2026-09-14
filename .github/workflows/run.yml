@@ -22,6 +22,7 @@ jobs:
       PYTHONUNBUFFERED: "1"
 
       SQUARE_API: ${{ secrets.SQUARE_API }}
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
       ORCAROUTER_API_KEY: ${{ secrets.ORCAROUTER_API_KEY }}
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
       MISTRAL_API: ${{ secrets.MISTRAL_API }}
@@ -68,10 +69,22 @@ jobs:
       # freshness and market gates still prevent blind repetition.
       COOLDOWN_MIN: "120"
 
-      # AI author chain: exact free-tier Mistral Small 2603 runs first.
-      # DeepSeek/OpenRouter remain AI fallbacks. With any AI token configured,
-      # deterministic templates are disabled instead of silently replacing Mistral.
+      # AI author chain: Groq is authoritative. Qwen 3.8 27B runs first and
+      # GPT-OSS 120B is the second Groq model. Existing Mistral/Orca/OpenRouter
+      # providers stay as emergency AI fallbacks. With AI configured,
+      # deterministic templates stay disabled instead of silently replacing AI.
       CONTENT_MODE: "ai_author"
+      GROQ_BASE_URL: "https://api.groq.com/openai/v1"
+      GROQ_MODEL: "qwen/qwen3.8-27b"
+      GROQ_BACKUP_MODEL: "openai/gpt-oss-120b"
+      GROQ_MODELS: "qwen/qwen3.8-27b,openai/gpt-oss-120b"
+      GROQ_RETRIES: "2"
+      GROQ_MODEL_TIMEOUT: "25"
+      GROQ_RETRY_BASE_SECONDS: "1"
+      GROQ_RETRY_CAP_SECONDS: "4"
+      GROQ_MAX_RETRY_AFTER: "8"
+      GROQ_MAX_TOKENS: "1100"
+      GROQ_MISTRAL_FALLBACK_RETRIES: "1"
       ORCAROUTER_BASE_URL: "https://api.orcarouter.ai/v1"
       ORCAROUTER_MODEL: "deepseek/deepseek-v4-pro-free"
       ORCAROUTER_RETRIES: "1"
@@ -87,10 +100,10 @@ jobs:
       OPENROUTER_RETRY_CAP_SECONDS: "3"
       OPENROUTER_MAX_RETRY_AFTER: "6"
       MISTRAL_MODEL: "mistral-small-2603"
-      MISTRAL_RETRIES: "2"
-      MISTRAL_RETRY_BASE_SECONDS: "60"
-      MISTRAL_RETRY_CAP_SECONDS: "65"
-      MISTRAL_MAX_RETRY_AFTER: "70"
+      MISTRAL_RETRIES: "1"
+      MISTRAL_RETRY_BASE_SECONDS: "2"
+      MISTRAL_RETRY_CAP_SECONDS: "6"
+      MISTRAL_MAX_RETRY_AFTER: "8"
       AI_AUTHOR_REQUIRED: "1"
       AI_VARIANTS: "3"
       AI_RETRIES: "2"
@@ -232,6 +245,7 @@ jobs:
           if [ -f config_check.py ]; then
             python config_check.py --publishing
           fi
+          python groq_primary.py
 
       - name: Refresh Square performance history
         continue-on-error: true
