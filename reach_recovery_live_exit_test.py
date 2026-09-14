@@ -137,7 +137,7 @@ def main() -> int:
     )
     assert insufficient.allowed, insufficient.reason
 
-    policy.distribution_health = lambda now=None: _health(early=1.30, early_n=1, expansion=0.82, expansion_n=7)
+    policy.distribution_health = lambda now=None: _health(early=1.30, early_n=1, expansion=0.75, expansion_n=7)
     weak_expansion = live_exit._evaluate_with_live_exit(
         policy.evaluate_recovery_candidate_v118,
         **_pump_kwargs(),
