@@ -1,0 +1,59 @@
+name: Build Windows Qwen3 4B R3
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [desktop-local-ai-r3-final]
+    paths:
+      - "desktop_app_qwen4b_r3.py"
+      - "desktop_runtime_qwen4b.py"
+      - "ollama_native_patch_r3.py"
+      - "local_ai_primary.py"
+      - "qwen4b_r3_test.py"
+      - "BinanceSquareBotQwen4BR3.spec"
+      - "requirements.txt"
+      - ".github/workflows/build_windows_qwen4b_r3.yml"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install "pyinstaller>=6.10,<7"
+
+      - name: Compile and regression test R3 routing
+        shell: pwsh
+        run: |
+          python -m py_compile desktop_app_qwen4b_r3.py desktop_runtime_qwen4b.py ollama_native_patch_r3.py local_ai_primary.py
+          python qwen4b_r3_test.py
+
+      - name: Build unique R3 EXE
+        shell: pwsh
+        run: |
+          pyinstaller --clean --noconfirm BinanceSquareBotQwen4BR3.spec
+          if (-not (Test-Path dist\BinanceSquareBot-Qwen3-4B-FIX-R3.exe)) { throw "R3 EXE was not created" }
+          Get-Item dist\BinanceSquareBot-Qwen3-4B-FIX-R3.exe | Select-Object Name,Length
+
+      - name: Upload R3 EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: BinanceSquareBot-Qwen3-4B-FIX-R3
+          path: dist/BinanceSquareBot-Qwen3-4B-FIX-R3.exe
+          if-no-files-found: error
+          retention-days: 30
