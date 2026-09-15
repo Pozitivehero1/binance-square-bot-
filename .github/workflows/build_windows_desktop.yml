@@ -6,10 +6,15 @@ on:
     branches: [desktop-local-ai]
     paths:
       - "desktop_app.py"
+      - "desktop_app_qwen4b.py"
+      - "desktop_runtime_qwen4b.py"
+      - "ollama_native_patch.py"
       - "local_ai_primary.py"
       - "local_ai_runtime.py"
       - "local_ai_test.py"
+      - "qwen4b_fixed_test.py"
       - "BinanceSquareBot.spec"
+      - "BinanceSquareBotQwen4B.spec"
       - "requirements.txt"
       - ".github/workflows/build_windows_desktop.yml"
 
@@ -36,51 +41,25 @@ jobs:
           pip install -r requirements.txt
           pip install "pyinstaller>=6.10,<7"
 
-      - name: Download current llama.cpp Windows Vulkan runtime
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          $headers = @{ Authorization = "Bearer $env:GH_TOKEN"; "User-Agent" = "binance-square-desktop-build" }
-          $releases = Invoke-RestMethod -Headers $headers -Uri "https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=15"
-          $asset = $null
-          $sourceRelease = $null
-          foreach ($release in $releases) {
-            $candidate = $release.assets | Where-Object { $_.name -like "*bin-win-vulkan-x64.zip" } | Select-Object -First 1
-            if ($candidate) {
-              $asset = $candidate
-              $sourceRelease = $release
-              break
-            }
-          }
-          if (-not $asset) { throw "Could not find a recent llama.cpp Windows x64 Vulkan asset" }
-          New-Item -ItemType Directory -Force -Path vendor\download | Out-Null
-          New-Item -ItemType Directory -Force -Path vendor\llama | Out-Null
-          Invoke-WebRequest -Headers $headers -Uri $asset.browser_download_url -OutFile vendor\download\llama.zip
-          Expand-Archive -Path vendor\download\llama.zip -DestinationPath vendor\download\unpacked -Force
-          $server = Get-ChildItem vendor\download\unpacked -Recurse -Filter llama-server.exe | Select-Object -First 1
-          if (-not $server) { throw "llama-server.exe missing from downloaded archive" }
-          Copy-Item -Path (Join-Path $server.DirectoryName "*") -Destination vendor\llama -Recurse -Force
-          Write-Host "Bundling llama.cpp release=$($sourceRelease.tag_name) asset=$($asset.name)"
-          Get-ChildItem vendor\llama | Select-Object Name,Length
-
-      - name: Compile desktop modules and test local provider
+      - name: Compile desktop modules and run local AI tests
         shell: pwsh
         run: |
-          python -m py_compile desktop_app.py local_ai_primary.py local_ai_runtime.py
+          python -m py_compile desktop_app.py desktop_app_qwen4b.py desktop_runtime_qwen4b.py ollama_native_patch.py local_ai_primary.py local_ai_runtime.py
           python local_ai_test.py
+          python qwen4b_fixed_test.py
 
-      - name: Build EXE
+      - name: Build unique Qwen3 4B EXE
         shell: pwsh
         run: |
-          pyinstaller --clean --noconfirm BinanceSquareBot.spec
-          if (-not (Test-Path dist\BinanceSquareBot.exe)) { throw "EXE was not created" }
-          Get-Item dist\BinanceSquareBot.exe | Select-Object Name,Length
+          pyinstaller --clean --noconfirm BinanceSquareBotQwen4B.spec
+          $exe = "dist\BinanceSquareBot-Qwen3-4B-FIX-R2.exe"
+          if (-not (Test-Path $exe)) { throw "EXE was not created: $exe" }
+          Get-Item $exe | Select-Object Name,Length
 
-      - name: Upload EXE
+      - name: Upload unique Qwen3 4B EXE
         uses: actions/upload-artifact@v4
         with:
-          name: BinanceSquareBot-Windows
-          path: dist/BinanceSquareBot.exe
+          name: BinanceSquareBot-Qwen3-4B-FIX-R2
+          path: dist/BinanceSquareBot-Qwen3-4B-FIX-R2.exe
           if-no-files-found: error
           retention-days: 30
