@@ -1,4 +1,4 @@
-"""Windows desktop shell for Binance Square Bot with a local Qwen author."""
+"""Windows desktop shell for Binance Square Bot with local Qwen."""
 from __future__ import annotations
 
 from datetime import datetime, timedelta
@@ -12,19 +12,18 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 from typing import Dict
 
-import requests
 from dotenv import dotenv_values
 
 from local_ai_runtime import LocalAIServer, app_data_dir
 
 APP_TITLE = "Binance Square Bot — Local AI"
-MODEL_MAX_QUALITY = "Qwen3 8B Q4_K_M — максимум качества"
-MODEL_QUALITY = "Qwen3 4B Q5_K_M — оптимальный"
-MODEL_BALANCED = "Qwen3 4B Q4_K_M — быстрее"
+MODEL_AUTO = "Авто — использовать готовую Qwen из LM Studio"
+MODEL_8B = "Qwen3 8B Q4_K_M — резерв, максимум качества"
+MODEL_4B = "Qwen3 4B Q5_K_M — резерв, быстрее"
 MODEL_MAP = {
-    MODEL_MAX_QUALITY: ("Qwen/Qwen3-8B-GGUF:Q4_K_M", "Qwen3-8B-Q4_K_M", "18"),
-    MODEL_QUALITY: ("Qwen/Qwen3-4B-GGUF:Q5_K_M", "Qwen3-4B-Q5_K_M", "24"),
-    MODEL_BALANCED: ("Qwen/Qwen3-4B-GGUF:Q4_K_M", "Qwen3-4B-Q4_K_M", "30"),
+    MODEL_AUTO: ("Qwen/Qwen3-8B-GGUF:Q4_K_M", "Qwen3-8B-Q4_K_M", "12", "1"),
+    MODEL_8B: ("Qwen/Qwen3-8B-GGUF:Q4_K_M", "Qwen3-8B-Q4_K_M", "18", "0"),
+    MODEL_4B: ("Qwen/Qwen3-4B-GGUF:Q5_K_M", "Qwen3-4B-Q5_K_M", "24", "0"),
 }
 
 
@@ -36,17 +35,18 @@ def _default_config() -> Dict[str, str]:
     base = app_data_dir()
     return {
         "SQUARE_API": "",
-        "BINANCE_SQUARE_OPENAPI_KEY": "",
         "DRY_RUN": "1",
         "CONTENT_MODE": "ai_author",
         "AI_AUTHOR_REQUIRED": "1",
         "LOCAL_AI_ENABLED": "1",
         "LOCAL_AI_REMOTE_FALLBACK": "0",
+        "LOCAL_AI_PREFER_INSTALLED": "1",
         "LOCAL_AI_HF_MODEL": "Qwen/Qwen3-8B-GGUF:Q4_K_M",
         "LOCAL_AI_MODEL_NAME": "Qwen3-8B-Q4_K_M",
+        "LOCAL_AI_API_MODEL": "binance-square-local",
         "LOCAL_AI_PORT": "8089",
         "LOCAL_AI_CTX": "4096",
-        "LOCAL_AI_GPU_LAYERS": "18",
+        "LOCAL_AI_GPU_LAYERS": "12",
         "LOCAL_AI_THREADS": "6",
         "LOCAL_AI_BATCHES": "2",
         "LOCAL_AI_TIMEOUT": "110",
@@ -60,21 +60,21 @@ def _default_config() -> Dict[str, str]:
 
 
 def load_config() -> Dict[str, str]:
-    defaults = _default_config()
+    values = _default_config()
     path = config_path()
     if path.exists():
-        values = dotenv_values(path)
-        for key, value in values.items():
-            if key and value is not None:
-                defaults[str(key)] = str(value)
-    return defaults
+        disk = dotenv_values(path)
+        for key, value in disk.items():
+            if key and value is not None and key != "BINANCE_SQUARE_OPENAPI_KEY":
+                values[str(key)] = str(value)
+    return values
 
 
 def save_config(values: Dict[str, str]) -> None:
     path = config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     ordered = _default_config()
-    ordered.update({k: str(v) for k, v in values.items()})
+    ordered.update({k: str(v) for k, v in values.items() if k != "BINANCE_SQUARE_OPENAPI_KEY"})
     lines = ["# Binance Square Bot desktop settings"]
     for key, value in ordered.items():
         clean = str(value).replace("\r", "").replace("\n", "")
@@ -83,8 +83,10 @@ def save_config(values: Dict[str, str]) -> None:
 
 
 def apply_config_to_env(values: Dict[str, str]) -> None:
+    os.environ.pop("BINANCE_SQUARE_OPENAPI_KEY", None)
     for key, value in values.items():
-        os.environ[str(key)] = str(value)
+        if key != "BINANCE_SQUARE_OPENAPI_KEY":
+            os.environ[str(key)] = str(value)
     base = app_data_dir()
     os.environ["STATE_DIR"] = str(base / "state")
     os.environ["LOG_FILE"] = str(base / "logs" / "bot.log")
@@ -93,12 +95,10 @@ def apply_config_to_env(values: Dict[str, str]) -> None:
 
 
 def _run_bot_worker() -> int:
-    """Run one production scan/publish cycle inside a worker process."""
     cfg = load_config()
     apply_config_to_env(cfg)
 
     from runtime import PROJECT_DIR, load_project_env
-
     load_project_env()
     os.chdir(PROJECT_DIR)
 
@@ -116,7 +116,7 @@ def _run_bot_worker() -> int:
 
     install_openrouter_fallback_chain()
     install_groq_primary()
-    install_local_ai_primary()  # must be last provider wrapper before writer import
+    install_local_ai_primary()
     activate_reach_recovery()
     install_author_pool_policy()
     install_v119_writer_policy()
@@ -134,7 +134,6 @@ def _run_bot_worker() -> int:
 
     import recovery_guard
     import writer
-
     if not getattr(recovery_guard.evaluate_recovery_candidate, "_v118_live_recovery_exit", False):
         raise RuntimeError("live recovery exit was not installed")
     if writer._build_generated.__module__ != "reach_recovery_v11_8":
@@ -166,12 +165,16 @@ class DesktopApp(tk.Tk):
         self.running = False
         self.next_run: datetime | None = None
         self.log_queue: queue.Queue[str] = queue.Queue()
+        self.preparing_ai = False
+        self.prepare_lock = threading.Lock()
+        self.pending_run_after_prepare = False
 
         self._style()
         self._build_ui()
         self.after(250, self._drain_log_queue)
         self.after(1000, self._tick)
         self._append_log(f"Настройки: {config_path()}")
+        self._append_log("Режим модели: сначала ищу уже скачанную Qwen в LM Studio; повторная загрузка не нужна.")
         self._refresh_status_labels()
 
     def _style(self) -> None:
@@ -181,16 +184,17 @@ class DesktopApp(tk.Tk):
         except tk.TclError:
             pass
         style.configure("Title.TLabel", font=("Segoe UI", 18, "bold"))
-        style.configure("Header.TLabel", font=("Segoe UI", 11, "bold"))
         style.configure("Status.TLabel", font=("Segoe UI", 10, "bold"))
         style.configure("TButton", padding=7)
 
     def _build_ui(self) -> None:
         root = ttk.Frame(self, padding=14)
         root.pack(fill="both", expand=True)
+        root.columnconfigure(0, weight=1)
+        root.rowconfigure(5, weight=1)
 
         ttk.Label(root, text="Binance Square Bot", style="Title.TLabel").grid(row=0, column=0, sticky="w")
-        ttk.Label(root, text="локальный автор + существующие fact-lock/quality проверки").grid(row=1, column=0, sticky="w", pady=(0, 12))
+        ttk.Label(root, text="локальный Qwen + существующие fact-lock / quality проверки").grid(row=1, column=0, sticky="w", pady=(0, 12))
 
         status = ttk.LabelFrame(root, text="Состояние", padding=10)
         status.grid(row=2, column=0, sticky="ew")
@@ -200,7 +204,7 @@ class DesktopApp(tk.Tk):
         self.bot_status.grid(row=0, column=1, sticky="w", padx=(8, 24))
         ttk.Label(status, text="Локальный ИИ:").grid(row=0, column=2, sticky="w")
         self.ai_status = ttk.Label(status, text="не запущен", style="Status.TLabel")
-        self.ai_status.grid(row=0, column=3, sticky="w", padx=(8, 24))
+        self.ai_status.grid(row=0, column=3, sticky="w", padx=(8, 0))
         ttk.Label(status, text="Следующий запуск:").grid(row=1, column=0, sticky="w", pady=(7, 0))
         self.next_status = ttk.Label(status, text="—")
         self.next_status.grid(row=1, column=1, columnspan=3, sticky="w", padx=(8, 0), pady=(7, 0))
@@ -213,29 +217,26 @@ class DesktopApp(tk.Tk):
         self.square_var = tk.StringVar(value=self.cfg.get("SQUARE_API", ""))
         ttk.Entry(settings, textvariable=self.square_var, show="•").grid(row=0, column=1, sticky="ew", padx=(10, 0), pady=4)
 
-        ttk.Label(settings, text="Binance OpenAPI key:").grid(row=1, column=0, sticky="w", pady=4)
-        self.binance_var = tk.StringVar(value=self.cfg.get("BINANCE_SQUARE_OPENAPI_KEY", ""))
-        ttk.Entry(settings, textvariable=self.binance_var, show="•").grid(row=1, column=1, sticky="ew", padx=(10, 0), pady=4)
-
-        ttk.Label(settings, text="Локальная модель:").grid(row=2, column=0, sticky="w", pady=4)
-        current_hf = self.cfg.get("LOCAL_AI_HF_MODEL", "")
-        if "Qwen3-8B" in current_hf:
-            initial_model = MODEL_MAX_QUALITY
-        elif "Q5" in current_hf:
-            initial_model = MODEL_QUALITY
+        ttk.Label(settings, text="Локальная модель:").grid(row=1, column=0, sticky="w", pady=4)
+        prefer_installed = self.cfg.get("LOCAL_AI_PREFER_INSTALLED", "1") == "1"
+        hf = self.cfg.get("LOCAL_AI_HF_MODEL", "")
+        if prefer_installed:
+            initial_model = MODEL_AUTO
+        elif "4B" in hf:
+            initial_model = MODEL_4B
         else:
-            initial_model = MODEL_BALANCED
+            initial_model = MODEL_8B
         self.model_var = tk.StringVar(value=initial_model)
-        ttk.Combobox(settings, textvariable=self.model_var, values=list(MODEL_MAP), state="readonly").grid(row=2, column=1, sticky="ew", padx=(10, 0), pady=4)
+        ttk.Combobox(settings, textvariable=self.model_var, values=list(MODEL_MAP), state="readonly").grid(row=1, column=1, sticky="ew", padx=(10, 0), pady=4)
 
-        ttk.Label(settings, text="Интервал постов, мин:").grid(row=3, column=0, sticky="w", pady=4)
+        ttk.Label(settings, text="Интервал постов, мин:").grid(row=2, column=0, sticky="w", pady=4)
         self.interval_var = tk.IntVar(value=max(5, int(self.cfg.get("MIN_GLOBAL_INTERVAL_MIN", "20"))))
-        ttk.Spinbox(settings, from_=5, to=180, textvariable=self.interval_var, width=10).grid(row=3, column=1, sticky="w", padx=(10, 0), pady=4)
+        ttk.Spinbox(settings, from_=5, to=180, textvariable=self.interval_var, width=10).grid(row=2, column=1, sticky="w", padx=(10, 0), pady=4)
 
         self.live_var = tk.BooleanVar(value=self.cfg.get("DRY_RUN", "1") != "1")
-        ttk.Checkbutton(settings, text="Реальная публикация (снять DRY_RUN)", variable=self.live_var).grid(row=4, column=1, sticky="w", padx=(10, 0), pady=4)
+        ttk.Checkbutton(settings, text="Реальная публикация (снять DRY_RUN)", variable=self.live_var).grid(row=3, column=1, sticky="w", padx=(10, 0), pady=4)
         self.remote_var = tk.BooleanVar(value=self.cfg.get("LOCAL_AI_REMOTE_FALLBACK", "0") == "1")
-        ttk.Checkbutton(settings, text="Разрешить внешний AI только как аварийный резерв", variable=self.remote_var).grid(row=5, column=1, sticky="w", padx=(10, 0), pady=4)
+        ttk.Checkbutton(settings, text="Разрешить внешний AI только как аварийный резерв", variable=self.remote_var).grid(row=4, column=1, sticky="w", padx=(10, 0), pady=4)
 
         controls = ttk.Frame(root)
         controls.grid(row=4, column=0, sticky="ew", pady=12)
@@ -243,15 +244,16 @@ class DesktopApp(tk.Tk):
         self.start_btn.pack(side="left")
         self.stop_btn = ttk.Button(controls, text="■ Остановить", command=self.stop_bot)
         self.stop_btn.pack(side="left", padx=8)
-        ttk.Button(controls, text="Сохранить", command=self.save_settings).pack(side="left", padx=(0, 8))
-        ttk.Button(controls, text="Пост сейчас", command=self.run_now).pack(side="left", padx=(0, 8))
-        ttk.Button(controls, text="Проверить ИИ", command=self.test_ai).pack(side="left")
+        self.save_btn = ttk.Button(controls, text="Сохранить", command=self.save_settings)
+        self.save_btn.pack(side="left", padx=(0, 8))
+        self.now_btn = ttk.Button(controls, text="Пост сейчас", command=self.run_now)
+        self.now_btn.pack(side="left", padx=(0, 8))
+        self.test_btn = ttk.Button(controls, text="Проверить ИИ", command=self.test_ai)
+        self.test_btn.pack(side="left")
         ttk.Button(controls, text="Логи", command=self.open_logs).pack(side="right")
 
         log_frame = ttk.LabelFrame(root, text="Лог", padding=8)
         log_frame.grid(row=5, column=0, sticky="nsew")
-        root.rowconfigure(5, weight=1)
-        root.columnconfigure(0, weight=1)
         self.log_text = tk.Text(log_frame, wrap="word", height=18, font=("Consolas", 9))
         scroll = ttk.Scrollbar(log_frame, orient="vertical", command=self.log_text.yview)
         self.log_text.configure(yscrollcommand=scroll.set)
@@ -260,15 +262,17 @@ class DesktopApp(tk.Tk):
 
     def _collect_settings(self) -> Dict[str, str]:
         values = dict(self.cfg)
-        hf_model, model_name, gpu_layers = MODEL_MAP[self.model_var.get()]
+        hf_model, model_name, gpu_layers, prefer_installed = MODEL_MAP[self.model_var.get()]
+        values.pop("BINANCE_SQUARE_OPENAPI_KEY", None)
         values.update({
             "SQUARE_API": self.square_var.get().strip(),
-            "BINANCE_SQUARE_OPENAPI_KEY": self.binance_var.get().strip(),
             "DRY_RUN": "0" if self.live_var.get() else "1",
             "LOCAL_AI_ENABLED": "1",
             "LOCAL_AI_REMOTE_FALLBACK": "1" if self.remote_var.get() else "0",
+            "LOCAL_AI_PREFER_INSTALLED": prefer_installed,
             "LOCAL_AI_HF_MODEL": hf_model,
             "LOCAL_AI_MODEL_NAME": model_name,
+            "LOCAL_AI_API_MODEL": "binance-square-local",
             "LOCAL_AI_GPU_LAYERS": gpu_layers,
             "LOCAL_AI_BATCHES": "2",
             "MIN_GLOBAL_INTERVAL_MIN": str(max(5, int(self.interval_var.get()))),
@@ -276,14 +280,23 @@ class DesktopApp(tk.Tk):
         return values
 
     def save_settings(self) -> None:
-        self.cfg = self._collect_settings()
+        previous = dict(self.cfg)
+        new_cfg = self._collect_settings()
+        restart_keys = ("LOCAL_AI_HF_MODEL", "LOCAL_AI_PREFER_INSTALLED", "LOCAL_AI_GPU_LAYERS")
+        needs_restart = any(previous.get(k) != new_cfg.get(k) for k in restart_keys)
+        self.cfg = new_cfg
         save_config(self.cfg)
         apply_config_to_env(self.cfg)
+        if needs_restart and self.ai_server.healthy():
+            self.ai_server.stop()
+            self.ai_server = LocalAIServer()
+            self._append_log("Профиль модели изменён — локальный ИИ будет перезапущен.")
         self._append_log("Настройки сохранены.")
 
     def _append_log(self, text: str) -> None:
         stamp = datetime.now().strftime("%H:%M:%S")
-        self.log_text.insert("end", f"[{stamp}] {text.rstrip()}\n")
+        for line in str(text).rstrip().splitlines() or [""]:
+            self.log_text.insert("end", f"[{stamp}] {line}\n")
         self.log_text.see("end")
 
     def _queue_log(self, text: str) -> None:
@@ -297,34 +310,72 @@ class DesktopApp(tk.Tk):
             pass
         self.after(250, self._drain_log_queue)
 
-    def _prepare_ai(self, then_run: bool) -> None:
+    def _set_preparing(self, value: bool) -> None:
+        self.preparing_ai = value
+        state = "disabled" if value else "normal"
+        self.start_btn.configure(state=state)
+        self.now_btn.configure(state=state)
+        self.test_btn.configure(state=state)
+        self._refresh_status_labels()
+
+    def _request_ai_prepare(self, run_after: bool) -> None:
+        with self.prepare_lock:
+            if run_after:
+                self.pending_run_after_prepare = True
+            if self.preparing_ai:
+                self._append_log("Локальный ИИ уже подготавливается — второй сервер не запускаю.")
+                return
+            self.preparing_ai = True
+        self._set_preparing(True)
+        threading.Thread(target=self._prepare_ai_worker, daemon=True).start()
+
+    def _prepare_ai_worker(self) -> None:
+        ok = False
         try:
-            self._queue_log("Запускаю локальный Qwen через llama.cpp…")
-            self.ai_server = LocalAIServer()
-            self.ai_server.start()
-            if not self.ai_server.wait_until_ready():
-                raise RuntimeError("llama.cpp завершился до готовности модели; см. llama-server.log")
-            self._queue_log("Локальный ИИ готов. Все тексты идут через Qwen + существующие проверки бота.")
-            self.after(0, self._refresh_status_labels)
-            if then_run:
-                self.after(0, self._launch_worker)
+            self._queue_log("Подготовка локального ИИ…")
+            apply_config_to_env(self.cfg)
+            self.ai_server.start(progress=self._queue_log)
+            if not self.ai_server.wait_until_ready(timeout=600, progress=self._queue_log):
+                raise RuntimeError("локальная модель не смогла запуститься; подробности выше и в llama-server.log")
+            answer = self.ai_server.smoke_test(timeout=90)
+            self._queue_log(f"Тест локального ИИ пройден: {answer[:80]}")
+            # LocalAIServer may choose another port and may identify the installed model.
+            os.environ["LOCAL_AI_ENDPOINT"] = self.ai_server.endpoint
+            os.environ["LOCAL_AI_API_MODEL"] = "binance-square-local"
+            os.environ["LOCAL_AI_MODEL_NAME"] = self.ai_server.model_label
+            self.cfg["LOCAL_AI_MODEL_NAME"] = self.ai_server.model_label
+            ok = True
         except Exception as exc:
-            self._queue_log(f"Ошибка локального ИИ: {exc}")
-            self.after(0, self._refresh_status_labels)
-            self.running = False
+            self._queue_log(f"Ошибка запуска локального ИИ: {type(exc).__name__}: {exc}")
+        finally:
+            with self.prepare_lock:
+                run_after = self.pending_run_after_prepare
+                self.pending_run_after_prepare = False
+                self.preparing_ai = False
+            self.after(0, self._set_preparing, False)
+            if ok and run_after:
+                self.after(0, self._launch_worker)
+            elif not ok and self.running:
+                self.running = False
+                self.after(0, self._refresh_status_labels)
 
     def start_bot(self) -> None:
         if self.running:
+            self._append_log("Бот уже запущен.")
             return
         self.save_settings()
         self.running = True
         self.next_run = None
         self._refresh_status_labels()
-        threading.Thread(target=self._prepare_ai, args=(True,), daemon=True).start()
+        if self.ai_server.healthy():
+            self._launch_worker()
+        else:
+            self._request_ai_prepare(run_after=True)
 
     def stop_bot(self) -> None:
         self.running = False
         self.next_run = None
+        self.pending_run_after_prepare = False
         if self.worker is not None and self.worker.poll() is None:
             self._append_log("Останавливаю активный цикл…")
             self.worker.terminate()
@@ -332,19 +383,25 @@ class DesktopApp(tk.Tk):
 
     def run_now(self) -> None:
         self.save_settings()
-        if not self.ai_server.healthy():
-            threading.Thread(target=self._prepare_ai, args=(True,), daemon=True).start()
-            return
-        self._launch_worker()
+        if self.ai_server.healthy():
+            self._launch_worker()
+        else:
+            self._request_ai_prepare(run_after=True)
 
     def _launch_worker(self) -> None:
         if self.worker is not None and self.worker.poll() is None:
             self._append_log("Цикл уже выполняется — второй одновременно не запускаю.")
             return
+        if not self.ai_server.healthy():
+            self._append_log("Локальный ИИ ещё не готов — сначала запускаю модель.")
+            self._request_ai_prepare(run_after=True)
+            return
         apply_config_to_env(self.cfg)
         env = os.environ.copy()
         env.update({k: str(v) for k, v in self.cfg.items()})
-        env["LOCAL_AI_ENDPOINT"] = self.ai_server.base_url + "/v1/chat/completions"
+        env["LOCAL_AI_ENDPOINT"] = self.ai_server.endpoint
+        env["LOCAL_AI_API_MODEL"] = "binance-square-local"
+        env["LOCAL_AI_MODEL_NAME"] = self.ai_server.model_label
         flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
         self.worker = subprocess.Popen(
             _worker_command(),
@@ -356,10 +413,10 @@ class DesktopApp(tk.Tk):
             env=env,
             creationflags=flags,
         )
-        self.bot_status.configure(text="Выполняет цикл")
-        self._append_log("Запущен новый цикл сканирования/публикации.")
+        self._append_log("Локальный ИИ готов. Запущен цикл сканирования/публикации.")
         threading.Thread(target=self._read_worker_output, daemon=True).start()
         threading.Thread(target=self._wait_worker, daemon=True).start()
+        self._refresh_status_labels()
 
     def _read_worker_output(self) -> None:
         worker = self.worker
@@ -380,7 +437,7 @@ class DesktopApp(tk.Tk):
         self.after(0, self._refresh_status_labels)
 
     def _tick(self) -> None:
-        if self.running and self.next_run is not None and datetime.now() >= self.next_run:
+        if self.running and not self.preparing_ai and self.next_run is not None and datetime.now() >= self.next_run:
             self.next_run = None
             self._launch_worker()
         self._refresh_status_labels()
@@ -392,34 +449,35 @@ class DesktopApp(tk.Tk):
         else:
             bot = "Запущен" if self.running else "Остановлен"
         self.bot_status.configure(text=bot)
-        self.ai_status.configure(text="готов" if self.ai_server.healthy(timeout=0.25) else "не запущен")
+        if self.preparing_ai:
+            ai = "загрузка модели…"
+        elif self.ai_server.healthy(timeout=0.2):
+            ai = f"готов — {self.ai_server.model_label}"
+        else:
+            ai = "не запущен"
+        self.ai_status.configure(text=ai)
         if self.next_run is None:
-            self.next_status.configure(text="после текущего цикла" if self.running else "—")
+            if self.preparing_ai:
+                text = "после загрузки модели"
+            else:
+                text = "после текущего цикла" if self.running else "—"
+            self.next_status.configure(text=text)
         else:
             delta = max(0, int((self.next_run - datetime.now()).total_seconds()))
             self.next_status.configure(text=f"{self.next_run:%H:%M:%S} (через {delta // 60:02d}:{delta % 60:02d})")
 
     def test_ai(self) -> None:
         self.save_settings()
-        def work() -> None:
-            try:
-                if not self.ai_server.healthy():
-                    self.ai_server.start()
-                    if not self.ai_server.wait_until_ready():
-                        raise RuntimeError("модель не запустилась")
-                payload = {
-                    "model": self.cfg.get("LOCAL_AI_MODEL_NAME", "Qwen3-8B-Q4_K_M"),
-                    "messages": [{"role": "user", "content": "/no_think Ответь строго JSON: {\"ok\":true}"}],
-                    "temperature": 0.2,
-                    "max_tokens": 64,
-                    "stream": False,
-                }
-                response = requests.post(self.ai_server.base_url + "/v1/chat/completions", json=payload, timeout=60)
-                response.raise_for_status()
-                self._queue_log("Тест локального ИИ пройден.")
-            except Exception as exc:
-                self._queue_log(f"Тест локального ИИ не пройден: {exc}")
-        threading.Thread(target=work, daemon=True).start()
+        if self.ai_server.healthy():
+            def work() -> None:
+                try:
+                    answer = self.ai_server.smoke_test(timeout=90)
+                    self._queue_log(f"Тест локального ИИ пройден: {answer[:80]}")
+                except Exception as exc:
+                    self._queue_log(f"Тест локального ИИ не пройден: {type(exc).__name__}: {exc}")
+            threading.Thread(target=work, daemon=True).start()
+        else:
+            self._request_ai_prepare(run_after=False)
 
     def open_logs(self) -> None:
         folder = app_data_dir() / "logs"
