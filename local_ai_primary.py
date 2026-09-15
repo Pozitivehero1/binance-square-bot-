@@ -1,8 +1,7 @@
 """Local Qwen author provider for the desktop build.
 
 Installed after the existing remote-provider policy so the local OpenAI-compatible
-llama.cpp server is authoritative while all existing fact/number/quality gates stay
-unchanged.
+server is authoritative while all existing fact/number/quality gates stay unchanged.
 """
 from __future__ import annotations
 
@@ -33,15 +32,27 @@ def _remote_fallback_enabled() -> bool:
 
 
 def _endpoint() -> str:
-    return os.getenv("LOCAL_AI_ENDPOINT", "http://127.0.0.1:8089/v1/chat/completions").strip()
+    return (
+        os.getenv("LOCAL_AI_RUNTIME_ENDPOINT")
+        or os.getenv("LOCAL_AI_ENDPOINT")
+        or "http://127.0.0.1:8089/v1/chat/completions"
+    ).strip()
 
 
 def _model_name() -> str:
-    return os.getenv("LOCAL_AI_MODEL_NAME", "Qwen local").strip() or "Qwen local"
+    return (
+        os.getenv("LOCAL_AI_RUNTIME_MODEL_NAME")
+        or os.getenv("LOCAL_AI_MODEL_NAME")
+        or "Qwen local"
+    ).strip() or "Qwen local"
 
 
 def _api_model_name() -> str:
-    return os.getenv("LOCAL_AI_API_MODEL", "binance-square-local").strip() or "binance-square-local"
+    return (
+        os.getenv("LOCAL_AI_RUNTIME_API_MODEL")
+        or os.getenv("LOCAL_AI_API_MODEL")
+        or "binance-square-local"
+    ).strip() or "binance-square-local"
 
 
 def _batch_count() -> int:
@@ -95,10 +106,10 @@ def _post_local(body: dict, timeout: int) -> dict:
         retry.pop("response_format", None)
         response = requests.post(endpoint, json=retry, timeout=_request_timeout(timeout))
     if not response.ok:
-        raise RuntimeError(f"local llama.cpp HTTP {response.status_code}: {response.text[:700]}")
+        raise RuntimeError(f"local AI HTTP {response.status_code}: {response.text[:700]}")
     payload = response.json()
     if not isinstance(payload, dict) or not payload.get("choices"):
-        raise ValueError("local llama.cpp response has no choices")
+        raise ValueError("local AI response has no choices")
     return payload
 
 
