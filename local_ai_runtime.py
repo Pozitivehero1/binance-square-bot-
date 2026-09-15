@@ -87,6 +87,8 @@ class LocalAIServer:
             "-hf", model,
             "--host", self.host,
             "--port", str(self.port),
+            "--cors-origins", "localhost",
+            "--no-webui",
             "-c", str(ctx),
             "-ngl", str(gpu_layers),
             "-t", str(threads),
