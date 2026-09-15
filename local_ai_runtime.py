@@ -79,12 +79,14 @@ class LocalAIServer:
             )
 
         model = os.getenv("LOCAL_AI_HF_MODEL", "Qwen/Qwen3-8B-GGUF:Q4_K_M").strip()
+        api_alias = os.getenv("LOCAL_AI_MODEL_NAME", "Qwen3-8B-Q4_K_M").strip() or "Qwen3-8B-Q4_K_M"
         ctx = max(2048, min(int(os.getenv("LOCAL_AI_CTX", "4096")), 8192))
         gpu_layers = max(0, min(int(os.getenv("LOCAL_AI_GPU_LAYERS", "18")), 99))
         threads = max(2, min(int(os.getenv("LOCAL_AI_THREADS", "6")), 16))
         args = [
             str(server),
             "-hf", model,
+            "--alias", api_alias,
             "--host", self.host,
             "--port", str(self.port),
             "--cors-origins", "localhost",
