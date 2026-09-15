@@ -18,9 +18,11 @@ from dotenv import dotenv_values
 from local_ai_runtime import LocalAIServer, app_data_dir
 
 APP_TITLE = "Binance Square Bot — Local AI"
-MODEL_QUALITY = "Qwen3 4B Q5_K_M — качество"
+MODEL_MAX_QUALITY = "Qwen3 8B Q4_K_M — максимум качества"
+MODEL_QUALITY = "Qwen3 4B Q5_K_M — оптимальный"
 MODEL_BALANCED = "Qwen3 4B Q4_K_M — быстрее"
 MODEL_MAP = {
+    MODEL_MAX_QUALITY: ("Qwen/Qwen3-8B-GGUF:Q4_K_M", "Qwen3-8B-Q4_K_M", "18"),
     MODEL_QUALITY: ("Qwen/Qwen3-4B-GGUF:Q5_K_M", "Qwen3-4B-Q5_K_M", "24"),
     MODEL_BALANCED: ("Qwen/Qwen3-4B-GGUF:Q4_K_M", "Qwen3-4B-Q4_K_M", "30"),
 }
@@ -40,11 +42,11 @@ def _default_config() -> Dict[str, str]:
         "AI_AUTHOR_REQUIRED": "1",
         "LOCAL_AI_ENABLED": "1",
         "LOCAL_AI_REMOTE_FALLBACK": "0",
-        "LOCAL_AI_HF_MODEL": "Qwen/Qwen3-4B-GGUF:Q5_K_M",
-        "LOCAL_AI_MODEL_NAME": "Qwen3-4B-Q5_K_M",
+        "LOCAL_AI_HF_MODEL": "Qwen/Qwen3-8B-GGUF:Q4_K_M",
+        "LOCAL_AI_MODEL_NAME": "Qwen3-8B-Q4_K_M",
         "LOCAL_AI_PORT": "8089",
         "LOCAL_AI_CTX": "4096",
-        "LOCAL_AI_GPU_LAYERS": "24",
+        "LOCAL_AI_GPU_LAYERS": "18",
         "LOCAL_AI_THREADS": "6",
         "LOCAL_AI_BATCHES": "2",
         "LOCAL_AI_TIMEOUT": "110",
@@ -114,7 +116,7 @@ def _run_bot_worker() -> int:
 
     install_openrouter_fallback_chain()
     install_groq_primary()
-    install_local_ai_primary()
+    install_local_ai_primary()  # must be last provider wrapper before writer import
     activate_reach_recovery()
     install_author_pool_policy()
     install_v119_writer_policy()
@@ -217,7 +219,12 @@ class DesktopApp(tk.Tk):
 
         ttk.Label(settings, text="Локальная модель:").grid(row=2, column=0, sticky="w", pady=4)
         current_hf = self.cfg.get("LOCAL_AI_HF_MODEL", "")
-        initial_model = MODEL_QUALITY if "Q5" in current_hf else MODEL_BALANCED
+        if "Qwen3-8B" in current_hf:
+            initial_model = MODEL_MAX_QUALITY
+        elif "Q5" in current_hf:
+            initial_model = MODEL_QUALITY
+        else:
+            initial_model = MODEL_BALANCED
         self.model_var = tk.StringVar(value=initial_model)
         ttk.Combobox(settings, textvariable=self.model_var, values=list(MODEL_MAP), state="readonly").grid(row=2, column=1, sticky="ew", padx=(10, 0), pady=4)
 
@@ -401,7 +408,7 @@ class DesktopApp(tk.Tk):
                     if not self.ai_server.wait_until_ready():
                         raise RuntimeError("модель не запустилась")
                 payload = {
-                    "model": self.cfg.get("LOCAL_AI_MODEL_NAME", "Qwen3-4B-Q5_K_M"),
+                    "model": self.cfg.get("LOCAL_AI_MODEL_NAME", "Qwen3-8B-Q4_K_M"),
                     "messages": [{"role": "user", "content": "/no_think Ответь строго JSON: {\"ok\":true}"}],
                     "temperature": 0.2,
                     "max_tokens": 64,
