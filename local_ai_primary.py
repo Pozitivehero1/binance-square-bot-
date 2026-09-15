@@ -1,8 +1,7 @@
 """Local Qwen author provider for the desktop build.
 
-Installed *after* the existing Groq/Mistral/OpenRouter policy so the local
-OpenAI-compatible llama.cpp server is authoritative while every existing
-Python fact-lock, trade-plan validator, ranking rule and outage policy remains
+Installed after the existing remote-provider policy so the local OpenAI-compatible
+llama.cpp server is authoritative while all existing fact/number/quality gates stay
 unchanged.
 """
 from __future__ import annotations
@@ -38,7 +37,11 @@ def _endpoint() -> str:
 
 
 def _model_name() -> str:
-    return os.getenv("LOCAL_AI_MODEL_NAME", "Qwen3-4B-Q5_K_M").strip() or "Qwen3-4B-Q5_K_M"
+    return os.getenv("LOCAL_AI_MODEL_NAME", "Qwen local").strip() or "Qwen local"
+
+
+def _api_model_name() -> str:
+    return os.getenv("LOCAL_AI_API_MODEL", "binance-square-local").strip() or "binance-square-local"
 
 
 def _batch_count() -> int:
@@ -71,7 +74,7 @@ def _body(
             "and openings from the obvious first solution while preserving the same facts."
         )
     return {
-        "model": _model_name(),
+        "model": _api_model_name(),
         "messages": [
             {"role": "system", "content": system},
             {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False, separators=(",", ":"))},
@@ -91,7 +94,8 @@ def _post_local(body: dict, timeout: int) -> dict:
         retry = dict(body)
         retry.pop("response_format", None)
         response = requests.post(endpoint, json=retry, timeout=_request_timeout(timeout))
-    response.raise_for_status()
+    if not response.ok:
+        raise RuntimeError(f"local llama.cpp HTTP {response.status_code}: {response.text[:700]}")
     payload = response.json()
     if not isinstance(payload, dict) or not payload.get("choices"):
         raise ValueError("local llama.cpp response has no choices")
@@ -123,7 +127,7 @@ def _request_local_candidates(
                 timeout,
             )
             candidates = ai_provider._parse_candidates(payload)
-            actual_model = str(payload.get("model") or _model_name())
+            actual_model = _model_name()
             ai_provider._annotate(candidates, "local_qwen", actual_model)
             for row in candidates:
                 text = str(row.get("text") or "").strip()
@@ -142,14 +146,13 @@ def _request_local_candidates(
             )
         except Exception as exc:
             failures.append(f"batch{batch_index + 1}:{type(exc).__name__}:{str(exc)[:240]}")
-            logger.warning("Local AI batch %s failed: %s", batch_index + 1, str(exc)[:320])
+            logger.warning("Local AI batch %s failed: %s", batch_index + 1, str(exc)[:500])
             if rows:
                 break
 
     if not rows:
         raise RuntimeError("local AI produced no usable candidates: " + " | ".join(failures[-3:]))
-    actual_model = str(rows[0].get("_model") or _model_name())
-    return ai_provider.ProviderResult(rows, "local_qwen", actual_model)
+    return ai_provider.ProviderResult(rows, "local_qwen", _model_name())
 
 
 def _request_candidates_local_first(
@@ -199,7 +202,6 @@ def _preferred_provider_local_first() -> str:
 
 
 def install_local_ai_primary() -> None:
-    """Install local provider last, after Groq and routed-provider patches."""
     global _ORIGINAL_REQUEST_CANDIDATES, _ORIGINAL_HAS_AI_PROVIDER, _ORIGINAL_PREFERRED_PROVIDER
     current = ai_provider.request_candidates
     if getattr(current, "_local_ai_primary", False):
@@ -216,13 +218,12 @@ def install_local_ai_primary() -> None:
     ai_provider.preferred_provider_name = _preferred_provider_local_first
     os.environ["BOT_VERSION"] = os.getenv("BOT_VERSION", "v11.14.1") + "+desktop-local"
     logger.info(
-        "Local AI primary installed endpoint=%s model=%s batches=%s remote_fallback=%s",
-        _endpoint(), _model_name(), _batch_count(), _remote_fallback_enabled(),
+        "Local AI primary installed endpoint=%s api_model=%s display_model=%s batches=%s remote_fallback=%s",
+        _endpoint(), _api_model_name(), _model_name(), _batch_count(), _remote_fallback_enabled(),
     )
 
 
 def install_local_source_tracking() -> None:
-    """Keep adaptive analytics truthful: local prose must not be labeled Mistral."""
     try:
         import reach_recovery_v11_8
         current_source = reach_recovery_v11_8._source_name_v118
