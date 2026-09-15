@@ -9,7 +9,6 @@ Priority on Windows:
 """
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
 import shutil
@@ -112,7 +111,6 @@ def _score_model(path: Path) -> int:
         score += 1000
     if "qwen3" in text:
         score += 700
-    # The user's already installed model is Qwen3 4B; prefer it over larger models.
     if any(token in text for token in ("4b", "4-b", "4.0b")):
         score += 900
     elif any(token in text for token in ("8b", "9b", "7b")):
@@ -292,10 +290,17 @@ class LocalAIServer:
             return False
 
     def _export_env(self) -> None:
+        # Normal keys are useful in the GUI process. Runtime keys are deliberately
+        # separate so a worker re-reading desktop.env cannot overwrite discovered
+        # Ollama/LM Studio routing or a dynamically chosen llama.cpp port.
         os.environ["LOCAL_AI_ENDPOINT"] = self.endpoint
         os.environ["LOCAL_AI_API_MODEL"] = self.api_model
         os.environ["LOCAL_AI_MODEL_NAME"] = self.model_label
         os.environ["LOCAL_AI_BACKEND"] = self.backend
+        os.environ["LOCAL_AI_RUNTIME_ENDPOINT"] = self.endpoint
+        os.environ["LOCAL_AI_RUNTIME_API_MODEL"] = self.api_model
+        os.environ["LOCAL_AI_RUNTIME_MODEL_NAME"] = self.model_label
+        os.environ["LOCAL_AI_RUNTIME_BACKEND"] = self.backend
 
     def _log_path(self) -> Path:
         name = "ollama-server.log" if self.backend == "ollama" else "llama-server.log"
@@ -467,7 +472,6 @@ class LocalAIServer:
                     _progress(progress, f"{self.backend} завершился. Последние строки лога:\n" + tail)
                 return False
 
-            # Ollama may need a moment after `serve` before /api/tags responds.
             if self.backend == "ollama":
                 model = _probe_ollama(timeout=1.0)
                 if model:
