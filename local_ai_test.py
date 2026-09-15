@@ -29,15 +29,33 @@ class _Response:
 def run() -> None:
     old_post = local_ai_primary.requests.post
     old_budget = ai_provider._budget_timeout
-    old_batches = os.environ.get("LOCAL_AI_BATCHES")
-    old_model = os.environ.get("LOCAL_AI_MODEL_NAME")
-    old_api_model = os.environ.get("LOCAL_AI_API_MODEL")
+    keys = (
+        "LOCAL_AI_BATCHES",
+        "LOCAL_AI_MODEL_NAME",
+        "LOCAL_AI_API_MODEL",
+        "LOCAL_AI_ENDPOINT",
+        "LOCAL_AI_RUNTIME_MODEL_NAME",
+        "LOCAL_AI_RUNTIME_API_MODEL",
+        "LOCAL_AI_RUNTIME_ENDPOINT",
+    )
+    previous = {key: os.environ.get(key) for key in keys}
     try:
         local_ai_primary.requests.post = lambda *args, **kwargs: _Response()
         ai_provider._budget_timeout = lambda timeout: float(timeout)
+
+        # Simulate desktop.env containing generic llama.cpp values while the GUI
+        # discovered the user's already installed Ollama qwen3:4b at runtime.
         os.environ["LOCAL_AI_BATCHES"] = "2"
-        os.environ["LOCAL_AI_MODEL_NAME"] = "qwen3:4b"
-        os.environ["LOCAL_AI_API_MODEL"] = "qwen3:4b"
+        os.environ["LOCAL_AI_MODEL_NAME"] = "Qwen3-4B-Q4_K_M"
+        os.environ["LOCAL_AI_API_MODEL"] = "binance-square-local"
+        os.environ["LOCAL_AI_ENDPOINT"] = "http://127.0.0.1:8089/v1/chat/completions"
+        os.environ["LOCAL_AI_RUNTIME_MODEL_NAME"] = "qwen3:4b"
+        os.environ["LOCAL_AI_RUNTIME_API_MODEL"] = "qwen3:4b"
+        os.environ["LOCAL_AI_RUNTIME_ENDPOINT"] = "http://127.0.0.1:11434/v1/chat/completions"
+
+        assert local_ai_primary._endpoint().endswith(":11434/v1/chat/completions")
+        assert local_ai_primary._model_name() == "qwen3:4b"
+        assert local_ai_primary._api_model_name() == "qwen3:4b"
 
         body = local_ai_primary._body(
             system_prompt="Верни JSON.",
@@ -64,7 +82,6 @@ def run() -> None:
         assert row["_model"] == "qwen3:4b"
         assert row["format_id"] == "hot_take"
 
-        # Runtime discovery must prefer the exact model visible on the user's PC.
         tags = {
             "models": [
                 {"name": "gemma3:4b"},
@@ -76,11 +93,7 @@ def run() -> None:
     finally:
         local_ai_primary.requests.post = old_post
         ai_provider._budget_timeout = old_budget
-        for key, value in (
-            ("LOCAL_AI_BATCHES", old_batches),
-            ("LOCAL_AI_MODEL_NAME", old_model),
-            ("LOCAL_AI_API_MODEL", old_api_model),
-        ):
+        for key, value in previous.items():
             if value is None:
                 os.environ.pop(key, None)
             else:
