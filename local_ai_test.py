@@ -1,10 +1,11 @@
-"""Network-free contract test for the desktop local provider."""
+"""Network-free contract tests for the desktop local provider/runtime."""
 from __future__ import annotations
 
 import os
 
 import ai_provider
 import local_ai_primary
+import local_ai_runtime
 
 
 class _Response:
@@ -14,7 +15,7 @@ class _Response:
 
     def json(self):
         return {
-            "model": "binance-square-local",
+            "model": "qwen3:4b",
             "choices": [
                 {
                     "message": {
@@ -35,8 +36,8 @@ def run() -> None:
         local_ai_primary.requests.post = lambda *args, **kwargs: _Response()
         ai_provider._budget_timeout = lambda timeout: float(timeout)
         os.environ["LOCAL_AI_BATCHES"] = "2"
-        os.environ["LOCAL_AI_MODEL_NAME"] = "Qwen3.5-9B-Q4_K_M"
-        os.environ["LOCAL_AI_API_MODEL"] = "binance-square-local"
+        os.environ["LOCAL_AI_MODEL_NAME"] = "qwen3:4b"
+        os.environ["LOCAL_AI_API_MODEL"] = "qwen3:4b"
 
         body = local_ai_primary._body(
             system_prompt="Верни JSON.",
@@ -45,7 +46,8 @@ def run() -> None:
             max_tokens=600,
             batch_index=0,
         )
-        assert body["model"] == "binance-square-local"
+        assert body["model"] == "qwen3:4b"
+        assert "/no_think" in body["messages"][0]["content"]
 
         result = local_ai_primary._request_local_candidates(
             system_prompt="Верни JSON.",
@@ -55,12 +57,22 @@ def run() -> None:
             timeout=30,
         )
         assert result.provider == "local_qwen"
-        assert result.model == "Qwen3.5-9B-Q4_K_M"
+        assert result.model == "qwen3:4b"
         assert len(result.candidates) == 1, "duplicate batches must be deduplicated"
         row = result.candidates[0]
         assert row["_provider"] == "local_qwen"
-        assert row["_model"] == "Qwen3.5-9B-Q4_K_M"
+        assert row["_model"] == "qwen3:4b"
         assert row["format_id"] == "hot_take"
+
+        # Runtime discovery must prefer the exact model visible on the user's PC.
+        tags = {
+            "models": [
+                {"name": "gemma3:4b"},
+                {"name": "qwen3:8b"},
+                {"name": "qwen3:4b"},
+            ]
+        }
+        assert local_ai_runtime._ollama_model_from_tags(tags) == "qwen3:4b"
     finally:
         local_ai_primary.requests.post = old_post
         ai_provider._budget_timeout = old_budget
@@ -77,4 +89,4 @@ def run() -> None:
 
 if __name__ == "__main__":
     run()
-    print("local provider smoke test: OK")
+    print("local provider/runtime smoke test: OK")
