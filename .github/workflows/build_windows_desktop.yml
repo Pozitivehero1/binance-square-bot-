@@ -36,15 +36,24 @@ jobs:
           pip install -r requirements.txt
           pip install "pyinstaller>=6.10,<7"
 
-      - name: Download latest llama.cpp Vulkan runtime
+      - name: Download current llama.cpp Windows Vulkan runtime
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           $headers = @{ Authorization = "Bearer $env:GH_TOKEN"; "User-Agent" = "binance-square-desktop-build" }
-          $release = Invoke-RestMethod -Headers $headers -Uri "https://api.github.com/repos/ggml-org/llama.cpp/releases/latest"
-          $asset = $release.assets | Where-Object { $_.name -like "*bin-win-vulkan-x64.zip" } | Select-Object -First 1
-          if (-not $asset) { throw "Could not find llama.cpp Windows Vulkan asset" }
+          $releases = Invoke-RestMethod -Headers $headers -Uri "https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=15"
+          $asset = $null
+          $sourceRelease = $null
+          foreach ($release in $releases) {
+            $candidate = $release.assets | Where-Object { $_.name -like "*bin-win-vulkan-x64.zip" } | Select-Object -First 1
+            if ($candidate) {
+              $asset = $candidate
+              $sourceRelease = $release
+              break
+            }
+          }
+          if (-not $asset) { throw "Could not find a recent llama.cpp Windows x64 Vulkan asset" }
           New-Item -ItemType Directory -Force -Path vendor\download | Out-Null
           New-Item -ItemType Directory -Force -Path vendor\llama | Out-Null
           Invoke-WebRequest -Headers $headers -Uri $asset.browser_download_url -OutFile vendor\download\llama.zip
@@ -52,10 +61,10 @@ jobs:
           $server = Get-ChildItem vendor\download\unpacked -Recurse -Filter llama-server.exe | Select-Object -First 1
           if (-not $server) { throw "llama-server.exe missing from downloaded archive" }
           Copy-Item -Path (Join-Path $server.DirectoryName "*") -Destination vendor\llama -Recurse -Force
-          Write-Host "Bundling llama.cpp from $($asset.name)"
+          Write-Host "Bundling llama.cpp release=$($sourceRelease.tag_name) asset=$($asset.name)"
           Get-ChildItem vendor\llama | Select-Object Name,Length
 
-      - name: Compile desktop modules
+      - name: Compile desktop modules and test local provider
         shell: pwsh
         run: |
           python -m py_compile desktop_app.py local_ai_primary.py local_ai_runtime.py
