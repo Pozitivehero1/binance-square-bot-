@@ -17,13 +17,13 @@ from dotenv import dotenv_values
 from local_ai_runtime import LocalAIServer, app_data_dir
 
 APP_TITLE = "Binance Square Bot — Local AI"
-MODEL_AUTO = "Авто — использовать готовую Qwen из LM Studio"
-MODEL_8B = "Qwen3 8B Q4_K_M — резерв, максимум качества"
-MODEL_4B = "Qwen3 4B Q5_K_M — резерв, быстрее"
+MODEL_AUTO = "Авто — использовать установленный qwen3:4b"
+MODEL_4B = "Qwen3 4B Q4_K_M — резерв"
+MODEL_8B = "Qwen3 8B Q4_K_M — тяжелее"
 MODEL_MAP = {
-    MODEL_AUTO: ("Qwen/Qwen3-8B-GGUF:Q4_K_M", "Qwen3-8B-Q4_K_M", "12", "1"),
+    MODEL_AUTO: ("Qwen/Qwen3-4B-GGUF:Q4_K_M", "qwen3:4b", "30", "1"),
+    MODEL_4B: ("Qwen/Qwen3-4B-GGUF:Q4_K_M", "Qwen3-4B-Q4_K_M", "30", "0"),
     MODEL_8B: ("Qwen/Qwen3-8B-GGUF:Q4_K_M", "Qwen3-8B-Q4_K_M", "18", "0"),
-    MODEL_4B: ("Qwen/Qwen3-4B-GGUF:Q5_K_M", "Qwen3-4B-Q5_K_M", "24", "0"),
 }
 
 
@@ -41,12 +41,12 @@ def _default_config() -> Dict[str, str]:
         "LOCAL_AI_ENABLED": "1",
         "LOCAL_AI_REMOTE_FALLBACK": "0",
         "LOCAL_AI_PREFER_INSTALLED": "1",
-        "LOCAL_AI_HF_MODEL": "Qwen/Qwen3-8B-GGUF:Q4_K_M",
-        "LOCAL_AI_MODEL_NAME": "Qwen3-8B-Q4_K_M",
+        "LOCAL_AI_HF_MODEL": "Qwen/Qwen3-4B-GGUF:Q4_K_M",
+        "LOCAL_AI_MODEL_NAME": "qwen3:4b",
         "LOCAL_AI_API_MODEL": "binance-square-local",
         "LOCAL_AI_PORT": "8089",
         "LOCAL_AI_CTX": "4096",
-        "LOCAL_AI_GPU_LAYERS": "12",
+        "LOCAL_AI_GPU_LAYERS": "30",
         "LOCAL_AI_THREADS": "6",
         "LOCAL_AI_BATCHES": "2",
         "LOCAL_AI_TIMEOUT": "110",
@@ -174,7 +174,7 @@ class DesktopApp(tk.Tk):
         self.after(250, self._drain_log_queue)
         self.after(1000, self._tick)
         self._append_log(f"Настройки: {config_path()}")
-        self._append_log("Режим модели: сначала ищу уже скачанную Qwen в LM Studio; повторная загрузка не нужна.")
+        self._append_log("Авто-режим: ищу установленный qwen3:4b (Ollama/LM Studio/GGUF). Thinking отключён.")
         self._refresh_status_labels()
 
     def _style(self) -> None:
@@ -222,10 +222,10 @@ class DesktopApp(tk.Tk):
         hf = self.cfg.get("LOCAL_AI_HF_MODEL", "")
         if prefer_installed:
             initial_model = MODEL_AUTO
-        elif "4B" in hf:
-            initial_model = MODEL_4B
-        else:
+        elif "8B" in hf:
             initial_model = MODEL_8B
+        else:
+            initial_model = MODEL_4B
         self.model_var = tk.StringVar(value=initial_model)
         ttk.Combobox(settings, textvariable=self.model_var, values=list(MODEL_MAP), state="readonly").grid(row=1, column=1, sticky="ew", padx=(10, 0), pady=4)
 
@@ -336,14 +336,17 @@ class DesktopApp(tk.Tk):
             apply_config_to_env(self.cfg)
             self.ai_server.start(progress=self._queue_log)
             if not self.ai_server.wait_until_ready(timeout=600, progress=self._queue_log):
-                raise RuntimeError("локальная модель не смогла запуститься; подробности выше и в llama-server.log")
+                raise RuntimeError("локальная модель не смогла запуститься; подробности выше и в папке логов")
             answer = self.ai_server.smoke_test(timeout=90)
             self._queue_log(f"Тест локального ИИ пройден: {answer[:80]}")
-            # LocalAIServer may choose another port and may identify the installed model.
+            self._queue_log(f"Использую {self.ai_server.backend}: {self.ai_server.model_label}. Thinking отключён.")
             os.environ["LOCAL_AI_ENDPOINT"] = self.ai_server.endpoint
-            os.environ["LOCAL_AI_API_MODEL"] = "binance-square-local"
+            os.environ["LOCAL_AI_API_MODEL"] = self.ai_server.api_model
             os.environ["LOCAL_AI_MODEL_NAME"] = self.ai_server.model_label
+            os.environ["LOCAL_AI_BACKEND"] = self.ai_server.backend
+            self.cfg["LOCAL_AI_API_MODEL"] = self.ai_server.api_model
             self.cfg["LOCAL_AI_MODEL_NAME"] = self.ai_server.model_label
+            self.cfg["LOCAL_AI_BACKEND"] = self.ai_server.backend
             ok = True
         except Exception as exc:
             self._queue_log(f"Ошибка запуска локального ИИ: {type(exc).__name__}: {exc}")
@@ -400,8 +403,9 @@ class DesktopApp(tk.Tk):
         env = os.environ.copy()
         env.update({k: str(v) for k, v in self.cfg.items()})
         env["LOCAL_AI_ENDPOINT"] = self.ai_server.endpoint
-        env["LOCAL_AI_API_MODEL"] = "binance-square-local"
+        env["LOCAL_AI_API_MODEL"] = self.ai_server.api_model
         env["LOCAL_AI_MODEL_NAME"] = self.ai_server.model_label
+        env["LOCAL_AI_BACKEND"] = self.ai_server.backend
         flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
         self.worker = subprocess.Popen(
             _worker_command(),
@@ -413,7 +417,7 @@ class DesktopApp(tk.Tk):
             env=env,
             creationflags=flags,
         )
-        self._append_log("Локальный ИИ готов. Запущен цикл сканирования/публикации.")
+        self._append_log(f"Локальный ИИ готов ({self.ai_server.backend}: {self.ai_server.model_label}). Запущен цикл сканирования/публикации.")
         threading.Thread(target=self._read_worker_output, daemon=True).start()
         threading.Thread(target=self._wait_worker, daemon=True).start()
         self._refresh_status_labels()
@@ -450,15 +454,15 @@ class DesktopApp(tk.Tk):
             bot = "Запущен" if self.running else "Остановлен"
         self.bot_status.configure(text=bot)
         if self.preparing_ai:
-            ai = "загрузка модели…"
+            ai = "подготовка qwen3:4b…"
         elif self.ai_server.healthy(timeout=0.2):
-            ai = f"готов — {self.ai_server.model_label}"
+            ai = f"готов — {self.ai_server.model_label} ({self.ai_server.backend})"
         else:
             ai = "не запущен"
         self.ai_status.configure(text=ai)
         if self.next_run is None:
             if self.preparing_ai:
-                text = "после загрузки модели"
+                text = "после подготовки модели"
             else:
                 text = "после текущего цикла" if self.running else "—"
             self.next_status.configure(text=text)
