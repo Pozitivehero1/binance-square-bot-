@@ -14,7 +14,7 @@ def main() -> int:
     import recovery_guard
     import writer
 
-    assert os.environ.get("BOT_VERSION") == "v11.14"
+    assert os.environ.get("BOT_VERSION") == "v11.15"
     assert os.environ.get("AI_RETRIES") == "2"
     assert os.environ.get("EVENT_AI_RETRIES") == "2"
     assert os.environ.get("ORCAROUTER_RETRIES") == "1"
@@ -38,7 +38,11 @@ def main() -> int:
     assert writer.DETERMINISTIC_COMPARE_SLOTS == 0
     assert event_writer.EVENT_DETERMINISTIC_COMPARE_SLOTS == 0
 
-    print("RUNTIME POLICY: OK | v11.14 Groq primary + AI-only startup policy active")
+    import main
+    assert main.PUBLICATION_CANDIDATE_ATTEMPTS == 6
+    assert main.AI_SCAN_MAX_REQUESTS == 14
+
+    print("RUNTIME POLICY: OK | v11.15 Groq primary + adaptive growth policy active")
     return 0
 
 

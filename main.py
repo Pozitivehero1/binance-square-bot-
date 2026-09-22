@@ -67,6 +67,8 @@ SHORTLIST_SIZE = int(os.getenv("SHORTLIST_SIZE", "36"))
 FINAL_CANDIDATES = int(os.getenv("FINAL_CANDIDATES", "20"))
 DATA_WORKERS = max(1, min(int(os.getenv("DATA_WORKERS", "8")), 12))
 KLINE_LIMIT = max(220, min(int(os.getenv("KLINE_LIMIT", "260")), 500))
+PUBLICATION_CANDIDATE_ATTEMPTS = max(3, min(int(os.getenv("PUBLICATION_CANDIDATE_ATTEMPTS", "6")), 10))
+AI_SCAN_MAX_REQUESTS = max(8, min(int(os.getenv("AI_SCAN_MAX_REQUESTS", "14")), 24))
 MAX_FUNDING_ABS = float(os.getenv("MAX_FUNDING_ABS", "0.001"))
 ENABLE_BALANCED_FALLBACK = os.getenv("ENABLE_BALANCED_FALLBACK", "1").lower() in {
     "1", "true", "yes"
@@ -424,6 +426,7 @@ def _choose_market_candidate(
         adaptive = score_adaptive(
             symbol=get_base_asset(mtf.symbol), lane="TRADE", live_score=opportunity.score,
             event_class=opportunity.event_class, micro_score=micro.score,
+            plan_valid=True, decision_mode=str(levels.get("decision_mode", "")),
         )
         w2e_proxy_bonus = _w2e_proxy_adjustment(monetization, plan_valid=True)
         adjusted_score = (
@@ -630,15 +633,16 @@ def _choose_event_candidate(
         demand_bonus = min(5.0, max(0.0, (opportunity.audience_demand - 65.0) / 7.0))
         plan_bonus = VALID_PLAN_EVENT_BONUS if plan_valid else -OBSERVATION_ONLY_EVENT_PENALTY
         rotation_adjustment = 0.0
-        if recent_event_count >= 2:
-            rotation_adjustment -= 7.0
+        if recent_event_count >= 4:
+            rotation_adjustment -= 4.0
         elif recent_formats and str(recent_formats[-1]).startswith("event_"):
-            rotation_adjustment -= 3.0
+            rotation_adjustment -= 1.5
         elif recent_event_count == 0:
-            rotation_adjustment += 1.5
+            rotation_adjustment += 1.0
         adaptive = score_adaptive(
             symbol=get_base_asset(mtf.symbol), lane="EVENT", live_score=opportunity.score,
             event_class=opportunity.event_class, micro_score=micro.score,
+            plan_valid=plan_valid, decision_mode=str(levels.get("decision_mode", "")),
         )
         w2e_proxy_bonus = _w2e_proxy_adjustment(monetization, plan_valid=plan_valid)
         selection_score = (
@@ -1084,14 +1088,18 @@ def _run_once() -> int:
     from publication_intent import unresolved_symbols
     from ai_provider import start_scan_budget
     scan_budget = max(60, int(os.getenv("MAX_SCAN_AGE_SECONDS", "300")))
-    start_scan_budget(scan_started + scan_budget, max_requests=8)
+    start_scan_budget(scan_started + scan_budget, max_requests=AI_SCAN_MAX_REQUESTS)
     pending = unresolved_symbols()
     attempted = {row.symbol for row in candidates if get_base_asset(row.symbol).upper() in pending}
-    for attempt in range(3):
+    for attempt in range(PUBLICATION_CANDIDATE_ATTEMPTS):
         if time.monotonic() - scan_started >= scan_budget:
             write_status("skipped", "candidate search time budget exhausted")
             return 0
-        logger.info("Publication candidate attempt %s/3", attempt + 1)
+        logger.info(
+            "Publication candidate attempt %s/%s",
+            attempt + 1,
+            PUBLICATION_CANDIDATE_ATTEMPTS,
+        )
         trade_chosen = (
             _choose_market_candidate(
                 [row for row in ranked if row[0].symbol not in attempted], strict_symbols, btc, memory, primary_data, market_meta, trending_market
@@ -1128,10 +1136,17 @@ def _run_once() -> int:
 
         # Two consecutive TRADE publications saturate the feed. Prefer a genuinely
         # eligible EVENT next; never manufacture an event merely for rotation.
-        recent_lanes = memory.get_last_lanes(2)
-        if recent_lanes == ["TRADE", "TRADE"] and event_chosen is not None:
+        recent_lanes = memory.get_last_lanes(4)
+        if recent_lanes[-2:] == ["TRADE", "TRADE"] and event_chosen is not None:
             event_selection_score += 8.0
             logger.info("Lane saturation: two recent TRADE posts, EVENT receives +8.0")
+        if len(recent_lanes) >= 4 and "TRADE" not in recent_lanes[-4:] and trade_chosen is not None:
+            # EVENT currently wins reach on this account, but W2E also needs a
+            # steady stream of honest, outcome-tracked plans.  This is a bounded
+            # preference, not a forced trade: a materially stronger live event
+            # may still win the slot.
+            trade_selection_score += 6.0
+            logger.info("W2E mix: four recent EVENT posts, eligible TRADE receives +6.0")
 
         if event_chosen is not None and (
             trade_chosen is None or event_selection_score >= trade_selection_score + EVENT_LANE_ADVANTAGE
@@ -1549,7 +1564,10 @@ def _run_once() -> int:
         finally:
             _cleanup_files((card_path, chart_path))
 
-    write_status("skipped", "candidate pool or three-attempt budget exhausted")
+    write_status(
+        "skipped",
+        f"candidate pool or {PUBLICATION_CANDIDATE_ATTEMPTS}-attempt budget exhausted",
+    )
     if time.monotonic() - scan_started < scan_budget:
         _try_outcome_fallback(memory=memory, guard=guard, recovery_mode=recovery_mode)
     return 0

@@ -418,7 +418,9 @@ def install_groq_primary() -> None:
     # Once Groq is primary, a known-broken free Mistral quota must not stall a
     # publishing slot for two 60-second retries. It remains one-shot fallback.
     os.environ["MISTRAL_RETRIES"] = os.getenv("GROQ_MISTRAL_FALLBACK_RETRIES", "1")
-    os.environ["BOT_VERSION"] = "v11.14.1"
+    # The cumulative release owns BOT_VERSION.  Keep the provider's standalone
+    # fallback version only when it is tested or used outside run_bot.py.
+    os.environ.setdefault("BOT_VERSION", "v11.14.1")
     logger.info("Groq primary installed models=%s", " -> ".join(configured_groq_models()))
 
 

@@ -140,9 +140,9 @@ class PostMemory:
             # words such as LONG/SHORT, retest, first target and invalidation.
             # Exclude them from *editorial* similarity so the anti-duplicate gate
             # measures the hook/opinion, not mandatory risk-control wording.
-            has_price = bool(re.search(r"\d+(?:[.,]\d+)?", lower))
+            has_price = bool(re.search(r"\b\d+(?:[.,]\d+)?\b", lower))
             trade_contract = has_price and (
-                (re.search(r"(?:long|short|лонг|шорт)", lower) and any(
+                (re.search(r"\b(?:long|short|лонг|шорт)\b", lower) and any(
                     marker in lower
                     for marker in ("рассматриваю", "смотрю", "первая", "зона интереса", "удержат", "закреп")
                 ))

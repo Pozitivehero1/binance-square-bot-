@@ -196,6 +196,7 @@ def record_publication(
             "published_at": previous.get("published_at") or now.isoformat(),
             "tracked_from_publish": True,
             "source": "bot",
+            "engine_version": str(os.getenv("BOT_VERSION") or "unversioned"),
             "lane": str(lane or "").upper(),
             "direction": str(direction or "").upper(),
             "content_format": str(content_format or ""),

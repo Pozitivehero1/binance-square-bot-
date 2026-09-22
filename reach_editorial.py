@@ -54,10 +54,12 @@ def editorial_reach_adjustment(text: str) -> EditorialReachAdjustment:
         score -= 4.0
     score -= generic * (1.8 if specificity == 0 else 0.8)
     length = len(value)
-    if 250 <= length <= 380:
-        score += 2.0
-    elif 220 <= length <= 430:
-        score += 1.0
+    if 230 <= length <= 330:
+        score += 2.5
+    elif 220 <= length <= 380:
+        score += 1.5
+    elif 381 <= length <= 430:
+        score += 0.5
     elif length > 450:
         score -= min(5.0, (length - 450) / 22.0 + 1.0)
     elif length < 190:

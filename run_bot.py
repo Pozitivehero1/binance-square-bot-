@@ -20,7 +20,6 @@ from reach_recovery_v11_8 import activate_reach_recovery
 from author_pool_policy import install_author_pool_policy, verify_author_policy
 from reach_recovery_live_exit import activate_live_recovery_exit
 from v11_9_writer_policy import install_v119_writer_policy, verify_v119_writer_policy
-from throughput_policy import install_throughput_policy, verify_throughput_policy
 
 # OpenRouter patches the low-level HTTP request used by the legacy fallback
 # chain. Groq then wraps request_candidates before writer/event_writer import the
@@ -32,7 +31,6 @@ activate_reach_recovery()
 install_author_pool_policy()
 install_v119_writer_policy()
 activate_live_recovery_exit()
-install_throughput_policy()
 install_provider_source_tracking()
 
 # Fail before an expensive market scan if patch ordering silently broke a core
@@ -42,7 +40,6 @@ verify_openrouter_fallback_chain()
 verify_groq_primary()
 verify_author_policy()
 verify_v119_writer_policy()
-verify_throughput_policy()
 
 import recovery_guard
 import writer

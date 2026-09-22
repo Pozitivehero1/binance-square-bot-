@@ -119,10 +119,10 @@ class Checks(unittest.TestCase):
         self.assertIsNone(groups['observation']['milestones']['24h']['median_views'])
         self.assertEqual(groups['outcome']['milestones']['24h']['samples'],0)
 
-    def test_candidate_failover_and_three_attempt_limit(self):
+    def test_candidate_failover_and_configured_attempt_limit(self):
         import main
         for fail_all, send_fails in ((False, False), (True, False), (False, True)):
-            candidates=[NS(symbol=s,tf_15m=NS(price=100,volume_relative=2,change_1h=1)) for s in ('AAAUSDT','BBBUSDT','CCCUSDT','DDDUSDT')]
+            candidates=[NS(symbol=s,tf_15m=NS(price=100,volume_relative=2,change_1h=1)) for s in ('AAAUSDT','BBBUSDT','CCCUSDT','DDDUSDT','EEEUSDT','FFFUSDT','GGGUSDT')]
             score=NS(total=80,direction='LONG')
             ranked=[(c,score) for c in candidates]
             metric=NS(score=80,phase='fresh',audience_demand=80,change_15m=1,change_5m=1,volume_spike=2,volume_spike_5m=2,event_class='fresh_event')
@@ -133,7 +133,7 @@ class Checks(unittest.TestCase):
                 c,sc=pool[0];seen.append(c.symbol)
                 return c,sc,None,metric,metric,metric,metric,{'plan_valid':False},80,adaptive
             draft=NS(text='Наблюдение',source='test',content_format='test',visual_style='test',signal_type='test')
-            generated=[None,None,None] if fail_all else [None,(draft,NS(score=80))]
+            generated=[None] * main.PUBLICATION_CANDIDATE_ATTEMPTS if fail_all else [None,(draft,NS(score=80))]
             patches={'DRY_RUN':not send_fails,'PUBLISH_IMAGES':False,'cleanup_history':Mock(),
                      'PostMemory':Mock(return_value=Mock(get_last_lanes=lambda n:[])),
                      'PublicationGuard':Mock(return_value=Mock(evaluate_candidate=lambda **k:NS(reason='ok',score=80,allowed=True))),
@@ -150,7 +150,11 @@ class Checks(unittest.TestCase):
                 for name,value in patches.items():stack.enter_context(patch.object(main,name,value))
                 stack.enter_context(patch('recovery_guard.evaluate_recovery_candidate',return_value=NS(reason='ok',allowed=True)))
                 self.assertEqual(main._run_once(),2 if send_fails else 0)
-                self.assertEqual(seen,['AAAUSDT','BBBUSDT','CCCUSDT'] if fail_all else ['AAAUSDT','BBBUSDT'])
+                self.assertEqual(
+                    seen,
+                    ['AAAUSDT','BBBUSDT','CCCUSDT','DDDUSDT','EEEUSDT','FFFUSDT']
+                    if fail_all else ['AAAUSDT','BBBUSDT'],
+                )
                 self.assertEqual(patches['_try_outcome_fallback'].call_count,int(fail_all))
                 self.assertEqual(patches['publish'].call_count,int(send_fails))
 

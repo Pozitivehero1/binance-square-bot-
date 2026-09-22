@@ -26,7 +26,7 @@ HALF_LIFE_DAYS = max(2.0, min(float(os.getenv("ADAPTIVE_HALF_LIFE_DAYS", "3")), 
 MAX_TOTAL = max(4.0, min(float(os.getenv("ADAPTIVE_MAX_TOTAL", "14")), 25.0))
 MAX_TICKER = max(2.0, min(float(os.getenv("ADAPTIVE_TICKER_MAX", "10")), 15.0))
 MAX_HOUR = max(1.0, min(float(os.getenv("ADAPTIVE_HOUR_MAX", "5")), 10.0))
-MAX_LANE = max(0.5, min(float(os.getenv("ADAPTIVE_LANE_MAX", "2.5")), 6.0))
+MAX_LANE = max(0.5, min(float(os.getenv("ADAPTIVE_LANE_MAX", "6")), 6.0))
 MAX_BREAKOUT = max(0.0, min(float(os.getenv("ADAPTIVE_BREAKOUT_MAX", "3")), 6.0))
 MAX_EXPLORATION = max(0.0, min(float(os.getenv("ADAPTIVE_EXPLORATION_MAX", "2.5")), 5.0))
 MAX_SATURATION = max(0.0, min(float(os.getenv("ADAPTIVE_SATURATION_MAX", "5")), 10.0))
@@ -34,7 +34,7 @@ MAX_OUTCOME = max(0.0, min(float(os.getenv("ADAPTIVE_OUTCOME_MAX", "5")), 8.0))
 OUTCOME_PRIOR = max(2.0, min(float(os.getenv("ADAPTIVE_OUTCOME_PRIOR", "6")), 20.0))
 OUTCOME_MIN_CLOSED = max(1, min(int(os.getenv("ADAPTIVE_OUTCOME_MIN_CLOSED", "3")), 20))
 MAX_CONTENT_TOTAL = max(2.0, min(float(os.getenv("ADAPTIVE_CONTENT_MAX_TOTAL", "9")), 14.0))
-MAX_FORMAT = max(1.0, min(float(os.getenv("ADAPTIVE_FORMAT_MAX", "5")), 8.0))
+MAX_FORMAT = max(1.0, min(float(os.getenv("ADAPTIVE_FORMAT_MAX", "6")), 8.0))
 MAX_WRITER = max(0.5, min(float(os.getenv("ADAPTIVE_WRITER_MAX", "2.5")), 5.0))
 MAX_EVENT_CLASS = max(0.5, min(float(os.getenv("ADAPTIVE_EVENT_CLASS_MAX", "2")), 4.0))
 MAX_DIRECTION = max(0.0, min(float(os.getenv("ADAPTIVE_DIRECTION_MAX", "1.5")), 3.0))
@@ -74,6 +74,19 @@ class ContentPerformanceAdjustment:
     event_samples: int
     direction_samples: int
     baseline_views: float
+    reason: str
+
+
+@dataclass(frozen=True)
+class FormatPerformanceAdjustment:
+    """Reach lift for one lane/format pair, used before AI draft generation."""
+
+    enabled: bool
+    component: float
+    affinity: float
+    samples: int
+    baseline_views: float
+    format_views: float
     reason: str
 
 
@@ -127,6 +140,33 @@ def _weighted_median(values: Iterable[tuple[float, float]]) -> float:
         if acc >= midpoint:
             return value
     return rows[-1][0]
+
+
+def _lift_affinity(
+    group: list[dict],
+    baseline: float,
+    *,
+    prior: float,
+    max_component: float,
+    sensitivity: float,
+) -> tuple[float, float, int, float]:
+    """Turn observed reach lift into a bounded, confidence-shrunk component.
+
+    The older affinity mapping compressed a real 25-40% reach difference into
+    only a few tenths of a point.  That was too weak to affect cross-lane choice
+    or which three formats were sent to the AI author.  Log lift preserves the
+    direction and magnitude while the prior and hard cap prevent overfitting.
+    """
+    if not group or baseline <= 0:
+        return 50.0, 0.0, 0, 0.0
+    med = _weighted_median((row["views"], row["weight"]) for row in group)
+    n = len(group)
+    confidence = n / (n + max(1.0, prior))
+    ratio = max(0.20, med / max(1.0, baseline))
+    raw = math.log(ratio, 2) * sensitivity
+    component = max(-max_component, min(max_component, raw * confidence))
+    affinity = max(10.0, min(90.0, 50.0 + math.log(ratio, 2) * 22.0 * confidence))
+    return round(affinity, 2), round(component, 2), n, round(med, 2)
 
 
 def _decay_weight(published: datetime, now: datetime) -> float:
@@ -189,7 +229,13 @@ def score_content_performance(
     event_rows = [row for row in lane_rows if str(row["item"].get("event_class") or "") == event]
     direction_rows = [row for row in lane_rows if str(row["item"].get("direction") or "").upper() == side]
 
-    _, format_comp, format_n = _affinity(format_rows, baseline, prior=8.0, max_component=MAX_FORMAT)
+    _, format_comp, format_n, _ = _lift_affinity(
+        format_rows,
+        baseline,
+        prior=8.0,
+        max_component=MAX_FORMAT,
+        sensitivity=10.0,
+    )
     _, writer_comp, writer_n = _affinity(writer_rows, baseline, prior=14.0, max_component=MAX_WRITER)
     _, event_comp, event_n = _affinity(event_rows, baseline, prior=18.0, max_component=MAX_EVENT_CLASS)
     _, direction_comp, direction_n = _affinity(direction_rows, baseline, prior=24.0, max_component=MAX_DIRECTION)
@@ -203,6 +249,55 @@ def score_content_performance(
         True, round(total, 2), round(format_comp, 2), round(writer_comp, 2),
         round(event_comp, 2), round(direction_comp, 2), format_n, writer_n,
         event_n, direction_n, round(baseline, 2), reason,
+    )
+
+
+def score_format_performance(
+    *,
+    lane: str,
+    content_format: str,
+    now: Optional[datetime] = None,
+) -> FormatPerformanceAdjustment:
+    """Return a bounded historical reach prior for AI format selection.
+
+    This runs before prose exists.  It lets the author spend its small request
+    budget on formats that have actually worked for this account, while sample
+    shrinkage and the caller's recency penalty preserve exploration.
+    """
+    now = now or datetime.now(timezone.utc)
+    enabled = _bool("ENABLE_ADAPTIVE_RANKING", "1") and not _bool("LEARNING_ONLY", "0")
+    if not enabled:
+        return FormatPerformanceAdjustment(False, 0.0, 50.0, 0, 0.0, 0.0, "format adaptive disabled")
+    rows = _rows(load_store(), now)
+    minimum = max(30, int(os.getenv("ADAPTIVE_CONTENT_MIN_SAMPLES", "60")))
+    if len(rows) < minimum:
+        return FormatPerformanceAdjustment(
+            False, 0.0, 50.0, 0, 0.0, 0.0,
+            f"insufficient content samples={len(rows)}",
+        )
+    baseline = _weighted_median((row["views"], row["weight"]) for row in rows)
+    lane_name = str(lane or "").upper()
+    fmt = str(content_format or "")
+    matches = [
+        row for row in rows
+        if str(row["item"].get("lane") or "").upper() == lane_name
+        and str(row["item"].get("content_format") or "") == fmt
+    ]
+    affinity, component, samples, med = _lift_affinity(
+        matches,
+        baseline,
+        prior=8.0,
+        max_component=MAX_FORMAT,
+        sensitivity=10.0,
+    )
+    return FormatPerformanceAdjustment(
+        True,
+        component,
+        affinity,
+        samples,
+        round(baseline, 2),
+        med,
+        f"format={fmt}/n{samples} median={med:.1f} baseline={baseline:.1f} lift={component:+.1f}",
     )
 
 
@@ -261,7 +356,13 @@ def _outcome_value(trade: dict) -> Optional[float]:
     return None
 
 
-def _outcome_quality(target: str, *, plan_valid: bool, now: datetime) -> tuple[float, float, int, int]:
+def _outcome_quality(
+    target: str,
+    *,
+    plan_valid: bool,
+    decision_mode: str = "",
+    now: datetime,
+) -> tuple[float, float, int, int]:
     """Return (quality affinity, component, symbol_n, global_n).
 
     Reach and trade quality stay separate. This component is applied only when
@@ -294,6 +395,19 @@ def _outcome_quality(target: str, *, plan_valid: bool, now: datetime) -> tuple[f
         return sum(value * weight for _, value, weight in items) / max(denom, 1e-9)
 
     global_mean = weighted_mean(rows)
+    mode = str(decision_mode or "").strip().lower()
+    mode_rows = []
+    if mode:
+        for trade in (journal.get("trades") or {}).values():
+            value = _outcome_value(trade)
+            published = _parse_dt(trade.get("published_at", "")) if isinstance(trade, dict) else None
+            public_mode = str(trade.get("public_decision_mode") or trade.get("decision_mode") or "").lower() if isinstance(trade, dict) else ""
+            if value is not None and published and published >= cutoff and public_mode == mode:
+                mode_rows.append((_symbol(trade), value, _decay_weight(published, now)))
+    if mode_rows:
+        mode_mean = weighted_mean(mode_rows)
+        mode_confidence = len(mode_rows) / (len(mode_rows) + 10.0)
+        global_mean += (mode_mean - global_mean) * mode_confidence
     symbol_rows = [row for row in rows if row[0] == target]
     symbol_n = len(symbol_rows)
     if symbol_rows:
@@ -320,6 +434,7 @@ def score_adaptive(
     event_class: str = "",
     micro_score: float = 50.0,
     plan_valid: Optional[bool] = None,
+    decision_mode: str = "",
     now: Optional[datetime] = None,
 ) -> AdaptiveAdjustment:
     now = now or datetime.now(timezone.utc)
@@ -343,7 +458,13 @@ def score_adaptive(
 
     ticker_aff, ticker_comp, ticker_n = _affinity(ticker_rows, baseline, prior=5.0, max_component=MAX_TICKER)
     hour_aff, hour_comp, hour_n = _affinity(hour_rows, baseline, prior=12.0, max_component=MAX_HOUR)
-    lane_aff, lane_comp, lane_n = _affinity(lane_rows, baseline, prior=35.0, max_component=MAX_LANE)
+    lane_aff, lane_comp, lane_n, _ = _lift_affinity(
+        lane_rows,
+        baseline,
+        prior=20.0,
+        max_component=MAX_LANE,
+        sensitivity=9.0,
+    )
 
     global_breakout = _relative_breakout_rate(rows, baseline)
     ticker_breakout = _relative_breakout_rate(ticker_rows, baseline)
@@ -374,7 +495,10 @@ def score_adaptive(
     # a caller explicitly marks its plan valid. This preserves EVENT reach.
     effective_plan_valid = (lane_name == "TRADE") if plan_valid is None else bool(plan_valid)
     outcome_aff, outcome_comp, outcome_n, outcome_global_n = _outcome_quality(
-        target, plan_valid=effective_plan_valid, now=now
+        target,
+        plan_valid=effective_plan_valid,
+        decision_mode=decision_mode,
+        now=now,
     )
 
     total = ticker_comp + hour_comp + lane_comp + breakout_comp + exploration + saturation + outcome_comp

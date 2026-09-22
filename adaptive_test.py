@@ -55,6 +55,7 @@ def main() -> None:
         trades[f"tut{j}"] = {
             "tracking_version": 2, "public_plan_complete": True, "status": "closed",
             "close_reason": "stop", "symbol": "TUT",
+            "public_decision_mode": "retest_hold",
             "published_at": (now - timedelta(hours=6 + j)).isoformat(),
             "hits": {"tp1": False, "tp2": False, "tp3": False, "stop": True},
         }
@@ -62,6 +63,7 @@ def main() -> None:
         trades[f"win{j}"] = {
             "tracking_version": 2, "public_plan_complete": True, "status": "closed",
             "close_reason": "public_targets_complete", "symbol": f"WIN{j}",
+            "public_decision_mode": "at_level",
             "published_at": (now - timedelta(hours=8 + j)).isoformat(),
             "hits": {"tp1": True, "tp2": True, "tp3": True, "stop": False},
         }
@@ -72,6 +74,14 @@ def main() -> None:
         tut_plan = score_adaptive(symbol="TUT", lane="EVENT", live_score=75, micro_score=76, plan_valid=True, now=now)
         btc = score_adaptive(symbol="BTC", lane="EVENT", live_score=75, micro_score=76, now=now)
         new = score_adaptive(symbol="NEWCOIN", lane="EVENT", live_score=82, micro_score=84, event_class="fresh_event", now=now)
+        new_at_level = score_adaptive(
+            symbol="NEWCOIN", lane="TRADE", live_score=82, micro_score=84,
+            plan_valid=True, decision_mode="at_level", now=now,
+        )
+        new_retest = score_adaptive(
+            symbol="NEWCOIN", lane="TRADE", live_score=82, micro_score=84,
+            plan_valid=True, decision_mode="retest_hold", now=now,
+        )
 
     assert tut.enabled and btc.enabled and new.enabled
     assert tut.ticker_component > 0, tut
@@ -79,6 +89,7 @@ def main() -> None:
     assert tut.hour_component > 0, tut
     assert tut_plan.total < tut.total, (tut_plan, tut)
     assert "outcome=" in tut_plan.reason
+    assert new_at_level.total > new_retest.total, (new_at_level, new_retest)
     assert 0 < new.exploration_component <= 2.5, new
     assert abs(tut.total) <= 14 and abs(btc.total) <= 14
     print(f"ADAPTIVE: OK | TUT reach {tut.total:+.1f} plan {tut_plan.total:+.1f} | BTC {btc.total:+.1f} | explore {new.exploration_component:+.1f}")

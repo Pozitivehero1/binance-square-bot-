@@ -22,7 +22,7 @@ from engagement import FeedAppealEvaluator
 from memory import PostMemory
 from quality import QualityReport
 from writer import GeneratedPost, _enforce_full_plan_block, _fmt_pct, _fmt_price, _fmt_x, phrase_family_penalty
-from adaptive import score_content_performance
+from adaptive import score_content_performance, score_format_performance
 from reach_editorial import editorial_reach_adjustment
 
 logger = logging.getLogger(__name__)
@@ -254,9 +254,27 @@ def _format_rotation(memory: Optional[PostMemory], count: int) -> List[str]:
     recent = memory.get_last_content_formats(18) if memory else []
     frequency = {fmt: recent.count(fmt) for fmt in EVENT_FORMAT_ORDER}
     last = recent[-1] if recent else ""
+    performance = {
+        fmt: score_format_performance(lane="EVENT", content_format=fmt)
+        for fmt in EVENT_FORMAT_ORDER
+    }
     ranked = sorted(
         EVENT_FORMAT_ORDER,
-        key=lambda fmt: (frequency.get(fmt, 0) + (3 if fmt == last else 0), EVENT_FORMAT_ORDER.index(fmt)),
+        key=lambda fmt: (
+            -(
+                performance[fmt].component
+                - frequency.get(fmt, 0) * 0.85
+                - (2.5 if fmt == last else 0.0)
+            ),
+            EVENT_FORMAT_ORDER.index(fmt),
+        ),
+    )
+    logger.debug(
+        "EVENT format priority: %s",
+        ", ".join(
+            f"{fmt}={performance[fmt].component:+.1f}/n{performance[fmt].samples}/r{frequency.get(fmt, 0)}"
+            for fmt in ranked
+        ),
     )
     out: List[str] = []
     while len(out) < count:

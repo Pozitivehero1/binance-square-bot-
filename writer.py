@@ -28,6 +28,7 @@ from ai_provider import has_ai_provider, request_candidates
 from content_variation import SignalAngle, detect_signal_angles
 from memory import PostMemory
 from trade_plan import build_public_trade_plan
+from adaptive import score_format_performance
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -584,9 +585,27 @@ def _format_rotation(memory: Optional[PostMemory], count: int) -> List[str]:
     recent = memory.get_last_content_formats(18) if memory else []
     frequency = {fmt: recent.count(fmt) for fmt in FORMAT_ORDER}
     last = recent[-1] if recent else ""
+    performance = {
+        fmt: score_format_performance(lane="TRADE", content_format=fmt)
+        for fmt in FORMAT_ORDER
+    }
     ranked = sorted(
         FORMAT_ORDER,
-        key=lambda fmt: (frequency.get(fmt, 0) + (3 if fmt == last else 0), FORMAT_ORDER.index(fmt)),
+        key=lambda fmt: (
+            -(
+                performance[fmt].component
+                - frequency.get(fmt, 0) * 0.85
+                - (2.5 if fmt == last else 0.0)
+            ),
+            FORMAT_ORDER.index(fmt),
+        ),
+    )
+    logger.debug(
+        "TRADE format priority: %s",
+        ", ".join(
+            f"{fmt}={performance[fmt].component:+.1f}/n{performance[fmt].samples}/r{frequency.get(fmt, 0)}"
+            for fmt in ranked
+        ),
     )
     out: List[str] = []
     while len(out) < count:

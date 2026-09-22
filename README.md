@@ -1,12 +1,15 @@
-# Binance Square Bot — v11.10 Stable Factual Posts
+# Binance Square Bot — v11.15 Reach-to-W2E Learning
 
 Production bot for `PozitiveHero`: live TRADE/EVENT selection, fact-locked AI
 copy, public-performance learning, a hard full-plan contract and exact
-post-bound trade outcomes.
+post-bound trade outcomes. v11.15 spends the limited AI draft budget on formats
+that have actually earned reach for the account and learns trade-plan quality by
+decision mode as well as ticker.
 
-No bot can guarantee views or a fixed W2E payout. v11.10 improves the parts the
+No bot can guarantee views or a fixed W2E payout. v11.15 improves the parts the
 bot controls—candidate quality, copy selection, repetition, timing and feedback—
-and keeps the 20-minute external scan while allowing weak slots to be skipped.
+and keeps the 20-minute trigger while preserving factual and publication-safety
+checks.
 
 ## Reach policy
 
@@ -20,8 +23,15 @@ and keeps the 20-minute external scan while allowing weak slots to be skipped.
   tightens weak candidates and weak historical hours, and never forces cadence.
 - Target copy length is 220–430 characters. The AI writes the narrative; Python appends one canonical plan. Specific live facts beat generic
   prose; repetition and structural similarity remain hard constraints.
-- DeepSeek is primary and Mistral is fallback. Deterministic templates are used
-  only when a healthy AI draft pool is unavailable.
+- Groq Qwen is the primary author; GPT-OSS, Mistral, OrcaRouter and OpenRouter
+  form the guarded fallback chain. Production does not silently replace a
+  configured AI author with deterministic copy.
+- Lane and format learning uses confidence-shrunk observed reach lift. Recent
+  format use remains a diversity penalty, but weak formats are no longer forced
+  into the three-slot AI request merely because they were used less often.
+- W2E-oriented trade ranking learns from verified outcomes by public decision
+  mode (`at_level`, retest, breakout) and ticker. A bounded feed-mix rule keeps
+  actionable plans present without discarding a materially stronger live event.
 - TP3 outcomes are refreshed every run but publish only as a fallback when no
   fresh candidate wins and reach recovery is inactive.
 
@@ -38,12 +48,13 @@ are final-only by default (`TP3`); partial targets and stops remain internal.
 
 ## Production settings
 
-See [CHANGES_V11_10.md](CHANGES_V11_10.md) for the audit, failure evidence and new outage policy.
+See [CHANGES_V11_15.md](CHANGES_V11_15.md) for the latest evidence and changes.
 
 The active configuration is in `.github/workflows/run.yml`; `env.example`
 contains safe local defaults (`DRY_RUN=1`). Required GitHub secrets are:
 
 - `SQUARE_API`
+- `GROQ_API_KEY`
 - `ORCAROUTER_API_KEY`
 - `MISTRAL_API`
 - `OPENROUTER_API_KEY` (optional independent fallback)

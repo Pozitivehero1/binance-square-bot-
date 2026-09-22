@@ -113,7 +113,8 @@ def main() -> int:
     adaptive_max = _number("ADAPTIVE_MAX_TOTAL", "14", float, 0, 25, errors)
     adaptive_ticker = _number("ADAPTIVE_TICKER_MAX", "10", float, 0, 15, errors)
     adaptive_hour = _number("ADAPTIVE_HOUR_MAX", "5", float, 0, 10, errors)
-    adaptive_lane = _number("ADAPTIVE_LANE_MAX", "2.5", float, 0, 6, errors)
+    adaptive_lane = _number("ADAPTIVE_LANE_MAX", "6", float, 0, 6, errors)
+    adaptive_format = _number("ADAPTIVE_FORMAT_MAX", "6", float, 0, 8, errors)
     adaptive_explore = _number("ADAPTIVE_EXPLORATION_MAX", "2.5", float, 0, 5, errors)
     adaptive_saturation = _number("ADAPTIVE_SATURATION_MAX", "5", float, 0, 10, errors)
     w2e_proxy_bonus = _number("W2E_PROXY_MAX_BONUS", "5", float, 0, 10, errors)
@@ -127,6 +128,8 @@ def main() -> int:
     event_ai_retries = _number("EVENT_AI_RETRIES", "2", int, 1, 6, errors)
     min_valid_ai = _number("MIN_VALID_AI_DRAFTS", "1", int, 1, 6, errors)
     event_min_valid_ai = _number("EVENT_MIN_VALID_AI_DRAFTS", "1", int, 1, 6, errors)
+    candidate_attempts = _number("PUBLICATION_CANDIDATE_ATTEMPTS", "6", int, 3, 10, errors)
+    ai_scan_requests = _number("AI_SCAN_MAX_REQUESTS", "14", int, 8, 24, errors)
     outcome_gap = _number("OUTCOME_MIN_FOLLOWUP_GAP_MIN", "45", float, 20, 720, errors)
     outcome_pending = _number("OUTCOME_PENDING_ENTRY_HOURS", "18", float, 2, 168, errors)
     outcome_max_age = _number("OUTCOME_MAX_AGE_HOURS", "72", float, 4, 336, errors)
@@ -229,9 +232,10 @@ def main() -> int:
     )
     print(
         f"  ADAPTIVE enabled={int(_bool('ENABLE_ADAPTIVE_RANKING', '1'))} | learning_only={int(_bool('LEARNING_ONLY', '0'))} | "
-        f"max={adaptive_max} ticker={adaptive_ticker} hour={adaptive_hour} lane={adaptive_lane} explore={adaptive_explore} "
+        f"max={adaptive_max} ticker={adaptive_ticker} hour={adaptive_hour} lane={adaptive_lane} format={adaptive_format} explore={adaptive_explore} "
         f"saturation={adaptive_saturation} | W2E proxy={w2e_proxy_bonus}/-{w2e_proxy_penalty}"
     )
+    print(f"  scan budgets: candidates={candidate_attempts} | AI requests={ai_scan_requests}")
     print(f"  PUBLISH_MEDIA_MODE={media_mode} | PUBLISH_IMAGES={int(publish_images)}")
     print(
         f"  OUTCOME_ENGINE={int(outcome_enabled)} | gap={outcome_gap}m | pending={outcome_pending}h | "

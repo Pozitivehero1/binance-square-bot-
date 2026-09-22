@@ -41,7 +41,10 @@ jobs:
       ADAPTIVE_MAX_TOTAL: "14"
       ADAPTIVE_TICKER_MAX: "10"
       ADAPTIVE_HOUR_MAX: "5"
-      ADAPTIVE_LANE_MAX: "2.5"
+      # Lane/format effects now use confidence-shrunk observed reach lift. The
+      # caps are large enough to affect selection but still bounded below the
+      # live opportunity score and factual gates.
+      ADAPTIVE_LANE_MAX: "6"
       ADAPTIVE_BREAKOUT_MAX: "3"
       ADAPTIVE_EXPLORATION_MAX: "2.5"
       ADAPTIVE_SATURATION_MAX: "5"
@@ -50,7 +53,7 @@ jobs:
       ADAPTIVE_OUTCOME_MIN_CLOSED: "3"
       ADAPTIVE_CONTENT_MIN_SAMPLES: "60"
       ADAPTIVE_CONTENT_MAX_TOTAL: "9"
-      ADAPTIVE_FORMAT_MAX: "5"
+      ADAPTIVE_FORMAT_MAX: "6"
       ADAPTIVE_WRITER_MAX: "2.5"
       ADAPTIVE_EVENT_CLASS_MAX: "2"
       ADAPTIVE_DIRECTION_MAX: "1.5"
@@ -124,6 +127,8 @@ jobs:
       QUESTION_EVERY: "9"
       USE_HASHTAGS: "0"
       POST_VARIANTS: "16"
+      PUBLICATION_CANDIDATE_ATTEMPTS: "6"
+      AI_SCAN_MAX_REQUESTS: "14"
       POST_MIN_CHARS: "220"
       POST_MAX_CHARS: "430"
       MIN_POST_QUALITY: "84"

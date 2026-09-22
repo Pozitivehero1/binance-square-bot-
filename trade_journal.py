@@ -331,6 +331,7 @@ def record_trade_setup(
         "lane": str(lane or "").upper(),
         "published_at": timestamp,
         "writer_source": str(writer_source or ""),
+        "engine_version": str(os.getenv("BOT_VERSION") or "unversioned"),
         "status": "active" if immediate else "pending_entry",
         "decision_mode": tracking_decision_mode,
         "public_decision_mode": public_decision_mode,

@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, patch
 
-from adaptive import _metric, score_content_performance
+from adaptive import _metric, score_content_performance, score_format_performance
 from outcome_engine import process_outcomes
 from performance_store import reach_recovery_state
 from reach_editorial import editorial_reach_adjustment
@@ -57,6 +57,12 @@ with patch("adaptive.load_store", return_value=store):
     )
 assert good.enabled and bad.enabled
 assert good.total > 0 and bad.total < 0 and good.total > bad.total, (good, bad)
+with patch("adaptive.load_store", return_value=store):
+    good_format = score_format_performance(lane="TRADE", content_format="no_chase", now=NOW)
+    bad_format = score_format_performance(lane="TRADE", content_format="risk_first", now=NOW)
+assert good_format.enabled and bad_format.enabled
+assert good_format.component > 0 > bad_format.component, (good_format, bad_format)
+assert good_format.component > bad_format.component
 
 specific = editorial_reach_adjustment(
     "$ONG: объём x3,2, а цена держится около 0.088 после движения +1,4% за 15 минут.\n\n"
@@ -105,6 +111,6 @@ assert published is False and mocked_publish.call_count == 0
 assert pending_trade["pending_followup"] is not None
 
 print(
-    "REACH ENGINE: OK | early projection calibrated | content performance affects ranking | "
+    "REACH ENGINE: OK | early projection calibrated | format lift affects author budget | "
     "specific copy wins | recovery baseline uses mature buckets | outcomes cannot steal fresh slots"
 )

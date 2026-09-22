@@ -3,11 +3,13 @@ from __future__ import annotations
 
 from copy import deepcopy
 import json
+import os
 from pathlib import Path
 import tempfile
+from unittest.mock import patch
 
 from outcome_engine import process_trade_candles
-from trade_journal import build_setup_id, explicit_public_targets, load_journal, validate_public_plan_text, verify_trade_integrity
+from trade_journal import build_setup_id, explicit_public_targets, load_journal, record_trade_setup, validate_public_plan_text, verify_trade_integrity
 
 
 def candle(open_ms, o, h, l, c):
@@ -60,6 +62,21 @@ def main() -> None:
     assert ok, reasons
     bad, bad_reasons = validate_public_plan_text(full_text.replace(" | TP3 0.1855", ""), full_levels, "long")
     assert not bad and "full TP ladder not public" in bad_reasons
+
+    with patch.dict(os.environ, {"BOT_VERSION": "v11.15"}, clear=False), \
+         patch("trade_journal.load_journal", return_value={"schema_version": 2, "trades": {}}), \
+         patch("trade_journal.save_journal"):
+        tracked = record_trade_setup(
+            post_id="versioned-post",
+            symbol="ACE",
+            market_symbol="ACEUSDT",
+            direction="long",
+            lane="TRADE",
+            text=full_text,
+            levels={**full_levels, "plan_valid": True, "decision_mode": "at_level"},
+            writer_source="groq",
+        )
+    assert tracked and tracked["engine_version"] == "v11.15"
 
     integrity = base_trade("long")
     assert verify_trade_integrity(integrity)[0]
