@@ -63,8 +63,7 @@ The publishing workflow is externally dispatched approximately every 20
 minutes. The analytics dashboard refreshes hourly through
 `.github/workflows/dashboard.yml`.
 
-Startup is cumulative: `run_bot.py` calls one read-only verifier,
-`runtime_release.py`. It does not apply a chain of source-rewriting hotfixes.
+Startup is cumulative but currently still uses a compatibility policy stack. `run_bot.py` first calls `runtime_release.activate_release()` to establish v11.15 defaults, then installs the OpenRouter fallback, Groq-primary/provider tracking, reach-recovery, author-pool, v11.9 writer and live-recovery-exit policies before importing `main`. These modules monkey-patch selected call sites at startup; the explicit verification calls in `run_bot.py` are part of the production contract. See `docs/RUNTIME_ARCHITECTURE.md` before changing their order.
 
 ## Local validation
 
