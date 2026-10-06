@@ -34,7 +34,7 @@ def configure_environment() -> None:
     os.environ["ADAPTIVE_TICKER_MAX"] = "10"
     os.environ["ADAPTIVE_HOUR_MAX"] = "5"
     os.environ["ADAPTIVE_CONTENT_MAX_TOTAL"] = "9"
-    os.environ["ADAPTIVE_FORMAT_MAX"] = "5"
+    os.environ.setdefault("ADAPTIVE_FORMAT_MAX", "5")
     os.environ["ADAPTIVE_WRITER_MAX"] = "2.5"
     os.environ["ADAPTIVE_EVENT_CLASS_MAX"] = "2"
     os.environ["ADAPTIVE_DIRECTION_MAX"] = "1.5"
