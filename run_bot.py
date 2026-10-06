@@ -1,4 +1,8 @@
-"""Cron entry point. Safe to call from any working directory."""
+"""Production cron entry point for the v11.15 cumulative runtime.
+
+The policy-install order below is behaviorally significant. See
+``docs/RUNTIME_ARCHITECTURE.md`` before changing it.
+"""
 from __future__ import annotations
 
 import os
@@ -13,7 +17,9 @@ from runtime_release import activate_release
 
 activate_release()
 
-# Install every runtime policy before main imports writer functions by name.
+# Compatibility policy stack. Keep this order stable: several installers patch
+# functions that downstream modules import by name. v12 should replace this with
+# explicit composition; v11.15 keeps it intact to preserve production behavior.
 from openrouter_fallback_chain import install_openrouter_fallback_chain, verify_openrouter_fallback_chain
 from groq_primary import install_groq_primary, install_provider_source_tracking, verify_groq_primary
 from reach_recovery_v11_8 import activate_reach_recovery
