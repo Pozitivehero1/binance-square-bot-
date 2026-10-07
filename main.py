@@ -52,7 +52,7 @@ from event_writer import (
     event_decision_level, generate_event_candidates, rank_event_candidates,
 )
 from performance_store import record_publication, reach_recovery_state
-from adaptive import AdaptiveAdjustment, score_adaptive, score_content_performance
+from adaptive import AdaptiveAdjustment, score_adaptive, score_content_performance, score_view_target
 from reach_editorial import editorial_reach_adjustment
 from trade_journal import record_trade_setup, validate_public_plan_text
 from outcome_engine import process_outcomes
@@ -1323,6 +1323,38 @@ def _run_once() -> int:
                 symbol=symbol, lane=lane, recovery_mode=recovery_mode,
                 rolling_reach=rolling_reach, reach_baseline=reach_baseline,
                 reach_score=reach.score, selection_score=selection_score,
+            )
+            continue
+
+        # Account-specific target gate: prefer candidates whose mature historical
+        # cohorts resemble posts that reached at least VIEW_TARGET_VIEWS. This is
+        # a probabilistic quality filter, not a promise that Square will deliver
+        # a fixed number of impressions.
+        view_target = score_view_target(
+            symbol=basic,
+            lane=lane,
+            content_format=selected_post.content_format,
+            writer_source=selected_post.source,
+            event_class=opportunity.event_class,
+            direction=best_score.direction if plan_valid else "observation",
+            opportunity_score=opportunity.score,
+            audience_demand=opportunity.audience_demand,
+            attention_score=attention.score,
+            micro_freshness=micro.score,
+            w2e_market_score=monetization.score,
+        )
+        logger.info("100-view target gate: %s", view_target.reason)
+        if not DRY_RUN and view_target.enabled and not view_target.allowed:
+            write_status(
+                "skipped",
+                "100-view target gate: " + view_target.reason,
+                symbol=symbol,
+                lane=lane,
+                expected_views=view_target.expected_views,
+                target_hit_rate=view_target.target_rate,
+                target_score=view_target.score,
+                content_format=selected_post.content_format,
+                writer_source=selected_post.source,
             )
             continue
 
