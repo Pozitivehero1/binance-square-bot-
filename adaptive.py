@@ -90,6 +90,213 @@ class FormatPerformanceAdjustment:
     reason: str
 
 
+@dataclass(frozen=True)
+class ViewTargetAssessment:
+    """Empirical pre-publication estimate for the 100+ view target."""
+
+    enabled: bool
+    allowed: bool
+    expected_views: float
+    target_rate: float
+    score: float
+    samples: int
+    reason: str
+
+
+def _mature_24h_views(item: dict, now: datetime) -> Optional[float]:
+    milestones = item.get("milestones") if isinstance(item.get("milestones"), dict) else {}
+    row = milestones.get("24h")
+    if isinstance(row, dict):
+        try:
+            return float(row.get("views", 0) or 0)
+        except (TypeError, ValueError):
+            return None
+    published = _parse_dt(item.get("published_at", ""))
+    if not published or (now - published).total_seconds() < 24 * 3600:
+        return None
+    stats = item.get("stats") if isinstance(item.get("stats"), dict) else {}
+    try:
+        return float(stats.get("views", 0) or 0)
+    except (TypeError, ValueError):
+        return None
+
+
+def _view_target_profile(
+    rows: list[dict],
+    *,
+    global_median: float,
+    global_rate: float,
+    prior: float,
+    target: float,
+) -> tuple[float, float, int]:
+    if not rows:
+        return global_median, global_rate, 0
+    med = _weighted_median((row["views"], row["weight"]) for row in rows)
+    total_weight = sum(row["weight"] for row in rows)
+    hit_weight = sum(row["weight"] for row in rows if row["views"] >= target)
+    rate = hit_weight / max(total_weight, 1e-9)
+    confidence = len(rows) / (len(rows) + max(1.0, prior))
+    return (
+        global_median + (med - global_median) * confidence,
+        global_rate + (rate - global_rate) * confidence,
+        len(rows),
+    )
+
+
+def score_view_target(
+    *,
+    symbol: str,
+    lane: str,
+    content_format: str,
+    writer_source: str,
+    event_class: str,
+    direction: str,
+    opportunity_score: float,
+    audience_demand: float,
+    attention_score: float,
+    micro_freshness: float,
+    w2e_market_score: float,
+    now: Optional[datetime] = None,
+) -> ViewTargetAssessment:
+    """Estimate whether a candidate resembles this account's 100+ view posts.
+
+    This is deliberately an empirical account-specific gate, not a promise of
+    future distribution. It combines mature 24h history across hour, ticker,
+    format, event class, writer and live-score neighbourhoods. Sparse cohorts are
+    shrunk back toward the account baseline, so one lucky post cannot dominate.
+    """
+    now = now or datetime.now(timezone.utc)
+    enabled = _bool("ENABLE_100_VIEW_TARGET", "1")
+    target = max(50.0, float(os.getenv("VIEW_TARGET_VIEWS", "100")))
+    minimum_expected = max(50.0, float(os.getenv("VIEW_TARGET_MIN_EXPECTED", str(target))))
+    minimum_rate = max(0.10, min(float(os.getenv("VIEW_TARGET_MIN_RATE", "0.38")), 0.90))
+    lookback_days = max(14, min(int(os.getenv("VIEW_TARGET_LOOKBACK_DAYS", "45")), 120))
+    half_life_days = max(5.0, min(float(os.getenv("VIEW_TARGET_HALF_LIFE_DAYS", "14")), 60.0))
+    minimum_samples = max(60, min(int(os.getenv("VIEW_TARGET_MIN_SAMPLES", "120")), 1000))
+    if not enabled:
+        return ViewTargetAssessment(False, True, 0.0, 0.0, 0.0, 0, "100-view target disabled")
+
+    cutoff = now - timedelta(days=lookback_days)
+    rows: list[dict] = []
+    for item in load_store().get("posts", {}).values():
+        if not isinstance(item, dict) or not item.get("learning_eligible", True):
+            continue
+        published = _parse_dt(item.get("published_at", ""))
+        if not published or published < cutoff or published > now:
+            continue
+        views = _mature_24h_views(item, now)
+        if views is None:
+            continue
+        age_days = max(0.0, (now - published).total_seconds() / 86400.0)
+        scores = item.get("scores") if isinstance(item.get("scores"), dict) else {}
+        rows.append({
+            "item": item,
+            "published": published,
+            "views": views,
+            "weight": 0.5 ** (age_days / half_life_days),
+            "scores": scores,
+        })
+
+    if len(rows) < minimum_samples:
+        return ViewTargetAssessment(
+            False, True, 0.0, 0.0, 0.0, len(rows),
+            f"insufficient mature history={len(rows)}/{minimum_samples}; fail-open",
+        )
+
+    global_median = _weighted_median((row["views"], row["weight"]) for row in rows)
+    total_weight = sum(row["weight"] for row in rows)
+    global_rate = sum(row["weight"] for row in rows if row["views"] >= target) / max(total_weight, 1e-9)
+
+    target_symbol = str(symbol or "").upper().replace("USDT", "")
+    lane_name = str(lane or "").upper()
+    fmt = str(content_format or "")
+    writer = str(writer_source or "")
+    event = str(event_class or "")
+    side = str(direction or "").upper()
+    local_hour = (now.hour + LOCAL_TZ_OFFSET) % 24
+
+    def item_symbol(row: dict) -> str:
+        return str(row["item"].get("symbol") or "").upper().replace("USDT", "")
+
+    groups = [
+        ("hour", [r for r in rows if (r["published"].hour + LOCAL_TZ_OFFSET) % 24 == local_hour], 15.0, 0.24),
+        ("symbol", [r for r in rows if item_symbol(r) == target_symbol], 8.0, 0.17),
+        ("format", [r for r in rows if str(r["item"].get("content_format") or "") == fmt], 20.0, 0.17),
+        ("event", [r for r in rows if str(r["item"].get("event_class") or "") == event], 25.0, 0.10),
+        ("writer", [r for r in rows if str(r["item"].get("writer_source") or "") == writer], 20.0, 0.08),
+        ("lane", [r for r in rows if str(r["item"].get("lane") or "").upper() == lane_name], 30.0, 0.06),
+        ("direction", [r for r in rows if str(r["item"].get("direction") or "").upper() == side], 30.0, 0.04),
+    ]
+
+    live = {
+        "opportunity": float(opportunity_score or 0.0),
+        "audience_demand": float(audience_demand or 0.0),
+        "attention": float(attention_score or 0.0),
+        "micro_freshness": float(micro_freshness or 0.0),
+        "w2e_market": float(w2e_market_score or 0.0),
+    }
+    scales = {"opportunity": 12.0, "audience_demand": 18.0, "attention": 18.0, "micro_freshness": 18.0, "w2e_market": 14.0}
+    neighbours = []
+    for row in rows:
+        hist = row["scores"]
+        distances = []
+        for key, current in live.items():
+            try:
+                old = float(hist.get(key, 0.0) or 0.0)
+            except (TypeError, ValueError):
+                continue
+            if old <= 0.0 or current <= 0.0:
+                continue
+            distances.append(abs(current - old) / scales[key])
+        if len(distances) >= 3:
+            neighbours.append((sum(distances) / len(distances), row))
+    neighbours.sort(key=lambda pair: pair[0])
+    numeric_rows = [row for _, row in neighbours[:80]]
+    groups.append(("live", numeric_rows, 18.0, 0.14))
+
+    weighted_log = 0.0
+    weighted_rate = 0.0
+    details = []
+    total_component_weight = 0.0
+    for name, group, prior, component_weight in groups:
+        expected, rate, n = _view_target_profile(
+            group,
+            global_median=global_median,
+            global_rate=global_rate,
+            prior=prior,
+            target=target,
+        )
+        expected = max(1.0, expected)
+        weighted_log += component_weight * math.log(expected)
+        weighted_rate += component_weight * rate
+        total_component_weight += component_weight
+        details.append(f"{name}={expected:.0f}/{rate:.0%}/n{n}")
+
+    expected_views = math.exp(weighted_log / max(total_component_weight, 1e-9))
+    hit_rate = weighted_rate / max(total_component_weight, 1e-9)
+    live_strength = (
+        live["opportunity"] * 0.28
+        + live["audience_demand"] * 0.22
+        + live["attention"] * 0.18
+        + live["micro_freshness"] * 0.18
+        + live["w2e_market"] * 0.14
+    )
+    exceptional = (
+        expected_views >= minimum_expected * 0.95
+        and live_strength >= 76.0
+        and event in {"fresh_event", "audience_breakout", "high_demand_active"}
+    )
+    allowed = (expected_views >= minimum_expected and hit_rate >= minimum_rate) or exceptional
+    score = max(0.0, min(100.0, (expected_views / target) * 55.0 + hit_rate * 45.0))
+    reason = (
+        f"target={target:.0f}+ expected={expected_views:.0f} hit_rate={hit_rate:.0%} "
+        f"live={live_strength:.1f} allowed={allowed}; " + ", ".join(details)
+    )
+    return ViewTargetAssessment(
+        True, allowed, round(expected_views, 1), round(hit_rate, 4), round(score, 1), len(rows), reason,
+    )
+
+
 def _parse_dt(value: str) -> Optional[datetime]:
     try:
         dt = datetime.fromisoformat(str(value or ""))
