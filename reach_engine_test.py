@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, patch
 
-from adaptive import _metric, score_content_performance, score_format_performance
+from adaptive import _metric, score_content_performance, score_format_performance, score_view_target
 from outcome_engine import process_outcomes
 from performance_store import reach_recovery_state
 from reach_editorial import editorial_reach_adjustment
@@ -63,6 +63,53 @@ with patch("adaptive.load_store", return_value=store):
 assert good_format.enabled and bad_format.enabled
 assert good_format.component > 0 > bad_format.component, (good_format, bad_format)
 assert good_format.component > bad_format.component
+
+# The 100-view target must prefer a mature cohort that repeatedly clears 100
+# views over an otherwise similar weak cohort. Sparse luck is not enough because
+# the scorer shrinks each component toward the account baseline.
+target_posts = {}
+for i in range(70):
+    item = post(
+        2000 + i, views=150 + i % 20, fmt="micro_note", writer="groq",
+        published=NOW - timedelta(days=2 + (i % 4), hours=i % 6),
+    )
+    item["symbol"] = "REZ"
+    item["event_class"] = "active_market"
+    item["scores"] = {
+        "opportunity": 82, "audience_demand": 78, "attention": 76,
+        "micro_freshness": 80, "w2e_market": 72,
+    }
+    target_posts[f"good-{i}"] = item
+for i in range(70):
+    item = post(
+        3000 + i, views=35 + i % 20, fmt="hot_take", writer="groq",
+        published=NOW - timedelta(days=2 + (i % 4), hours=i % 6),
+    )
+    item["symbol"] = "BTC"
+    item["event_class"] = "ordinary"
+    item["scores"] = {
+        "opportunity": 60, "audience_demand": 45, "attention": 48,
+        "micro_freshness": 50, "w2e_market": 48,
+    }
+    target_posts[f"bad-{i}"] = item
+
+with patch("adaptive.load_store", return_value={"posts": target_posts}):
+    target_good = score_view_target(
+        symbol="REZ", lane="TRADE", content_format="micro_note", writer_source="groq",
+        event_class="active_market", direction="LONG", opportunity_score=82,
+        audience_demand=78, attention_score=76, micro_freshness=80,
+        w2e_market_score=72, now=NOW,
+    )
+    target_bad = score_view_target(
+        symbol="BTC", lane="TRADE", content_format="hot_take", writer_source="groq",
+        event_class="ordinary", direction="LONG", opportunity_score=60,
+        audience_demand=45, attention_score=48, micro_freshness=50,
+        w2e_market_score=48, now=NOW,
+    )
+assert target_good.enabled and target_bad.enabled
+assert target_good.expected_views > target_bad.expected_views, (target_good, target_bad)
+assert target_good.score > target_bad.score, (target_good, target_bad)
+assert target_good.allowed and not target_bad.allowed, (target_good, target_bad)
 
 specific = editorial_reach_adjustment(
     "$ONG: объём x3,2, а цена держится около 0.088 после движения +1,4% за 15 минут.\n\n"
