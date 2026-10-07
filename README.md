@@ -1,11 +1,11 @@
-# Binance Square Bot — v11.16 Selective Reach Recovery
+# Binance Square Bot — v11.17 100-View Quality Target
 
 Production bot for `PozitiveHero`: live TRADE/EVENT selection, fact-locked AI
 copy, public-performance learning, a hard full-plan contract and exact
-post-bound trade outcomes. v11.16 keeps the 20-minute market scan but restores
-selective publishing after the observed loss of second-stage 2h–24h distribution.
+post-bound trade outcomes. v11.17 keeps the 20-minute market scan and adds an
+account-specific pre-publication model trained on mature posts that reached 100+ views.
 
-No bot can guarantee views or a fixed W2E payout. v11.16 improves the parts the
+No bot can guarantee views or a fixed W2E payout. v11.17 improves the parts the
 bot controls—candidate quality, copy selection, repetition, timing and feedback—
 and keeps the 20-minute trigger while preserving factual and publication-safety
 checks.
