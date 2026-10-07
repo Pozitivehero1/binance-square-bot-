@@ -67,6 +67,17 @@ jobs:
       ENABLE_PACING_LIMITS: "0"
       ENABLE_REACH_GATE: "1"
       MIN_REACH_SCORE: "72"
+
+      # Empirical account-specific quality target. This does not cap daily posts:
+      # every candidate may publish if its mature-history profile supports 100+ views.
+      ENABLE_100_VIEW_TARGET: "1"
+      VIEW_TARGET_VIEWS: "100"
+      VIEW_TARGET_MIN_EXPECTED: "100"
+      VIEW_TARGET_MIN_RATE: "0.40"
+      VIEW_TARGET_LOOKBACK_DAYS: "45"
+      VIEW_TARGET_HALF_LIFE_DAYS: "14"
+      VIEW_TARGET_MIN_SAMPLES: "120"
+
       # Recovery mode restores the four-hour symbol cooldown to reduce feed saturation.
       COOLDOWN_MIN: "240"
 
