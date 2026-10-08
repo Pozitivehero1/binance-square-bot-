@@ -53,7 +53,11 @@ def _truthful_event_source(draft):
     """Normalize EVENT writer_source from the provider embedded in style_id."""
     style_id = str(getattr(draft, "style_id", "") or "").lower()
     desired = ""
-    if style_id.startswith("openrouter_free_repaired_event_"):
+    if style_id.startswith("gemini_repaired_event_"):
+        desired = "gemini_event_repaired"
+    elif style_id.startswith("gemini_event_"):
+        desired = "gemini_event"
+    elif style_id.startswith("openrouter_free_repaired_event_"):
         desired = "openrouter_event_repaired"
     elif style_id.startswith("openrouter_free_event_"):
         desired = "openrouter_event"

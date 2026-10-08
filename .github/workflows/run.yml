@@ -22,6 +22,8 @@ jobs:
       PYTHONUNBUFFERED: "1"
 
       SQUARE_API: ${{ secrets.SQUARE_API }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_MODEL: "gemini-2.5-flash-lite"
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
       ORCAROUTER_API_KEY: ${{ secrets.ORCAROUTER_API_KEY }}
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
@@ -64,6 +66,8 @@ jobs:
 
       # Recovery mode: keep the 20-minute scan, but publish only when predicted reach
       # and editorial quality clear the gate. Empty cycles are intentional.
+      ENABLE_PROVIDER_OUTAGE_COPY: "1"
+      VIEW_TARGET_HARD_GATE: "0"
       ENABLE_PACING_LIMITS: "0"
       ENABLE_REACH_GATE: "1"
       MIN_REACH_SCORE: "72"
@@ -267,6 +271,25 @@ jobs:
       - name: Run bot
         run: |
           python run_bot.py
+
+      - name: Report publication decision
+        if: always()
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          filename = Path("state/status.json")
+          if filename.is_file():
+              status = json.loads(filename.read_text(encoding="utf-8"))
+              kind = str(status.get("state") or status.get("status") or "unknown")
+              reason = str(status.get("reason") or status.get("message") or "see run logs")
+          else:
+              kind, reason = "unknown", "No status.json found"
+          print("Publication outcome:", kind, "|", reason[:350])
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as handle:
+              handle.write(f"### Binance Square Bot\\n\\nOutcome: **{kind}**\\n\\nReason: {reason[:350]}\\n")
+          PY
 
       - name: Save bot state
         if: always()

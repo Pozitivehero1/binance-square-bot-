@@ -1344,7 +1344,8 @@ def _run_once() -> int:
             w2e_market_score=monetization.score,
         )
         logger.info("100-view target gate: %s", view_target.reason)
-        if not DRY_RUN and view_target.enabled and not view_target.allowed:
+        if (not DRY_RUN and os.getenv("VIEW_TARGET_HARD_GATE", "0").strip() == "1"
+                and view_target.enabled and not view_target.allowed):
             write_status(
                 "skipped",
                 "100-view target gate: " + view_target.reason,

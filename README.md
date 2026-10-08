@@ -45,6 +45,22 @@ Closed Binance 1-minute candles verify entry and target order. Ambiguous
 target-and-stop candles never produce an automatic claim. Public outcome posts
 are final-only by default (`TP3`); partial targets and stops remain internal.
 
+## Gemini API (no credentials committed)
+
+Create a new API key in Google AI Studio and add it in GitHub repository
+**Settings → Secrets and variables → Actions → New repository secret**
+with the exact name `GEMINI_API_KEY`. Never paste API keys into repository
+files, workflow YAML, issue comments, or chat messages. Rotate a key if exposed.
+The bot uses `gemini-2.5-flash-lite` first and retains Groq/Mistral/Orca/OpenRouter
+as fallback providers. Gemini usage remains subject to Google's region/quota limits.
+
+GitHub workflow opts into `ENABLE_PROVIDER_OUTAGE_COPY=1` to allow the existing
+fact-validated, market-data-derived templates only when no valid AI draft
+survives. No invented market data or bypass of the public trade-plan contract.
+`VIEW_TARGET_HARD_GATE=0` keeps the 100-view estimate for analysis without
+blocking every post in a low-reach period; no view target can be guaranteed.
+Every run writes its reason to the Actions job summary.
+
 ## Production settings
 
 See [CHANGES_V11_15.md](CHANGES_V11_15.md) for the latest evidence and changes.

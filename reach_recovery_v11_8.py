@@ -151,7 +151,7 @@ def evaluate_recovery_candidate_v118(*args, **kwargs):
     recovery_mode = bool(kwargs.get("recovery_mode", False))
 
     base_kwargs = dict(kwargs)
-    if not deterministic:
+    if not deterministic or os.getenv("ENABLE_PROVIDER_OUTAGE_COPY", "0").strip() == "1":
         base_kwargs["recovery_mode"] = False
     base = _ORIGINAL_RECOVERY_GATE(*args, **base_kwargs)
 
@@ -171,7 +171,7 @@ def evaluate_recovery_candidate_v118(*args, **kwargs):
         f"({expansion_ratio:.2f}, n={expansion_n})"
     )
 
-    if deterministic and (recovery_mode or distribution_depressed):
+    if deterministic and (recovery_mode or distribution_depressed) and os.getenv("ENABLE_PROVIDER_OUTAGE_COPY", "0").strip() != "1":
         from publication_continuity import allow_outage_probe
         if base.allowed and allow_outage_probe(**kwargs):
             return replace(base, reason="bounded factual outage publication after quiet period" + suffix)

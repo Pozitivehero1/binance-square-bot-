@@ -937,7 +937,9 @@ def generate_post_candidates(
     target_count = max(6, min(int(variant_count), 24))
     healthy_ai_pool = len(drafts) >= MIN_VALID_AI_DRAFTS
     ai_was_requested = mode in {"ai_author", "ai_first", "ai", "mistral"} and bool(_api_key())
-    if AI_AUTHOR_REQUIRED and ai_was_requested:
+    if AI_AUTHOR_REQUIRED and ai_was_requested and (
+        healthy_ai_pool or os.getenv("ENABLE_PROVIDER_OUTAGE_COPY", "0").strip() != "1"
+    ):
         deterministic_limit = 0
         if not healthy_ai_pool:
             logger.error("AI author is required but produced no valid TRADE drafts; skipping deterministic copy")

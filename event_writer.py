@@ -613,7 +613,9 @@ def generate_event_candidates(
     target_count = max(6, min(count, 14))
     healthy_ai_pool = len(drafts) >= EVENT_MIN_VALID_AI_DRAFTS
     ai_was_requested = mode in {"ai_author", "ai_first", "ai", "mistral"} and bool(_api_key())
-    if AI_AUTHOR_REQUIRED and ai_was_requested:
+    if AI_AUTHOR_REQUIRED and ai_was_requested and (
+        healthy_ai_pool or os.getenv("ENABLE_PROVIDER_OUTAGE_COPY", "0").strip() != "1"
+    ):
         deterministic_limit = 0
         if not healthy_ai_pool:
             logger.error("AI author is required but produced no valid EVENT drafts; skipping deterministic copy")

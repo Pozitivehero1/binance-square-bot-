@@ -53,11 +53,12 @@ def main() -> int:
     errors: list[str] = []
     warnings: list[str] = []
 
+    gemini_key = bool((os.getenv("GEMINI_API_KEY") or "").strip())
     groq_key = bool((os.getenv("GROQ_API_KEY") or "").strip())
     orca_key = bool((os.getenv("ORCAROUTER_API_KEY") or os.getenv("ORCA_API_KEY") or "").strip())
     openrouter_key = bool((os.getenv("OPENROUTER_API_KEY") or "").strip())
     mistral_key = bool((os.getenv("MISTRAL_API") or os.getenv("MISTRAL_API_KEY") or "").strip())
-    ai_key = groq_key or mistral_key or orca_key or openrouter_key
+    ai_key = gemini_key or groq_key or mistral_key or orca_key or openrouter_key
     default_content_mode = "ai_author" if ai_key else "deterministic"
     content_mode = os.getenv("CONTENT_MODE", default_content_mode).strip().lower()
     media_mode = os.getenv("PUBLISH_MEDIA_MODE", "chart").strip().lower()
@@ -162,8 +163,8 @@ def main() -> int:
 
     if content_mode != "deterministic" and not ai_key:
         warnings.append("AI-режим выбран без Groq/Mistral/OrcaRouter/OpenRouter ключей")
-    if content_mode != "deterministic" and ai_required and not groq_key:
-        errors.append("AI_AUTHOR_REQUIRED=1, но основной GROQ_API_KEY не задан")
+    if content_mode != "deterministic" and ai_required and not (gemini_key or groq_key):
+        errors.append("AI_AUTHOR_REQUIRED=1, но GEMINI_API_KEY и GROQ_API_KEY не заданы")
     if content_mode != "deterministic" and not openrouter_key:
         warnings.append("OPENROUTER_API_KEY не задан: последняя бесплатная multi-model fallback цепочка недоступна")
     if not publish_images and media_mode != "none":
@@ -190,6 +191,8 @@ def main() -> int:
             errors.append("Не найден установленный Binance square-post skill")
 
     providers = []
+    if gemini_key:
+        providers.append("Gemini")
     if groq_key:
         providers.append(f"Groq[{len(configured_groq_models())} models]")
     if mistral_key:
@@ -243,7 +246,7 @@ def main() -> int:
     )
     print(
         f"  DRY_RUN={int(dry_run)} | AI_AUTHOR_REQUIRED={int(ai_required)} | "
-        f"Groq key={'yes' if groq_key else 'no'} | Square key={'yes' if square_key else 'no'} | "
+        f"Gemini key={'yes' if gemini_key else 'no'} | Groq key={'yes' if groq_key else 'no'} | Square key={'yes' if square_key else 'no'} | "
         f"skill={'found' if skill_dir else 'not found'}"
     )
     for label, path in paths.items():

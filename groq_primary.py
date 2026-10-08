@@ -38,10 +38,52 @@ _ORIGINAL_START_SCAN_BUDGET = None
 _LAST_PROVIDER = ""
 _MODEL_COOLDOWN_UNTIL: Dict[str, float] = {}
 _MODEL_REQUESTS: Dict[str, int] = {}
+_GEMINI_COOLDOWN_UNTIL = 0.0
 
 
 def _groq_key() -> str:
     return (os.getenv("GROQ_API_KEY") or "").strip()
+
+
+def _gemini_key() -> str:
+    return (os.getenv("GEMINI_API_KEY") or "").strip()
+
+
+def _request_gemini_model(*, system_prompt: str, user_payload: Dict[str, Any],
+                          temperature: float, max_tokens: int, timeout: int) -> List[dict]:
+    """Generate fact-bound prose using Gemini's documented OpenAI-compatible API."""
+    global _GEMINI_COOLDOWN_UNTIL
+    if time.monotonic() < _GEMINI_COOLDOWN_UNTIL:
+        raise RuntimeError("Gemini API cooldown active for this scan")
+    model = (os.getenv("GEMINI_MODEL") or "gemini-2.5-flash-lite").strip()
+    base = (os.getenv("GEMINI_BASE_URL") or
+            "https://generativelanguage.googleapis.com/v1beta/openai").rstrip("/")
+    body = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_prompt.strip() +
+             "\nReturn a single valid JSON object with a candidates array; no markdown or invented facts."},
+            {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False)},
+        ],
+        "temperature": max(0.1, min(float(temperature), 0.8)),
+        "max_tokens": max(200, min(int(max_tokens), 1600)),
+        "response_format": {"type": "json_object"},
+    }
+    response = requests.post(
+        base + "/chat/completions",
+        headers={"Authorization": "Bearer " + _gemini_key(), "Content-Type": "application/json"},
+        json=body,
+        timeout=ai_provider._budget_timeout(max(8, min(int(timeout), 35))),
+    )
+    if response.status_code in {429, 503}:
+        retry_after = _retry_after_seconds(response)
+        # Do not waste remaining candidate attempts on a quota-exhausted model.
+        _GEMINI_COOLDOWN_UNTIL = time.monotonic() + max(30.0, min(float(retry_after or 180.0), 3600.0))
+    response.raise_for_status()
+    rows = ai_provider._parse_candidates(response.json())
+    ai_provider._annotate(rows, "gemini", model)
+    logger.info("AI author provider=gemini model=%s candidates=%s", model, len(rows))
+    return rows
 
 
 def configured_groq_models() -> List[str]:
@@ -70,7 +112,7 @@ def configured_groq_models() -> List[str]:
 
 
 def _reset_scan_state() -> None:
-    """Reset in-process Groq throttles at the beginning of each market scan."""
+    """Reset per-model Groq limits while preserving Gemini's API cooldown."""
     _MODEL_COOLDOWN_UNTIL.clear()
     _MODEL_REQUESTS.clear()
 
@@ -345,6 +387,23 @@ def _request_candidates_groq_first(
     failures: List[str] = []
     key = _groq_key()
 
+    # One Gemini request precedes the Groq/Mistral/Orca/OpenRouter chain.
+    # API/auth failures never mask the original providers or print credentials.
+    if _gemini_key():
+        try:
+            rows = _request_gemini_model(
+                system_prompt=system_prompt,
+                user_payload=user_payload,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                timeout=timeout,
+            )
+            _LAST_PROVIDER = "gemini"
+            return ai_provider.ProviderResult(rows, "gemini", str(rows[0].get("_model") or "gemini"))
+        except Exception as exc:
+            failures.append(f"gemini:{type(exc).__name__}:{str(exc)[:160]}")
+            logger.warning("Gemini unavailable (%s); trying existing model chain", type(exc).__name__)
+
     if key:
         for model in configured_groq_models():
             try:
@@ -383,10 +442,12 @@ def _request_candidates_groq_first(
 
 
 def _has_ai_provider_groq_first() -> bool:
-    return bool(_groq_key()) or bool(_ORIGINAL_HAS_AI_PROVIDER())
+    return bool(_gemini_key()) or bool(_groq_key()) or bool(_ORIGINAL_HAS_AI_PROVIDER())
 
 
 def _preferred_provider_groq_first() -> str:
+    if _gemini_key():
+        return "gemini"
     if _groq_key():
         return "groq"
     return str(_ORIGINAL_PREFERRED_PROVIDER())
@@ -502,8 +563,8 @@ def install_provider_source_tracking() -> None:
         @wraps(current_source)
         def source_name(source: str) -> str:
             raw = str(source or "").strip().lower()
-            if reach_recovery_v11_8._LAST_AI_PROVIDER == "groq" and raw == "mistral":
-                return "groq"
+            if reach_recovery_v11_8._LAST_AI_PROVIDER in {"groq", "gemini"} and raw == "mistral":
+                return reach_recovery_v11_8._LAST_AI_PROVIDER
             return current_source(source)
 
         source_name._groq_source_tracking = True  # type: ignore[attr-defined]
@@ -519,7 +580,11 @@ def install_provider_source_tracking() -> None:
         def event_source(draft):
             style_id = str(getattr(draft, "style_id", "") or "").lower()
             desired = ""
-            if style_id.startswith("groq_repaired_event_"):
+            if style_id.startswith("gemini_repaired_event_"):
+                desired = "gemini_event_repaired"
+            elif style_id.startswith("gemini_event_"):
+                desired = "gemini_event"
+            elif style_id.startswith("groq_repaired_event_"):
                 desired = "groq_event_repaired"
             elif style_id.startswith("groq_event_"):
                 desired = "groq_event"
@@ -555,8 +620,8 @@ def verify_groq_primary(*, require_key: Optional[bool] = None) -> None:
     if require_key is None:
         dry_run = os.getenv("DRY_RUN", "1").strip().lower() in {"1", "true", "yes", "on"}
         require_key = not dry_run and os.getenv("AI_AUTHOR_REQUIRED", "1").strip().lower() in {"1", "true", "yes", "on"}
-    if require_key and not _groq_key():
-        raise RuntimeError("GROQ_API_KEY is missing in production; add GitHub Secret GROQ_API_KEY")
+    if require_key and not (_groq_key() or _gemini_key()):
+        raise RuntimeError("No Gemini or Groq API key configured for production")
 
     print(
         "[v11.14.1] Groq primary verified: "
