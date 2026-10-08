@@ -13,6 +13,7 @@ from typing import Iterable, List, Optional, Union
 from runtime import PROJECT_DIR
 import publication_intent as intents
 from text_integrity import sanitize_safe_markup
+from editorial_repair import fix_russian_time
 from production_guard import final_text_reasons
 
 logger = logging.getLogger(__name__)
@@ -86,7 +87,7 @@ def _prepare_text_for_square(text: str) -> tuple[str, tuple[str, ...]]:
     """Safe final-boundary cleanup plus a hard artifact gate."""
     original = str(text or "")
     text = sanitize_safe_markup(original)
-    normalized = normalize_square_cashtags(text)
+    normalized = fix_russian_time(normalize_square_cashtags(text))
     reasons = final_text_reasons(normalized)
     return normalized, reasons
 
@@ -167,9 +168,16 @@ def publish(text: str, image_path: ImageInput = None) -> PublishResult:
         if post_id:
             return PublishResult(True, post_id=post_id, stderr="timeout reconciled from public profile")
         return PublishResult(False, stderr="timeout; unresolved send saved, resend blocked")
-    except (OSError, ValueError) as exc:
-        logger.error("Publication process failed: %s", exc)
-        return PublishResult(False, stderr=str(exc))
+    except OSError as exc:
+        # subprocess could not start: no external request was attempted.
+        # Remove the pre-send journal entry so this symbol is not blocked forever.
+        intents.cancel_unstarted(text)
+        logger.error("Publication process could not start: %s", type(exc).__name__)
+        return PublishResult(False, stderr=f"publisher launch error: {type(exc).__name__}")
+    except ValueError as exc:
+        # Do not assume a send is safe to retry after an unexpected runtime error.
+        logger.error("Publication process failed: %s", type(exc).__name__)
+        return PublishResult(False, stderr=f"publisher runtime error: {type(exc).__name__}")
 
     stdout = (result.stdout or "").strip()
     stderr = (result.stderr or "").strip()

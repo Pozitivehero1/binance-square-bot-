@@ -54,6 +54,19 @@ def begin(text):
     return rows[key]
 
 
+def cancel_unstarted(text):
+    """Undo a send journal entry only if process creation failed before any send.
+
+    Once a child process started, even an exit/error/timeout is ambiguous and
+    must stay pending until reconciliation. Never use this for HTTP failures.
+    """
+    rows = load_intents()
+    key = fingerprint(text)
+    if rows.get(key, {}).get("status") == "pending":
+        rows.pop(key, None)
+        atomic_write_json(_path(), rows)
+
+
 def confirm(text, post_id):
     rows = load_intents()
     key = fingerprint(text)

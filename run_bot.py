@@ -53,4 +53,5 @@ from main import main
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    from operations import run_entrypoint
+    raise SystemExit(run_entrypoint(main))

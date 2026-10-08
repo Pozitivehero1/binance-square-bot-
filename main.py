@@ -1134,6 +1134,14 @@ def _run_once() -> int:
         else:
             event_selection_score = float("-inf")
 
+        # Empirical 7-day EVENT/TRADE preference is bounded to +/-4 points.
+        # Do not select weak setups only to fill a publishing time slot.
+        if event_chosen is not None and trade_chosen is not None:
+            from content_strategy import live_lane_bonus
+            event_bonus, event_reason = live_lane_bonus()
+            event_selection_score += event_bonus
+            logger.info("CONTENT STRATEGY: %s", event_reason)
+
         # Two consecutive TRADE publications saturate the feed. Prefer a genuinely
         # eligible EVENT next; never manufacture an event merely for rotation.
         recent_lanes = memory.get_last_lanes(4)
@@ -1486,7 +1494,11 @@ def _run_once() -> int:
             published = publish(post_text, image_path=images if images else None)
             if not published:
                 logger.error("Publication failed")
-                write_status("failed", "publisher did not confirm publication", symbol=symbol, lane=lane)
+                write_status(
+                    "failed", "publisher did not confirm publication",
+                    symbol=symbol, lane=lane,
+                    failure_kind=(published.stderr or "no confirmed post ID")[:160],
+                )
                 return 2
 
             try:
@@ -1600,6 +1612,7 @@ def _run_once() -> int:
     write_status(
         "skipped",
         f"candidate pool or {PUBLICATION_CANDIDATE_ATTEMPTS}-attempt budget exhausted",
+        attempted_candidates=len(attempted),
     )
     if time.monotonic() - scan_started < scan_budget:
         _try_outcome_fallback(memory=memory, guard=guard, recovery_mode=recovery_mode)

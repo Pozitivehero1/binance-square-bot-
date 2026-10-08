@@ -22,6 +22,7 @@ import re
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from dotenv import load_dotenv
+from editorial_repair import normalize_headline
 
 from attention import AttentionSnapshot, MicroAttentionSnapshot, format_turnover
 from ai_provider import has_ai_provider, request_candidates
@@ -815,7 +816,7 @@ def _build_generated(
     micro: Optional[MicroAttentionSnapshot],
     source: str,
 ) -> Optional[GeneratedPost]:
-    text = re.sub(r"[ \t]+\n", "\n", str(raw_text or "").strip())
+    text = normalize_headline(re.sub(r"[ \t]+\n", "\n", str(raw_text or "").strip()))
     text = re.sub(r"\n{3,}", "\n\n", text)
     text = _enforce_full_plan_block(text, levels, direction, seed=f"{source}|{format_id}|{index}")
     valid, reasons = _validate_ai_post(

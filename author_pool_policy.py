@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from dataclasses import replace
 from functools import wraps
+
+from editorial_repair import normalize_headline
 import logging
 import re
 from typing import Any, Dict, Iterable, Optional
@@ -253,7 +255,9 @@ def _repair_event_rows(rows: Iterable[dict], package: Dict[str, Any], formats: I
             logger.info("EVENT AI candidate dropped: unknown/unrequested format=%s", fmt or "<empty>")
             continue
         clean_row = dict(raw)
-        clean_row["text"] = re.sub(r"\n{3,}", "\n\n", str(raw.get("text") or "").strip())
+        clean_row["text"] = normalize_headline(
+            re.sub(r"\n{3,}", "\n\n", str(raw.get("text") or "").strip()), max_headline=110
+        )
         valid, reasons = _event_row_is_valid(clean_row, package)
         if valid:
             out.append(clean_row)
@@ -264,7 +268,7 @@ def _repair_event_rows(rows: Iterable[dict], package: Dict[str, Any], formats: I
             logger.info("EVENT AI candidate dropped after repair: %s", "; ".join(reasons))
             continue
         repaired_row = dict(clean_row)
-        repaired_row["text"] = repaired
+        repaired_row["text"] = normalize_headline(repaired, max_headline=110)
         provider = str(repaired_row.get("_provider") or "ai").strip()
         if not provider.endswith("_repaired"):
             repaired_row["_provider"] = provider + "_repaired"

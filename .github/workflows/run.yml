@@ -67,6 +67,8 @@ jobs:
       # Recovery mode: keep the 20-minute scan, but publish only when predicted reach
       # and editorial quality clear the gate. Empty cycles are intentional.
       ENABLE_PROVIDER_OUTAGE_COPY: "1"
+      ENABLE_EVENT_REACH_LEARNING: "1"
+      NO_POST_ALERT_HOURS: "6"
       VIEW_TARGET_HARD_GATE: "0"
       ENABLE_PACING_LIMITS: "0"
       ENABLE_REACH_GATE: "1"
@@ -274,22 +276,7 @@ jobs:
 
       - name: Report publication decision
         if: always()
-        run: |
-          python - <<'PY'
-          import json
-          import os
-          from pathlib import Path
-          filename = Path("state/status.json")
-          if filename.is_file():
-              status = json.loads(filename.read_text(encoding="utf-8"))
-              kind = str(status.get("state") or status.get("status") or "unknown")
-              reason = str(status.get("reason") or status.get("message") or "see run logs")
-          else:
-              kind, reason = "unknown", "No status.json found"
-          print("Publication outcome:", kind, "|", reason[:350])
-          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as handle:
-              handle.write(f"### Binance Square Bot\\n\\nOutcome: **{kind}**\\n\\nReason: {reason[:350]}\\n")
-          PY
+        run: python operations.py
 
       - name: Save bot state
         if: always()

@@ -1,4 +1,4 @@
-# Binance Square Bot — v11.17 100-View Quality Target
+# Binance Square Bot — v12.0 Quality & Reliability Engine
 
 Production bot for `PozitiveHero`: live TRADE/EVENT selection, fact-locked AI
 copy, public-performance learning, a hard full-plan contract and exact
@@ -44,6 +44,25 @@ Trade outcomes are tied to the exact source post ID and text fingerprint.
 Closed Binance 1-minute candles verify entry and target order. Ambiguous
 target-and-stop candles never produce an automatic claim. Public outcome posts
 are final-only by default (`TP3`); partial targets and stops remain internal.
+
+## v12.0 improvements
+
+- **Honest run results**: `operations.py` writes `state/run_telemetry.json`,
+  a concise Actions run summary, and warnings after 6 hours without a
+  confirmed post. A successful market scan is *not* a confirmed publication.
+- **Stronger headlines**: `editorial_repair.py` reflows oversized AI headlines
+  into the body without removing original words or numbers; downstream
+  fact-consistency and trade-plan validators remain mandatory.
+- **Adaptive lane mix**: `content_strategy.py` gives EVENT a bounded
+  +/-4 point preference only when sufficient, mature, recent EVENT and TRADE
+  results exist. Live market gates always override historic popularity.
+- **Safe pre-send failure recovery**: if the Node.js process cannot be started,
+  its pending publication intent is cleared; ambiguous network sends remain
+  quarantined to prevent duplicates.
+- **Visibility**: one verified Square post ID, a known no-post status, or
+  a failed run. Hard 100-view thresholds remain diagnostics, not guarantees.
+- **Compatibility**: existing charts, attribution, trade math, publication
+  deduplication, and offline test suite remain in place.
 
 ## Gemini API (no credentials committed)
 
