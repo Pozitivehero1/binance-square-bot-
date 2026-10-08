@@ -1,0 +1,66 @@
+name: Mistral API Health Check
+
+on:
+  push:
+    paths:
+      - ".github/workflows/mistral-health.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-mistral:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      MISTRAL_API: ${{ secrets.MISTRAL_API }}
+      MISTRAL_MODEL: mistral-small-2603
+    steps:
+      - name: Verify actual Mistral completion without exposing credentials
+        shell: python
+        run: |
+          import json
+          import os
+          import sys
+          from urllib.error import HTTPError, URLError
+          from urllib.request import Request, urlopen
+
+          key = os.environ.get("MISTRAL_API", "").strip()
+          model = os.environ["MISTRAL_MODEL"]
+          if not key:
+              print("MISTRAL_CHECK=FAIL reason=missing_MISTRAL_API_GitHub_secret")
+              sys.exit(1)
+          payload = json.dumps({
+              "model": model,
+              "messages": [{"role": "user", "content": "Reply with only OK."}],
+              "max_tokens": 16,
+              "temperature": 0,
+          }).encode("utf-8")
+          request = Request(
+              "https://api.mistral.ai/v1/chat/completions",
+              data=payload,
+              headers={
+                  "Authorization": "Bearer " + key,
+                  "Content-Type": "application/json",
+              },
+              method="POST",
+          )
+          try:
+              with urlopen(request, timeout=25) as response:
+                  answer = json.load(response)
+                  if not isinstance(answer.get("choices"), list) or not answer["choices"]:
+                      print("MISTRAL_CHECK=FAIL reason=empty_completion")
+                      sys.exit(1)
+                  print("MISTRAL_CHECK=OK model=" + model + " completion=received")
+          except HTTPError as exc:
+              status = exc.code
+              hint = {401:"invalid_or_revoked_key",403:"access_denied",404:"model_unavailable",
+                      429:"rate_or_quota_limit",500:"provider_error",502:"provider_error",
+                      503:"provider_unavailable"}.get(status,"http_error")
+              # Never echo provider body, headers, URLs or credentials.
+              print(f"MISTRAL_CHECK=FAIL http_status={status} reason={hint}")
+              sys.exit(1)
+          except (URLError, TimeoutError, OSError) as exc:
+              print("MISTRAL_CHECK=FAIL reason=network_" + type(exc).__name__)
+              sys.exit(1)
