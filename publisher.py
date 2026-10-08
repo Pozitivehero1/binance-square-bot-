@@ -168,12 +168,16 @@ def publish(text: str, image_path: ImageInput = None) -> PublishResult:
         if post_id:
             return PublishResult(True, post_id=post_id, stderr="timeout reconciled from public profile")
         return PublishResult(False, stderr="timeout; unresolved send saved, resend blocked")
-    except OSError as exc:
-        # subprocess could not start: no external request was attempted.
-        # Remove the pre-send journal entry so this symbol is not blocked forever.
+    except (FileNotFoundError, PermissionError) as exc:
+        # These are subprocess launch failures, not ambiguous remote sends.
         intents.cancel_unstarted(text)
         logger.error("Publication process could not start: %s", type(exc).__name__)
         return PublishResult(False, stderr=f"publisher launch error: {type(exc).__name__}")
+    except OSError as exc:
+        # Other OS errors might have occurred after process startup; preserve
+        # the pending journal to avoid duplicate publication.
+        logger.error("Publisher OS error: %s", type(exc).__name__)
+        return PublishResult(False, stderr=f"publisher OS error: {type(exc).__name__}")
     except ValueError as exc:
         # Do not assume a send is safe to retry after an unexpected runtime error.
         logger.error("Publication process failed: %s", type(exc).__name__)

@@ -1497,7 +1497,7 @@ def _run_once() -> int:
                 write_status(
                     "failed", "publisher did not confirm publication",
                     symbol=symbol, lane=lane,
-                    failure_kind=(published.stderr or "no confirmed post ID")[:160],
+                    failure_kind=(str(getattr(published, "stderr", "") or "no confirmed post ID"))[:160],
                 )
                 return 2
 

@@ -44,7 +44,7 @@ def last_publication_at():
 def summarize(*, outcome: dict, last_post=None, now=None) -> dict:
     now = now or datetime.now(timezone.utc)
     recent = last_post or last_publication_at()
-    age_hours = round((now - recent).total_seconds() / 3600, 2) if recent else None
+    age_hours = round(max(0.0, (now - recent).total_seconds() / 3600), 2) if recent else None
     threshold = max(2.0, float(os.getenv("NO_POST_ALERT_HOURS", "6")))
     kind = str(outcome.get("status") or "unknown")
     return {
@@ -71,6 +71,12 @@ def record_run(started_at: datetime, exit_code: int) -> dict:
     path = resolve_state_file("RUN_TELEMETRY_FILE", TELEMETRY_FILE)
     previous = _load(path)
     rows = previous.get("runs") if isinstance(previous.get("runs"), list) else []
+    if summary["hours_without_post"] is None and rows:
+        first = _date(rows[0].get("started_at")) if isinstance(rows[0], dict) else None
+        if first:
+            hours = round(max(0.0, (now - first).total_seconds() / 3600), 2)
+            summary["hours_without_post"] = hours
+            summary["no_post_alert"] = hours >= max(2.0, float(os.getenv("NO_POST_ALERT_HOURS", "6")))
     rows = [row for row in rows if isinstance(row, dict)][-119:] + [summary]
     atomic_write_json(path, {"runs": rows, "last": summary})
     LOG.info("RUN OUTCOME status=%s code=%s confirmed_post_id=%s no_post_hours=%s",
