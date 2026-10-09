@@ -812,6 +812,13 @@ def rank_event_candidates(
             draft.content_format, draft.source, report.score, appeal.score, conversion, similarity,
             content_adaptive.total, editorial.score, adjusted, content_adaptive.reason, editorial.reason,
         )
+        if os.getenv("ENABLE_EDITORIAL_COPY_FILTER", "0").strip() == "1":
+            from editorial_policy import review_copy
+            verdict = review_copy(draft.text)
+            adjusted += verdict.score
+            if not verdict.allowed:
+                logger.info("EDITORIAL COPY SKIP EVENT %s: %s", basic, verdict.reason)
+                continue
         if (
             report.valid
             and report.score >= min_quality

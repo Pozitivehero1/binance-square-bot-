@@ -467,6 +467,15 @@ def _choose_market_candidate(
                 )
                 continue
 
+        if os.getenv("ENABLE_EDITORIAL_STORY_GATE", "0").strip() == "1":
+            from editorial_policy import evaluate_story
+            story = evaluate_story(attention, micro, opportunity, lane="TRADE")
+            if not story.allowed:
+                logger.info("EDITORIAL SKIP TRADE %s: %s (story=%.1f)", mtf.symbol, story.reason, story.score)
+                continue
+            adjusted_score += min(5.0, story.score / 15.0)
+            logger.info("EDITORIAL TRADE %s: %s", mtf.symbol, story.reason)
+
         eligible.append((
             adjusted_score, mtf, score, funding, best_angle.id, attention, micro, monetization, opportunity, levels, adaptive
         ))
@@ -662,6 +671,14 @@ def _choose_event_candidate(
         )
         if not allowed:
             continue
+        if os.getenv("ENABLE_EDITORIAL_STORY_GATE", "0").strip() == "1":
+            from editorial_policy import evaluate_story
+            story = evaluate_story(attention, micro, opportunity, lane="EVENT")
+            if not story.allowed:
+                logger.info("EDITORIAL SKIP EVENT %s: %s (story=%.1f)", mtf.symbol, story.reason, story.score)
+                continue
+            selection_score += min(6.0, story.score / 12.0)
+            logger.info("EDITORIAL EVENT %s: %s", mtf.symbol, story.reason)
         eligible.append((
             selection_score, mtf, score, attention, micro, monetization, opportunity, levels, adaptive
         ))
@@ -896,6 +913,13 @@ def _best_post_variant(
                 editorial.reason,
             )
 
+            if os.getenv("ENABLE_EDITORIAL_COPY_FILTER", "0").strip() == "1":
+                from editorial_policy import review_copy
+                editorial_verdict = review_copy(draft.text)
+                adjusted_score += editorial_verdict.score
+                if not editorial_verdict.allowed:
+                    logger.info("EDITORIAL COPY SKIP TRADE %s: %s", basic, editorial_verdict.reason)
+                    continue
             if (
                 report.valid
                 and memory_similarity < MAX_POST_SIMILARITY
@@ -1185,6 +1209,8 @@ def _run_once() -> int:
         symbol = best_mtf.symbol
         attempted.add(symbol)
         basic = get_base_asset(symbol)
+        from editorial_policy import event_publication_levels
+        levels = event_publication_levels(lane, levels)
         indicator = best_mtf.tf_15m
         if indicator is None:
             continue

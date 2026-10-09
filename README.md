@@ -45,6 +45,22 @@ Closed Binance 1-minute candles verify entry and target order. Ambiguous
 target-and-stop candles never produce an automatic claim. Public outcome posts
 are final-only by default (`TP3`); partial targets and stops remain internal.
 
+## Reader-first editorial controls
+
+Production runs with `ENABLE_EDITORIAL_STORY_GATE=1` and
+`ENABLE_EDITORIAL_COPY_FILTER=1`. A publication needs an actual measured
+price/volume anomaly or high-interest confirmed setup rather than a high score
+on generic indicators alone. Both EVENT and TRADE lanes scan continuously;
+quiet cycles are reported as deliberate skips, not fake successful posts.
+
+With `EVENT_OBSERVATION_PREFERRED=1`, EVENT posts provide readable,
+observation-only market context **without unsolicited Entry/SL/TP blocks**.
+TRADE posts still use the complete, Python-owned and verified public trade
+plan. The original hard facts, profile de-duplication, and API safety checks
+remain mandatory. These controls can be temporarily turned off by setting
+the corresponding env variable to `0`. Changes in organic reach are not
+guaranteed; measure comparable cohorts at 2h, 6h, and 24h.
+
 ## v12.0 improvements
 
 - **Honest run results**: `operations.py` writes `state/run_telemetry.json`,

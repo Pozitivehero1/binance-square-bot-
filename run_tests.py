@@ -31,6 +31,7 @@ STANDARD_TESTS = [
     "groq_primary_test.py",
     "gemini_provider_test.py",
     "editorial_repair_test.py",
+    "editorial_policy_test.py",
     "content_strategy_test.py",
     "operations_test.py",
     "openrouter_fallback_chain_test.py",
