@@ -180,6 +180,7 @@ def record_publication(
     adaptive_reason: str = "",
     w2e_proxy_score: float = 0.0,
     learning_eligible: bool = True,
+    editorial_arm: str = "",
 ) -> None:
     store = load_store()
     posts = store.setdefault("posts", {})
@@ -204,6 +205,7 @@ def record_publication(
             "event_class": str(event_class or ""),
             "writer_source": str(writer_source or ""),
             "signal_type": str(signal_type or ""),
+            "editorial_arm": str(editorial_arm or ""),
             "learning_eligible": bool(learning_eligible),
             "scores": {
                 "opportunity": round(float(opportunity_score or 0.0), 2),

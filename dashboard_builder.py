@@ -73,6 +73,7 @@ def _compact_post(post: Optional[dict]) -> Optional[dict]:
         "writer_source": str(post.get("writer_source") or ""),
         "engine_version": str(post.get("engine_version") or ""),
         "content_format": str(post.get("content_format") or ""),
+        "editorial_arm": str(post.get("editorial_arm") or ""),
         "event_class": str(post.get("event_class") or ""),
         "tracked_from_publish": bool(post.get("tracked_from_publish")),
         "learning_eligible": bool(post.get("learning_eligible", True)),
@@ -155,6 +156,7 @@ def build_dashboard_payload() -> dict:
                 "writer_source": str(item.get("writer_source") or ""),
                 "engine_version": str(item.get("engine_version") or ""),
                 "content_format": str(item.get("content_format") or ""),
+                "editorial_arm": str(item.get("editorial_arm") or ""),
                 "event_class": str(item.get("event_class") or ""),
                 "tracked_from_publish": bool(item.get("tracked_from_publish")),
                 "learning_eligible": bool(item.get("learning_eligible", True)),
@@ -177,7 +179,10 @@ def build_dashboard_payload() -> dict:
         "posts_1000_plus": sum(1 for post in posts if post["views"] >= 1000),
         "best_post": best,
     }
+    from reader_experiment import summarize_arms
+    reader_experiment = summarize_arms(store.get("posts") or {}, now=now)
     return {
+        "reader_experiment": reader_experiment,
         "meta": {
             "generated_at": now.isoformat(),
             "profile_uid": store.get("profile_uid", ""),
@@ -234,6 +239,7 @@ def build_summary_payload(payload: dict) -> dict:
             "note": "Compact analytics snapshot for external readers; the web dashboard still uses data.json.",
         },
         "content_metrics": payload.get("content_metrics", {}),
+        "reader_experiment": payload.get("reader_experiment", {}),
         "overview": overview,
         "recent_posts": [
             compact

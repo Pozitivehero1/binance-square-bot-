@@ -45,6 +45,24 @@ Closed Binance 1-minute candles verify entry and target order. Ambiguous
 target-and-stop candles never produce an automatic claim. Public outcome posts
 are final-only by default (`TP3`); partial targets and stops remain internal.
 
+## Reader-value experiment: October 2026
+
+- **Novelty before AI:** a ticker normally needs a 12-hour gap before another
+  story. A genuinely exceptional **new** 5m/15m movement may qualify after
+  four hours; repetitive minor observations do not.
+- **Measured two-arm experiment:** deterministic day/ticker assignment chooses
+  **what_changed** (explain the verified move) or **risk_map** (explain an
+  observed contradiction). Both obey the same price/number integrity checks.
+  Group assignment is logged and persisted with each AI post.
+- **Fair comparison:** `dashboard/summary.json` now includes
+  `reader_experiment` with separate 24h medians and 100+ hit rates for each
+  arm. Only actual 24-hour milestones enter the comparison; wait for at least
+  20 matured posts per arm before making a decision. Different market events
+  still mean this is directional evidence, not a guarantee of causation.
+- **Safety:** publisher does not retry an ambiguous send, preserving protection
+  against duplicate posts. Market scans still run every 20 minutes; no
+  artificial daily publication quota or paid AI dependency.
+
 ## Reader-first editorial controls
 
 Production runs with `ENABLE_EDITORIAL_STORY_GATE=1` and

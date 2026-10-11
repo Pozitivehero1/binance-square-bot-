@@ -476,6 +476,13 @@ def _choose_market_candidate(
             adjusted_score += min(5.0, story.score / 15.0)
             logger.info("EDITORIAL TRADE %s: %s", mtf.symbol, story.reason)
 
+        if os.getenv("ENABLE_TICKER_STORY_NOVELTY", "0").strip() == "1":
+            from reader_experiment import repeat_decision
+            fresh_symbol, reason = repeat_decision(memory.items, mtf.symbol, attention, micro)
+            if not fresh_symbol:
+                logger.info("EDITORIAL REPEAT SKIP TRADE %s: %s", mtf.symbol, reason)
+                continue
+
         eligible.append((
             adjusted_score, mtf, score, funding, best_angle.id, attention, micro, monetization, opportunity, levels, adaptive
         ))
@@ -679,6 +686,13 @@ def _choose_event_candidate(
                 continue
             selection_score += min(6.0, story.score / 12.0)
             logger.info("EDITORIAL EVENT %s: %s", mtf.symbol, story.reason)
+        if os.getenv("ENABLE_TICKER_STORY_NOVELTY", "0").strip() == "1":
+            from reader_experiment import repeat_decision
+            fresh_symbol, reason = repeat_decision(memory.items, mtf.symbol, attention, micro)
+            if not fresh_symbol:
+                logger.info("EDITORIAL REPEAT SKIP EVENT %s: %s", mtf.symbol, reason)
+                continue
+
         eligible.append((
             selection_score, mtf, score, attention, micro, monetization, opportunity, levels, adaptive
         ))
@@ -1540,6 +1554,12 @@ def _run_once() -> int:
                     event_class=opportunity.event_class,
                     writer_source=selected_post.source,
                     signal_type=selected_post.signal_type,
+                    editorial_arm=(
+                        __import__("reader_experiment").assigned_arm(basic, lane)
+                        if os.getenv("ENABLE_READER_EXPERIMENT", "0").strip() == "1"
+                        and not selected_post.source.startswith("deterministic")
+                        else ""
+                    ),
                     opportunity_score=opportunity.score,
                     audience_demand=opportunity.audience_demand,
                     attention_score=attention.score,
