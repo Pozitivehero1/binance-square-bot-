@@ -45,6 +45,15 @@ Closed Binance 1-minute candles verify entry and target order. Ambiguous
 target-and-stop candles never produce an automatic claim. Public outcome posts
 are final-only by default (`TP3`); partial targets and stops remain internal.
 
+## Semantic accuracy control (12 October)
+
+- Final publication guard rejects explicit RSI interpretation inversions,
+  e.g. calling RSI 63.2 "oversold" or RSI 27 "overbought".
+- Writer instructions reinforce technical accuracy; the existing market-data
+  fact lock and Entry/SL/TP validation remain unchanged.
+- This is a conservative semantic safeguard, not a guarantee of engagement.
+  Observe post-quality and 24h reach before modifying editorial experiments.
+
 ## Reader-value experiment: October 2026
 
 - **Novelty before AI:** a ticker normally needs a 12-hour gap before another

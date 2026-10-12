@@ -78,6 +78,49 @@ _HIGH_CONFIDENCE_RULES = (
 )
 
 
+_RSI_RE = re.compile(r"(?iu)\\bRSI\\s*[:=]?\\s*(100(?:[.,]0+)?|\\d{1,2}(?:[.,]\\d+)?)\\b")
+_EXTREME_RE = re.compile(r"(?iu)\\b(перепродан\\w*|перекуплен\\w*|перегрев\\w*)\\b")
+_NEGATIVE_RE = re.compile(
+    r"(?iu)(?:\\bне\\s+(?:показыва\\w*|указыв\\w*|означа\\w*|сигнализир\\w*|говорит|считается)\\b"
+    r"|\\bбез\\s+(?:признаков\\s+)?(?:перегрева|перекупленности|перепроданности))"
+)
+_CLAIM_RE = re.compile(
+    r"(?iu)(?:близ\\w*\\s+к|в\\s+зон\\w*|указыв\\w*\\s+на|показыва\\w*|"
+    r"сигнализир\\w*|говорит\\s+о|означа\\w*|признак\\w*|"
+    r"находится\\s+в|достиг\\w*|почти)\\b"
+)
+
+
+def rsi_interpretation_reasons(text: str) -> Tuple[str, ...]:
+    """Block explicit reversal of RSI extremes while tolerating neutral commentary.
+
+    High-confidence only: RSI at or above 50 is not oversold, and RSI at or
+    below 50 is not overbought. Does not claim that an RSI of 70+ proves a
+    reversal, or that every RSI reading is an actionable signal.
+    """
+    value = str(text or "")
+    reasons = []
+    for match in _RSI_RE.finditer(value):
+        rsi = float(match.group(1).replace(",", "."))
+        if not 0 <= rsi <= 100:
+            continue
+        # Only the same clause after RSI belongs to this numeric reading.
+        tail = value[match.end():match.end() + 155].split("\\n", 1)[0]
+        tail = re.split(r"(?<!\\d)[.!?](?!\\d)|[;]", tail, maxsplit=1)[0]
+        claim = _EXTREME_RE.search(tail)
+        if not claim:
+            continue
+        before = tail[:claim.end()]
+        if not _CLAIM_RE.search(before) or _NEGATIVE_RE.search(before):
+            continue
+        word = claim.group(1).lower()
+        if "перепродан" in word and rsi >= 50:
+            reasons.append("rsi-oversold-meaning-contradiction")
+        if ("перекуплен" in word or "перегрев" in word) and rsi <= 50:
+            reasons.append("rsi-overbought-meaning-contradiction")
+    return tuple(dict.fromkeys(reasons))
+
+
 def semantic_quality_reasons(text: str) -> Tuple[str, ...]:
     """Return only high-confidence semantic problems that should block a post."""
     value = str(text or "")
@@ -85,4 +128,5 @@ def semantic_quality_reasons(text: str) -> Tuple[str, ...]:
     for label, pattern in _HIGH_CONFIDENCE_RULES:
         if re.search(pattern, value):
             reasons.append(label)
+    reasons.extend(rsi_interpretation_reasons(value))
     return tuple(dict.fromkeys(reasons))

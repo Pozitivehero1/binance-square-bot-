@@ -1,7 +1,7 @@
 """Focused regressions for the production text guard."""
 from fact_consistency import fact_consistency_reasons
 from production_guard import final_text_reasons, strip_embedded_trade_plan
-from semantic_quality import semantic_quality_reasons
+from semantic_quality import semantic_quality_reasons, rsi_interpretation_reasons
 
 
 BROKEN_SOL = """$SOL уверенно топчется у ключевой отметки вверх от VWAP.
@@ -91,4 +91,16 @@ assert not fact_consistency_reasons(
     "$TUT — цена выше VWAP; LONG рассматриваю только по условиям плана.", TRADE_PACKAGE
 )
 
+# Actual failure mode from 12 October: RSI 63.2 described as oversold.
+RSI_FALSE = "$ENA — RSI 63.2 близок к зоне перепроданности. Цена выше VWAP."
+assert "rsi-oversold-meaning-contradiction" in rsi_interpretation_reasons(RSI_FALSE)
+assert "semantic:rsi-oversold-meaning-contradiction" in final_text_reasons(RSI_FALSE)
+assert "rsi-overbought-meaning-contradiction" in rsi_interpretation_reasons(
+    "$BTC — RSI 27 говорит о перекупленности."
+)
+assert not rsi_interpretation_reasons("$BTC — RSI 24 указывает на перепроданность.")
+assert not rsi_interpretation_reasons("$BTC — RSI 78 указывает на перекупленность.")
+assert not rsi_interpretation_reasons("$BTC — RSI 63.2 не показывает перегрева.")
+assert not rsi_interpretation_reasons("$BTC — RSI 74 без признаков перегрева.")
+assert not rsi_interpretation_reasons("$BTC — RSI 63.2 — показатель импульса, цена выше VWAP.")
 print("production guard checks passed")
