@@ -78,16 +78,16 @@ _HIGH_CONFIDENCE_RULES = (
 )
 
 
-_RSI_RE = re.compile(r"(?iu)\\bRSI\\s*[:=]?\\s*(100(?:[.,]0+)?|\\d{1,2}(?:[.,]\\d+)?)\\b")
-_EXTREME_RE = re.compile(r"(?iu)\\b(перепродан\\w*|перекуплен\\w*|перегрев\\w*)\\b")
+_RSI_RE = re.compile(r"(?iu)\bRSI\s*[:=]?\s*(100(?:[.,]0+)?|\d{1,2}(?:[.,]\d+)?)\b")
+_EXTREME_RE = re.compile(r"(?iu)\b(перепродан\w*|перекуплен\w*|перегрев\w*)\b")
 _NEGATIVE_RE = re.compile(
-    r"(?iu)(?:\\bне\\s+(?:показыва\\w*|указыв\\w*|означа\\w*|сигнализир\\w*|говорит|считается)\\b"
-    r"|\\bбез\\s+(?:признаков\\s+)?(?:перегрева|перекупленности|перепроданности))"
+    r"(?iu)(?:\bне\s+(?:показыва\w*|указыв\w*|означа\w*|сигнализир\w*|говорит|считается)\b"
+    r"|\bбез\s+(?:признаков\s+)?(?:перегрева|перекупленности|перепроданности))"
 )
 _CLAIM_RE = re.compile(
-    r"(?iu)(?:близ\\w*\\s+к|в\\s+зон\\w*|указыв\\w*\\s+на|показыва\\w*|"
-    r"сигнализир\\w*|говорит\\s+о|означа\\w*|признак\\w*|"
-    r"находится\\s+в|достиг\\w*|почти)\\b"
+    r"(?iu)(?:близ\w*\s+к|в\s+зон\w*|указыв\w*\s+на|показыва\w*|"
+    r"сигнализир\w*|говорит\s+о|означа\w*|признак\w*|"
+    r"находится\s+в|достиг\w*|почти)\b"
 )
 
 
@@ -105,8 +105,8 @@ def rsi_interpretation_reasons(text: str) -> Tuple[str, ...]:
         if not 0 <= rsi <= 100:
             continue
         # Only the same clause after RSI belongs to this numeric reading.
-        tail = value[match.end():match.end() + 155].split("\\n", 1)[0]
-        tail = re.split(r"(?<!\\d)[.!?](?!\\d)|[;]", tail, maxsplit=1)[0]
+        tail = value[match.end():match.end() + 155].split("\n", 1)[0]
+        tail = re.split(r"(?<!\d)[.!?](?!\d)|[;]", tail, maxsplit=1)[0]
         claim = _EXTREME_RE.search(tail)
         if not claim:
             continue
