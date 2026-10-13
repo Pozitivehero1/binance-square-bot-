@@ -22,6 +22,11 @@ jobs:
       PYTHONUNBUFFERED: "1"
 
       SQUARE_API: ${{ secrets.SQUARE_API }}
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+      DEEPSEEK_BASE_URL: ${{ vars.DEEPSEEK_BASE_URL }}
+      DEEPSEEK_MODEL: ${{ vars.DEEPSEEK_MODEL || 'deepseek-chat' }}
+      DEEPSEEK_REASONING_MODEL: ${{ vars.DEEPSEEK_REASONING_MODEL || 'deepseek-reasoner' }}
+      DEEPSEEK_MODEL_TIMEOUT: "25"
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       GEMINI_MODEL: "gemini-2.5-flash-lite"
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
@@ -92,7 +97,9 @@ jobs:
       # Recovery mode restores the four-hour symbol cooldown to reduce feed saturation.
       COOLDOWN_MIN: "240"
 
-      # AI author chain: Groq is authoritative. Qwen 3.8 27B runs first and
+      # DeepSeek proxy is primary; existing Gemini/Groq and other AI fallbacks
+      # retain their ordering when the proxy is offline, limited or unusable.
+      # Within Groq, Qwen 3.8 27B runs first and
       # GPT-OSS 120B is the second Groq model. Existing Mistral/Orca/OpenRouter
       # providers stay as emergency AI fallbacks. With AI configured,
       # deterministic templates stay disabled instead of silently replacing AI.

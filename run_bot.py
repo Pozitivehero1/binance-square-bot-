@@ -23,7 +23,8 @@ from v11_9_writer_policy import install_v119_writer_policy, verify_v119_writer_p
 
 # OpenRouter patches the low-level HTTP request used by the legacy fallback
 # chain. Groq then wraps request_candidates before writer/event_writer import the
-# provider functions by name, making Groq authoritative without touching trade
+# provider functions by name, trying configured DeepSeek before the existing
+# Gemini/Groq chain without touching trade
 # math or the fact-lock stack.
 install_openrouter_fallback_chain()
 install_groq_primary()

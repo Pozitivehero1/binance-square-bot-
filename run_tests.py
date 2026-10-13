@@ -29,6 +29,7 @@ STANDARD_TESTS = [
     "analytics_test.py",
     "provider_test.py",
     "groq_primary_test.py",
+    "deepseek_primary_test.py",
     "gemini_provider_test.py",
     "editorial_repair_test.py",
     "editorial_policy_test.py",
