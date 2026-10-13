@@ -100,18 +100,26 @@ def main() -> None:
         assert persisted["trades"]["old"]["status"] == "legacy_disabled"
 
     t = base_trade("long")
-    process_trade_candles(t, [candle(1_000, 100, 102.3, 99.5, 101.8)])
+    with patch("outcome_engine.POST_PARTIAL_TARGETS", True):
+        process_trade_candles(t, [candle(1_000, 100, 102.3, 99.5, 101.8)])
     assert t["hits"]["tp1"] and not t["hits"]["tp2"]
     assert t["pending_followup"]["kind"] == "target"
     assert t["pending_followup"]["target_name"] == "tp1"
 
     t["followups"] = [{"kind": "target", "target_name": "tp1"}]
     t["pending_followup"] = None
-    process_trade_candles(t, [candle(70_000, 102, 104.3, 101.5, 103.8)])
+    with patch("outcome_engine.POST_PARTIAL_TARGETS", True):
+        process_trade_candles(t, [candle(70_000, 102, 104.3, 101.5, 103.8)])
     assert t["hits"]["tp2"] and t.get("pending_followup") is None, "TP2 partial must be suppressed after TP1 follow-up"
     process_trade_candles(t, [candle(140_000, 104, 106.2, 103.5, 106.0)])
     assert t["hits"]["tp3"] and t["status"] == "closed"
     assert t["pending_followup"]["kind"] == "target_complete"
+
+    private_tp1 = base_trade("long")
+    with patch("outcome_engine.POST_PARTIAL_TARGETS", False):
+        process_trade_candles(private_tp1, [candle(1_000, 100, 102.3, 99.5, 101.8)])
+    assert private_tp1["hits"]["tp1"]
+    assert private_tp1["pending_followup"] is None if "pending_followup" in private_tp1 else True
 
     s = base_trade("short")
     process_trade_candles(s, [candle(1_000, 100, 100.3, 97.8, 98.2)])

@@ -31,8 +31,8 @@ checks.
 - W2E-oriented trade ranking learns from verified outcomes by public decision
   mode (`at_level`, retest, breakout) and ticker. A bounded feed-mix rule keeps
   actionable plans present without discarding a materially stronger live event.
-- TP3 outcomes are refreshed every run but publish only as a fallback when no
-  fresh candidate wins and reach recovery is inactive.
+- TP3 completions and verified stops are refreshed every run but publish
+  only as a fallback when no fresh candidate wins and reach recovery is inactive.
 
 ## Integrity contract
 
@@ -42,8 +42,24 @@ posts may omit a plan but cannot invent one.
 
 Trade outcomes are tied to the exact source post ID and text fingerprint.
 Closed Binance 1-minute candles verify entry and target order. Ambiguous
-target-and-stop candles never produce an automatic claim. Public outcome posts
-are final-only by default (`TP3`); partial targets and stops remain internal.
+target-and-stop candles never produce an automatic claim. Public follow-ups
+report only verified complete targets or stops, never interim TP1/TP2.
+
+## v12.2 — accountable analysis and honest experiments
+
+- Corrected the A/B author assignment for TRADE: the real `market.ticker`
+  is used in both generation and dashboard attribution. Separate v2 cohorts
+  exclude the previously misclassified observations.
+- Only genuine TP3-complete and **stopped** outcomes may produce public
+  follow-ups, sourced from the original post and closed 1-minute candles.
+  Same-candle target/stop ambiguity is still quarantined. Both positive and
+  negative outcomes are reported transparently without invented PnL.
+- At most one outcome follow-up per six hours, and only as a fallback when
+  there is no suitable live trade/event. Interim TP1/TP2 remain internal.
+- Verified outcomes use deterministic factual wording to avoid AI inventing
+  performance; ordinary market posts still use the existing AI author chain.
+- Reduced the arbitrary TRADE-lane rotation bonus, so the real market story
+  has greater precedence over writing another speculative plan.
 
 ## Semantic accuracy control (12 October)
 

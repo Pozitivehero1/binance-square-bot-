@@ -187,16 +187,16 @@ jobs:
       ENTRY_ZONE_MAX_PCT: "0.35"
       REQUIRE_NEAR_LEVEL_CONFIRMATION: "1"
 
-      # Final-only public outcomes: TP1/TP2/STOP remain internal. Only verified
-      # TP3 completion is eligible for a public follow-up by default.
+      # Verified postmortems: losses and full target completions can be
+      # published with source-post-bound validation. Partial TP1/TP2 stay private.
       ENABLE_OUTCOME_ENGINE: "1"
       OUTCOME_AVATAR_PATH: "assets/pozitivehero_avatar.png"
-      OUTCOME_AI: "1"
-      OUTCOME_POST_STOPS: "0"
+      OUTCOME_AI: "0"
+      OUTCOME_POST_STOPS: "1"
       OUTCOME_POST_PARTIAL_TARGETS: "0"
       OUTCOME_PENDING_ENTRY_HOURS: "18"
       OUTCOME_MAX_AGE_HOURS: "72"
-      OUTCOME_MIN_FOLLOWUP_GAP_MIN: "45"
+      OUTCOME_MIN_FOLLOWUP_GAP_MIN: "360"
       OUTCOME_MAX_FOLLOWUPS_PER_TRADE: "2"
       OUTCOME_MAX_KLINE_PAGES: "7"
 

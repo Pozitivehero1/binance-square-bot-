@@ -1191,8 +1191,8 @@ def _run_once() -> int:
             # steady stream of honest, outcome-tracked plans.  This is a bounded
             # preference, not a forced trade: a materially stronger live event
             # may still win the slot.
-            trade_selection_score += 6.0
-            logger.info("W2E mix: four recent EVENT posts, eligible TRADE receives +6.0")
+            trade_selection_score += 2.0
+            logger.info("W2E mix: four recent EVENT posts, eligible TRADE receives +2.0 (quality-first)")
 
         if event_chosen is not None and (
             trade_chosen is None or event_selection_score >= trade_selection_score + EVENT_LANE_ADVANTAGE
