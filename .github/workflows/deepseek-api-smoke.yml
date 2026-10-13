@@ -1,0 +1,154 @@
+name: DeepSeek API connectivity check
+
+on:
+  workflow_dispatch:
+    inputs:
+      test_reasoner:
+        description: Also make one short reasoning-model request
+        type: boolean
+        default: false
+      test_binance_json:
+        description: Also validate three Russian variants on synthetic facts
+        type: boolean
+        default: false
+
+permissions: {}
+
+concurrency:
+  group: deepseek-api-connectivity-check
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      DEEPSEEK_BASE_URL: ${{ vars.DEEPSEEK_BASE_URL }}
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+      DEEPSEEK_MODEL: ${{ vars.DEEPSEEK_MODEL || 'deepseek-chat' }}
+      DEEPSEEK_REASONING_MODEL: ${{ vars.DEEPSEEK_REASONING_MODEL || 'deepseek-reasoner' }}
+      TEST_REASONER: ${{ inputs.test_reasoner }}
+      TEST_BINANCE_JSON: ${{ inputs.test_binance_json }}
+    steps:
+      - name: Verify HTTPS API, authentication and generation
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+          import time
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          rows = []
+
+          def fail(message):
+              raise RuntimeError(message)
+
+          def request(route, token=None, payload=None):
+              headers = {"Accept": "application/json"}
+              if token is not None:
+                  headers["Authorization"] = "Bearer " + token
+              data = None
+              if payload is not None:
+                  data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+                  headers["Content-Type"] = "application/json"
+              started = time.monotonic()
+              req = urllib.request.Request(origin + route, data=data, headers=headers)
+              try:
+                  response = urllib.request.urlopen(req, timeout=120 if payload else 20)
+              except urllib.error.HTTPError as exc:
+                  response = exc
+              except (urllib.error.URLError, TimeoutError, OSError):
+                  fail("Network connection failed or timed out; check that the Windows PC and tunnel are online")
+              with response:
+                  status = response.getcode()
+                  raw = response.read(1024 * 1024)
+              try:
+                  body = json.loads(raw)
+              except (ValueError, UnicodeDecodeError):
+                  body = None
+              return status, body, round((time.monotonic() - started) * 1000)
+
+          def checked(name, route, expected, token=None, payload=None, predicate=None):
+              status, body, latency = request(route, token, payload)
+              ok = status == expected and (predicate is None or predicate(body))
+              rows.append((name, status, latency, ok))
+              print(f"{name}: HTTP {status}, {latency} ms, {'OK' if ok else 'FAILED'}")
+              if not ok:
+                  fail(f"{name} failed (HTTP {status}); no automatic retries were made")
+              return body
+
+          def completion(model, name, content="Ответь ровно OK", variants=False):
+              payload = {
+                  "model": model,
+                  "messages": [{"role": "user", "content": content}],
+                  "stream": False,
+                  "user": "github-smoke-" + os.environ.get("GITHUB_RUN_ID", "local"),
+              }
+              def valid(body):
+                  if not isinstance(body, dict) or body.get("object") != "chat.completion":
+                      return False
+                  try:
+                      text = body["choices"][0]["message"]["content"]
+                  except (KeyError, IndexError, TypeError):
+                      return False
+                  if not isinstance(text, str):
+                      return False
+                  if not variants:
+                      return text.strip() == "OK"
+                  try:
+                      posts = json.loads(text)["posts"]
+                  except (ValueError, KeyError, TypeError):
+                      return False
+                  return (
+                      isinstance(posts, list) and len(posts) == 3
+                      and all(isinstance(p, str) and 0 < len(p) < 700
+                              and any("а" <= c.lower() <= "я" or c.lower() == "ё" for c in p)
+                              for p in posts)
+                      and len(set(posts)) == 3 and "```" not in text
+                  )
+              checked(name, "/v1/chat/completions", 200, key, payload, valid)
+
+          exit_code = 0
+          try:
+              base = os.environ.get("DEEPSEEK_BASE_URL", "").strip().rstrip("/")
+              key = os.environ.get("DEEPSEEK_API_KEY", "").strip()
+              parsed = urllib.parse.urlsplit(base)
+              if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment or parsed.path != "/v1":
+                  fail("Set repository variable DEEPSEEK_BASE_URL to the stable HTTPS endpoint ending in /v1")
+              if not key:
+                  fail("Set repository Actions secret DEEPSEEK_API_KEY")
+              origin = urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, "", "", ""))
+              checked("health", "/health", 200, predicate=lambda b: isinstance(b, dict) and b.get("status") == "ok")
+              checked("readiness", "/readyz", 200, predicate=lambda b: isinstance(b, dict) and b.get("ready") is True)
+              checked("models without key", "/v1/models", 401)
+              checked("models with invalid key", "/v1/models", 401, "invalid-smoke-test-key")
+              checked("completion without key", "/v1/chat/completions", 401, payload={"model": "deepseek-chat", "messages": [{"role": "user", "content": "Ответь ровно OK"}], "stream": False})
+              checked("authorized models", "/v1/models", 200, key, predicate=lambda b: isinstance(b, dict) and isinstance(b.get("data"), list))
+              checked("capabilities", "/v1/model-capabilities", 200, key, predicate=lambda b: isinstance(b, dict) and isinstance(b.get("data"), dict))
+              checked("auth file is not served", "/deepseek-auth.json", 404, key)
+              completion(os.environ.get("DEEPSEEK_MODEL", "deepseek-chat"), "chat OK")
+              if os.environ.get("TEST_REASONER", "false").lower() == "true":
+                  completion(os.environ.get("DEEPSEEK_REASONING_MODEL", "deepseek-reasoner"), "reasoner OK")
+              if os.environ.get("TEST_BINANCE_JSON", "false").lower() == "true":
+                  completion(os.environ.get("DEEPSEEK_MODEL", "deepseek-chat"), "Russian three-variant JSON",
+                             'Ты русскоязычный редактор крипторынка. По вымышленным тестовым фактам BTC +2% за сутки, объём +10%, ETH без изменений напиши три коротких варианта с разной подачей: обзор, краткая сводка, сопоставление. Верни только строгий JSON {"posts":["...","...","..."]}. Не добавляй цифры, прогнозы, советы или Markdown.', True)
+          except RuntimeError as exc:
+              print("::error::" + str(exc))
+              exit_code = 1
+          finally:
+              summary = os.environ.get("GITHUB_STEP_SUMMARY")
+              if summary:
+                  with open(summary, "a", encoding="utf-8") as out:
+                      out.write("## DeepSeek API connectivity\n\n")
+                      out.write("Manual API test only; no Binance publication and no production provider changes.\n\n")
+                      out.write("| Check | HTTP | Latency (ms) | Result |\n|---|---:|---:|---|\n")
+                      for name, status, latency, ok in rows:
+                          out.write(f"| {name} | {status} | {latency} | {'OK' if ok else 'FAILED'} |\n")
+                      out.write("\nOverall: " + ("OK" if exit_code == 0 else "FAILED") + "\n")
+          sys.exit(exit_code)
+          PY
+
