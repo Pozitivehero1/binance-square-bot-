@@ -56,3 +56,4 @@ jobs:
           assert all(any("а" <= ch.lower() <= "я" or ch.lower() == "ё" for ch in text) for text in texts)
           print(json.dumps({"provider": result.provider, "model": result.model, "candidates": len(texts), "latency_ms": round((time.monotonic()-started)*1000), "published": False}))
           PY
+
