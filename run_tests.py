@@ -38,6 +38,7 @@ STANDARD_TESTS = [
     "openrouter_fallback_chain_test.py",
     "adaptive_test.py",
     "outcome_test.py",
+    "outcome_writer_test.py",
     "outcome_card_test.py",
     "text_integrity_test.py",
     "reach_quality_test.py",
