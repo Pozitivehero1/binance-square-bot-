@@ -8,6 +8,7 @@ import os
 
 
 ARMS = ("what_changed", "risk_map")
+EXPERIMENT_VERSION = "v2"
 
 
 def _dt(value):
@@ -32,6 +33,16 @@ def assigned_arm(symbol: str, lane: str, *, now=None) -> str:
     clean = str(symbol or "").upper().replace("$", "").replace("USDT", "")
     payload = f"reader-exp-v1:{clean}:{str(lane).upper()}:{when.date().isoformat()}"
     return ARMS[int.from_bytes(sha256(payload.encode("utf-8")).digest()[:4], "big") % 2]
+
+ 
+def arm_for_package(package: dict, lane: str, *, now=None) -> str:
+    """Keep generated and stored experiment arms tied to the real market."""
+    key = "market_event" if str(lane).upper() == "EVENT" else "market"
+    market = package.get(key) if isinstance(package, dict) else None
+    ticker = str((market or {}).get("ticker") or "").strip()
+    if not ticker:
+        raise ValueError("missing real market ticker for experiment assignment")
+    return assigned_arm(ticker, lane, now=now)
 
 
 def writing_brief(arm: str, lane: str) -> str:
@@ -96,7 +107,8 @@ def summarize_arms(posts: dict, *, now=None, days=14) -> dict:
         if not isinstance(p, dict):
             continue
         arm = str(p.get("editorial_arm") or "")
-        if arm not in groups or p.get("learning_eligible") is False:
+        if (arm not in groups or p.get("learning_eligible") is False
+                or p.get("editorial_experiment_version") != EXPERIMENT_VERSION):
             continue
         dt = _dt(p.get("published_at"))
         if dt is None or dt < now-timedelta(days=days) or dt > now-timedelta(hours=24):
@@ -112,6 +124,7 @@ def summarize_arms(posts: dict, *, now=None, days=14) -> dict:
             groups[arm].append(v)
     return {
         "window_days": days,
+        "experiment_version": EXPERIMENT_VERSION,
         "measurement": "observed views at 24h; directional only, nonrandom markets",
         "arms": [{
             "arm": arm,

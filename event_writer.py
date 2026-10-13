@@ -359,8 +359,8 @@ def _request_ai_candidates(
         },
     }
     if os.getenv("ENABLE_READER_EXPERIMENT", "0").strip() == "1":
-        from reader_experiment import assigned_arm, writing_brief
-        arm = assigned_arm(package.get("market_event", {}).get("ticker", ""), "EVENT")
+        from reader_experiment import arm_for_package, writing_brief
+        arm = arm_for_package(package, "EVENT")
         payload["experiment_brief"] = writing_brief(arm, "EVENT")
         logger.info("READER EXPERIMENT lane=EVENT arm=%s", arm)
     if attempt > 1:

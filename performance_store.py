@@ -181,6 +181,7 @@ def record_publication(
     w2e_proxy_score: float = 0.0,
     learning_eligible: bool = True,
     editorial_arm: str = "",
+    editorial_experiment_version: str = "",
 ) -> None:
     store = load_store()
     posts = store.setdefault("posts", {})
@@ -206,6 +207,7 @@ def record_publication(
             "writer_source": str(writer_source or ""),
             "signal_type": str(signal_type or ""),
             "editorial_arm": str(editorial_arm or ""),
+            "editorial_experiment_version": str(editorial_experiment_version or ""),
             "learning_eligible": bool(learning_eligible),
             "scores": {
                 "opportunity": round(float(opportunity_score or 0.0), 2),

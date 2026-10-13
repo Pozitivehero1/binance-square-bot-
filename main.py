@@ -1560,6 +1560,12 @@ def _run_once() -> int:
                         and not selected_post.source.startswith("deterministic")
                         else ""
                     ),
+                    editorial_experiment_version=(
+                        __import__("reader_experiment").EXPERIMENT_VERSION
+                        if os.getenv("ENABLE_READER_EXPERIMENT", "0").strip() == "1"
+                        and not selected_post.source.startswith("deterministic")
+                        else ""
+                    ),
                     opportunity_score=opportunity.score,
                     audience_demand=opportunity.audience_demand,
                     attention_score=attention.score,
