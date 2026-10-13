@@ -60,6 +60,9 @@ report only verified complete targets or stops, never interim TP1/TP2.
   performance; ordinary market posts still use the existing AI author chain.
 - Reduced the arbitrary TRADE-lane rotation bonus, so the real market story
   has greater precedence over writing another speculative plan.
+- Expanded final semantic integrity checks for unsupported buyer counts, fake
+  order-book absorption, invalidation in the wrong trade direction, and
+  contradictory VWAP explanations.
 
 ## Semantic accuracy control (12 October)
 

@@ -103,4 +103,18 @@ assert not rsi_interpretation_reasons("$BTC — RSI 78 указывает на �
 assert not rsi_interpretation_reasons("$BTC — RSI 63.2 не показывает перегрева.")
 assert not rsi_interpretation_reasons("$BTC — RSI 74 без признаков перегрева.")
 assert not rsi_interpretation_reasons("$BTC — RSI 63.2 — показатель импульса, цена выше VWAP.")
+# High-confidence reader-harming contradictions observed on actual feed.
+for broken in [
+    "$FET: RSI 37.0 подтверждает, что покупателей мало.",
+    "$FET: Это признак, что спрос поглощается продавцами.",
+    "$ENA: Пробой вниз отменит идею шорта из этой зоны.",
+    "$BTC: Пробой вверх отменяет идею лонга.",
+    "$ZEC: Цена выше VWAP, что ограничивает пространство для быстрого роста.",
+]:
+    assert semantic_quality_reasons(broken), broken
+    assert final_text_reasons(broken), broken
+
+assert not semantic_quality_reasons("$BTC: RSI 37.0 отражает слабый импульс.")
+assert not semantic_quality_reasons("$BTC: цена выше VWAP, но объём пока не подтвердил импульс.")
+
 print("production guard checks passed")

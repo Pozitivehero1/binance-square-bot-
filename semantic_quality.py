@@ -75,6 +75,27 @@ _HIGH_CONFIDENCE_RULES = (
         "misleading-target-zone",
         r"(?iu)\bцелев\w+\s+зон\w+\s+для\s+(?:long|short|лонг\w*|шорт\w*)\b",
     ),
+    (
+        "unsupported-orderbook-absorption",
+        r"(?iu)\b(?:спрос|покупк\w+)\s+(?:полностью\s+)?поглоща\w+\s+продавц\w*\b",
+    ),
+    (
+        "rsi-does-not-count-traders",
+        r"(?iu)\bRSI\s*[:=]?\s*\d{1,3}(?:[.,]\d+)?\b.{0,75}"
+        r"(?:покупател\w+\s+(?:мало|нет)|продавц\w+\s+(?:мало|нет))\b",
+    ),
+    (
+        "short-invalidated-by-downside-breakout",
+        r"(?iu)\b(?:пробой|прорыв)\s+вниз\b.{0,50}\bотмен\w+.{0,28}\b(?:шорт\w*|short)\b",
+    ),
+    (
+        "long-invalidated-by-upside-breakout",
+        r"(?iu)\b(?:пробой|прорыв)\s+вверх\b.{0,50}\bотмен\w+.{0,28}\b(?:лонг\w*|long)\b",
+    ),
+    (
+        "vwap-above-does-not-block-upside",
+        r"(?iu)\bвыше\s+VWAP\b.{0,60}\bограничива\w+.{0,65}\bрост\w*\b",
+    ),
 )
 
 
