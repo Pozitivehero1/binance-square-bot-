@@ -1,6 +1,7 @@
-"""Groq-first production author policy for Binance Square bot.
+"""Production author routing for Binance Square bot.
 
-Groq is the primary author because its free-tier limits are predictable enough
+Configured DeepSeek is tried first. The existing Gemini/Groq chain remains
+available as fallback. Groq's free-tier limits are predictable enough
 for the bot's 20-minute cadence. The existing ai_provider chain remains intact
 as fallback: Mistral -> OrcaRouter/DeepSeek -> OpenRouter.
 
@@ -23,6 +24,7 @@ from typing import Any, Dict, List, Optional
 import requests
 
 import ai_provider
+import deepseek_primary
 
 logger = logging.getLogger(__name__)
 
@@ -380,12 +382,27 @@ def _request_candidates_groq_first(
     presence_penalty: Optional[float] = None,
     frequency_penalty: Optional[float] = None,
 ):
-    """Try Groq models first, then preserve the entire existing AI chain."""
-    del presence_penalty, frequency_penalty  # Groq models do not support these reliably.
+    """Try local/public DeepSeek first, then preserve the existing AI chain."""
     global _LAST_PROVIDER
     _LAST_PROVIDER = ""
     failures: List[str] = []
     key = _groq_key()
+
+    if deepseek_primary.configured():
+        try:
+            result = deepseek_primary.request_candidates(
+                system_prompt=system_prompt, user_payload=user_payload,
+                temperature=temperature, max_tokens=max_tokens, timeout=timeout,
+                presence_penalty=presence_penalty, frequency_penalty=frequency_penalty,
+            )
+            _LAST_PROVIDER = result.provider
+            return result
+        except (requests.RequestException, ValueError, KeyError, TypeError, RuntimeError) as exc:
+            # Diagnostics never include request headers, response bodies or credentials.
+            failures.append(f"deepseek_local:{type(exc).__name__}")
+            logger.warning("DeepSeek unavailable/unusable (%s); trying existing model chain", type(exc).__name__)
+
+    del presence_penalty, frequency_penalty  # Groq models do not support these reliably.
 
     # One Gemini request precedes the Groq/Mistral/Orca/OpenRouter chain.
     # API/auth failures never mask the original providers or print credentials.
@@ -442,10 +459,12 @@ def _request_candidates_groq_first(
 
 
 def _has_ai_provider_groq_first() -> bool:
-    return bool(_gemini_key()) or bool(_groq_key()) or bool(_ORIGINAL_HAS_AI_PROVIDER())
+    return deepseek_primary.configured() or bool(_gemini_key()) or bool(_groq_key()) or bool(_ORIGINAL_HAS_AI_PROVIDER())
 
 
 def _preferred_provider_groq_first() -> str:
+    if deepseek_primary.configured():
+        return "deepseek_local"
     if _gemini_key():
         return "gemini"
     if _groq_key():
@@ -482,7 +501,8 @@ def install_groq_primary() -> None:
     # The cumulative release owns BOT_VERSION.  Keep the provider's standalone
     # fallback version only when it is tested or used outside run_bot.py.
     os.environ.setdefault("BOT_VERSION", "v11.14.1")
-    logger.info("Groq primary installed models=%s", " -> ".join(configured_groq_models()))
+    logger.info("Author routing installed primary=%s groq_models=%s",
+                _preferred_provider_groq_first(), " -> ".join(configured_groq_models()))
 
 
 def _install_generation_retry_guard() -> None:
@@ -563,7 +583,7 @@ def install_provider_source_tracking() -> None:
         @wraps(current_source)
         def source_name(source: str) -> str:
             raw = str(source or "").strip().lower()
-            if reach_recovery_v11_8._LAST_AI_PROVIDER in {"groq", "gemini"} and raw == "mistral":
+            if reach_recovery_v11_8._LAST_AI_PROVIDER in {"groq", "gemini", "deepseek_local"} and raw == "mistral":
                 return reach_recovery_v11_8._LAST_AI_PROVIDER
             return current_source(source)
 
@@ -580,7 +600,11 @@ def install_provider_source_tracking() -> None:
         def event_source(draft):
             style_id = str(getattr(draft, "style_id", "") or "").lower()
             desired = ""
-            if style_id.startswith("gemini_repaired_event_"):
+            if style_id.startswith("deepseek_local_repaired_event_"):
+                desired = "deepseek_local_event_repaired"
+            elif style_id.startswith("deepseek_local_event_"):
+                desired = "deepseek_local_event"
+            elif style_id.startswith("gemini_repaired_event_"):
                 desired = "gemini_event_repaired"
             elif style_id.startswith("gemini_event_"):
                 desired = "gemini_event"
@@ -620,11 +644,13 @@ def verify_groq_primary(*, require_key: Optional[bool] = None) -> None:
     if require_key is None:
         dry_run = os.getenv("DRY_RUN", "1").strip().lower() in {"1", "true", "yes", "on"}
         require_key = not dry_run and os.getenv("AI_AUTHOR_REQUIRED", "1").strip().lower() in {"1", "true", "yes", "on"}
-    if require_key and not (_groq_key() or _gemini_key()):
-        raise RuntimeError("No Gemini or Groq API key configured for production")
+    if require_key and not (deepseek_primary.configured() or _groq_key() or _gemini_key()):
+        raise RuntimeError("No DeepSeek, Gemini or Groq API key configured for production")
 
     print(
-        "[v11.14.1] Groq primary verified: "
+        "[v11.14.1] Author chain verified: "
+        + ("DeepSeek -> " if deepseek_primary.configured() else "")
+        + ("Gemini -> " if _gemini_key() else "")
         + " -> ".join(models)
         + " -> Mistral -> OrcaRouter -> OpenRouter; rate-limit guards active; deterministic author disabled"
     )

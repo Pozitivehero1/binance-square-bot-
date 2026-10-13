@@ -22,8 +22,9 @@ checks.
   tightens weak candidates and weak historical hours, and never forces cadence.
 - Target copy length is 220–430 characters. The AI writes the narrative; Python appends one canonical plan. Specific live facts beat generic
   prose; repetition and structural similarity remain hard constraints.
-- Groq Qwen is the primary author; GPT-OSS, Mistral, OrcaRouter and OpenRouter
-  form the guarded fallback chain. Production does not silently replace a
+- The configured DeepSeek proxy is the primary author. The existing
+  Gemini/Groq, GPT-OSS, Mistral, OrcaRouter and OpenRouter providers retain
+  their fallback ordering. Production does not silently replace a
   configured AI author with deterministic copy.
 - Lane and format learning uses confidence-shrunk observed reach lift. Recent
   format use remains a diversity penalty, but weak formats are no longer forced
@@ -143,6 +144,12 @@ blocking every post in a low-reach period; no view target can be guaranteed.
 Every run writes its reason to the Actions job summary.
 
 ## Production settings
+
+DeepSeek uses repository secret `DEEPSEEK_API_KEY` and variables
+`DEEPSEEK_BASE_URL`/`DEEPSEEK_MODEL`. One bounded request is tried before the
+existing chain; outages, 401/403/429 and unusable JSON fall back without
+immediate repeated DeepSeek requests. The Windows API host must be awake and
+online. See [DEEPSEEK_ACTIONS.md](DEEPSEEK_ACTIONS.md).
 
 See [CHANGES_V11_15.md](CHANGES_V11_15.md) for the latest evidence and changes.
 

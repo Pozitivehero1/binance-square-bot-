@@ -59,11 +59,18 @@ Content-Type: application/json
 `deepseek-v4-pro` is a deprecated compatibility alias for V4.1-Flash with
 thinking in this proxy. Use `deepseek-reasoner` for reasoning.
 
-Adding env bindings alone does not change the bot's writer selection. The
-publishing workflow and Groq/Mistral/Orca/OpenRouter chain were not changed by
-this setup. A future DeepSeek writer integration must retain the existing
-fact validation and fallback behavior. On timeout/401/403/429, use the existing
-fallback chain; respect Retry-After and avoid repeated immediate requests.
+The publishing workflow passes these bindings and the production author
+adapter tries DeepSeek first. Gemini/Groq/Mistral/Orca/OpenRouter retain their
+existing fallback order. A failed, limited or unusable DeepSeek response
+activates a cooldown and hands off without immediate retries. Fact and trade
+plan validation remain unchanged. Both TRADE and EVENT attribution record
+`deepseek_local` when this proxy actually wrote the prose.
+
+`DEEPSEEK_MODEL_TIMEOUT=25` bounds the DeepSeek request; connection timeout is
+at most five seconds. The existing global scan/request budget still applies.
+Clear the production DEEPSEEK_API_KEY binding to revert to the original chain.
+The separate **DeepSeek bot adapter check** workflow exercises the production
+startup/adapter on synthetic facts without running the publisher.
 
 ## Windows operation
 

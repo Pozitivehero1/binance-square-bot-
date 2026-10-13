@@ -13,6 +13,7 @@ from publication_guard import PublicationGuard
 from publisher import find_skill_dir
 from openrouter_fallback_chain import configured_openrouter_models
 from groq_primary import configured_groq_models
+import deepseek_primary
 
 VALID_CONTENT_MODES = {"ai_author", "ai", "ai_first", "groq", "mistral", "deterministic"}
 VALID_MEDIA_MODES = {"adaptive", "card", "chart", "both", "none"}
@@ -58,7 +59,14 @@ def main() -> int:
     orca_key = bool((os.getenv("ORCAROUTER_API_KEY") or os.getenv("ORCA_API_KEY") or "").strip())
     openrouter_key = bool((os.getenv("OPENROUTER_API_KEY") or "").strip())
     mistral_key = bool((os.getenv("MISTRAL_API") or os.getenv("MISTRAL_API_KEY") or "").strip())
-    ai_key = gemini_key or groq_key or mistral_key or orca_key or openrouter_key
+    deepseek_key = bool(os.getenv("DEEPSEEK_API_KEY", "").strip())
+    deepseek_ready = deepseek_primary.configured()
+    if deepseek_key:
+        try:
+            deepseek_primary.endpoint()
+        except ValueError:
+            errors.append("DEEPSEEK_API_KEY задан, но DEEPSEEK_BASE_URL некорректен или отсутствует")
+    ai_key = deepseek_ready or gemini_key or groq_key or mistral_key or orca_key or openrouter_key
     default_content_mode = "ai_author" if ai_key else "deterministic"
     content_mode = os.getenv("CONTENT_MODE", default_content_mode).strip().lower()
     media_mode = os.getenv("PUBLISH_MEDIA_MODE", "chart").strip().lower()
@@ -122,6 +130,7 @@ def main() -> int:
     w2e_proxy_penalty = _number("W2E_PROXY_MAX_PENALTY", "3", float, 0, 10, errors)
     groq_retries = _number("GROQ_RETRIES", "2", int, 1, 3, errors)
     groq_timeout = _number("GROQ_MODEL_TIMEOUT", "25", int, 8, 120, errors)
+    _number("DEEPSEEK_MODEL_TIMEOUT", "25", int, 5, 75, errors)
     groq_max_tokens = _number("GROQ_MAX_TOKENS", "1100", int, 300, 1600, errors)
     orca_retries = _number("ORCAROUTER_RETRIES", "1", int, 1, 6, errors)
     openrouter_retries = _number("OPENROUTER_RETRIES", "2", int, 1, 6, errors)
@@ -162,9 +171,9 @@ def main() -> int:
         errors.append("PUBLISH_WINDOWS: не удалось распознать HH:MM-HH:MM")
 
     if content_mode != "deterministic" and not ai_key:
-        warnings.append("AI-режим выбран без Groq/Mistral/OrcaRouter/OpenRouter ключей")
-    if content_mode != "deterministic" and ai_required and not (gemini_key or groq_key):
-        errors.append("AI_AUTHOR_REQUIRED=1, но GEMINI_API_KEY и GROQ_API_KEY не заданы")
+        warnings.append("AI-режим выбран без DeepSeek/Gemini/Groq/Mistral/OrcaRouter/OpenRouter ключей")
+    if content_mode != "deterministic" and ai_required and not (deepseek_ready or gemini_key or groq_key):
+        errors.append("AI_AUTHOR_REQUIRED=1, но DeepSeek, Gemini и Groq не настроены")
     if content_mode != "deterministic" and not openrouter_key:
         warnings.append("OPENROUTER_API_KEY не задан: последняя бесплатная multi-model fallback цепочка недоступна")
     if not publish_images and media_mode != "none":
@@ -191,6 +200,8 @@ def main() -> int:
             errors.append("Не найден установленный Binance square-post skill")
 
     providers = []
+    if deepseek_ready:
+        providers.append("DeepSeek proxy")
     if gemini_key:
         providers.append("Gemini")
     if groq_key:
