@@ -8,7 +8,7 @@ from pathlib import Path
 import tempfile
 from unittest.mock import patch
 
-from outcome_engine import process_trade_candles
+from outcome_engine import process_trade_candles, _pending_candidates
 from trade_journal import build_setup_id, explicit_public_targets, load_journal, record_trade_setup, validate_public_plan_text, verify_trade_integrity
 
 
@@ -114,6 +114,14 @@ def main() -> None:
     process_trade_candles(t, [candle(140_000, 104, 106.2, 103.5, 106.0)])
     assert t["hits"]["tp3"] and t["status"] == "closed"
     assert t["pending_followup"]["kind"] == "target_complete"
+
+    # Previously saved TP1 queues must never leak to a public postmortem
+    # when partial-target stories are disabled.
+    old_queue = base_trade("long")
+    old_queue["pending_followup"] = {"kind":"target","target_name":"tp1","event_at":"2026-10-13T00:00:00+00:00"}
+    with patch("outcome_engine.POST_PARTIAL_TARGETS", False):
+        assert _pending_candidates([old_queue]) == []
+    assert old_queue["pending_followup"] is None
 
     private_tp1 = base_trade("long")
     with patch("outcome_engine.POST_PARTIAL_TARGETS", False):

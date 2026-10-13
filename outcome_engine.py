@@ -398,7 +398,12 @@ def process_outcomes(
     if changed:
         save_journal(journal)
 
+    queue_before = [repr(trade.get("pending_followup")) for trade in trades]
     pending = _pending_candidates(trades)
+    # Old TP1 queues from previous runs must be cleaned persistently. Without
+    # saving here they would reappear on every Actions state restore.
+    if any(repr(trade.get("pending_followup")) != old for trade, old in zip(trades, queue_before)):
+        save_journal(journal)
     if not pending:
         return False
     if refresh_only:
