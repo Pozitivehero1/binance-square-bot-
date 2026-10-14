@@ -34,6 +34,7 @@ STANDARD_TESTS = [
     "editorial_repair_test.py",
     "editorial_policy_test.py",
     "reader_experiment_test.py",
+    "editorial_freedom_test.py",
     "content_strategy_test.py",
     "operations_test.py",
     "openrouter_fallback_chain_test.py",

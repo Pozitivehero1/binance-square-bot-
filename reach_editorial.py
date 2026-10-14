@@ -17,7 +17,8 @@ _PLAN_START = re.compile(
     r"(?iu)^(?:вход\s+(?:long|short)|(?:long|short)[-\s]?план|план\s+(?:long|short)|entry\b)"
 )
 _SPECIFIC = (
-    r"(?iu)\b(?:объ[её]м|vwap|rsi|adx|5\s*минут|15\s*минут|45\s*минут)\b",
+    r"(?iu)\b(?:объ[её]м|движени\w*|рост|падени\w*|снижен\w*|изменени\w*|"
+    r"пробой|риск|импульс|отскок|уров[няем]+|5\s*минут|15\s*минут|45\s*минут)\b",
     r"(?iu)(?:x|х|×)\s*\d+(?:[.,]\d+)?",
     r"(?u)[+-]?\d+(?:[.,]\d+)?\s*%",
     r"(?iu)\b(?:выше|ниже|около|возле|у\s+уровня)\s+\d+(?:[.,]\d+)?",
@@ -52,20 +53,22 @@ def editorial_reach_adjustment(text: str) -> EditorialReachAdjustment:
     specificity = sum(bool(re.search(pattern, editorial)) for pattern in _SPECIFIC)
     generic = sum(bool(re.search(pattern, editorial)) for pattern in _GENERIC)
 
-    score = min(4.0, specificity * 1.6)
+    score = min(3.0, specificity * 1.0)
     if specificity == 0:
-        score -= 4.0
-    score -= generic * (1.8 if specificity == 0 else 0.8)
+        score -= 1.5  # Insightful plain-language copy needn't mention a technical indicator.
+    score -= generic * (2.0 if specificity == 0 else 1.2)
+    # Listing indicators is not evidence of a compelling story.
+    indicator_count = sum(bool(re.search(rf"(?i)\b{indicator}\b", editorial))
+                          for indicator in ("RSI", "ADX", "VWAP", "ATR", "EMA", "MACD"))
+    score -= max(0, indicator_count - 1) * 2.0
     length = len(value)
-    if 230 <= length <= 330:
-        score += 2.5
-    elif 220 <= length <= 380:
+    if 195 <= length <= 420:
         score += 1.5
-    elif 381 <= length <= 430:
+    elif 170 <= length <= 520:
         score += 0.5
-    elif length > 450:
-        score -= min(5.0, (length - 450) / 22.0 + 1.0)
-    elif length < 190:
+    elif length > 520:
+        score -= min(5.0, (length - 520) / 20.0 + 1.0)
+    elif length < 165:
         score -= 2.0
     if 25 <= len(first) <= 110:
         score += 1.0

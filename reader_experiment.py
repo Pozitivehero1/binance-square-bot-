@@ -8,7 +8,7 @@ import os
 
 
 ARMS = ("what_changed", "risk_map")
-EXPERIMENT_VERSION = "v2"
+EXPERIMENT_VERSION = "v3"
 
 
 def _dt(value):
@@ -31,7 +31,7 @@ def assigned_arm(symbol: str, lane: str, *, now=None) -> str:
     """Stable within one UTC day; supports unbiased split across symbol-days."""
     when = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     clean = str(symbol or "").upper().replace("$", "").replace("USDT", "")
-    payload = f"reader-exp-v1:{clean}:{str(lane).upper()}:{when.date().isoformat()}"
+    payload = f"reader-exp-v3:{clean}:{str(lane).upper()}:{when.date().isoformat()}"
     return ARMS[int.from_bytes(sha256(payload.encode("utf-8")).digest()[:4], "big") % 2]
 
  
@@ -48,16 +48,16 @@ def arm_for_package(package: dict, lane: str, *, now=None) -> str:
 def writing_brief(arm: str, lane: str) -> str:
     if arm == "what_changed":
         return (
-            "ФОРМАТ A — ЧТО ИЗМЕНИЛОСЬ. Первая строка — необычный подтверждённый факт "
-            "о движении с тикером. Затем объясни, как один другой факт подтверждает или "
-            "оспаривает первый. Конец — конкретный, проверяемый вывод для читателя. "
-            "Без общих фраз 'следим за реакцией' и без клише."
+            "ФОРМАТ A — ИНТЕРЕСНОЕ НАБЛЮДЕНИЕ. Это только возможный ракурс, "
+            "а не требование структуры: выбери сам, какую закономерность, необычный "
+            "контраст или практическое понимание события показать. "
+            "Свободно меняй композицию и длину, не выдумывая фактов."
         )
     return (
-        "ФОРМАТ B — РИСК/РАЗВИЛКА. Первая строка — конкретное расхождение или риск "
-        "в данных с тикером. Затем объясни, почему ситуация неоднозначна, и что уже "
-        "известно на данный момент. Конец — ясное условие, при котором оценка поменяется. "
-        "Не преувеличивай значимость обычных колебаний и не выдумывай новости."
+        "ФОРМАТ B — ПОЛЕЗНЫЙ РАЗБОР. Это необязательная подсказка: "
+        "можно объяснить ограничение рыночного сигнала, ошибку интерпретации, "
+        "цену поспешного решения или честно показать, чего пока не знаем. "
+        "Никакого обязательного 'если — то' финала. Не выдумывай фактов."
     )
 
 

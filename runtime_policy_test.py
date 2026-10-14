@@ -17,7 +17,7 @@ def main() -> int:
     import recovery_guard
     import writer
 
-    assert os.environ.get("BOT_VERSION") == "v12.3"
+    assert os.environ.get("BOT_VERSION") == "v12.4"
     assert os.environ.get("AI_RETRIES") == "2"
     assert os.environ.get("EVENT_AI_RETRIES") == "2"
     assert os.environ.get("ORCAROUTER_RETRIES") == "1"
@@ -48,7 +48,7 @@ def main() -> int:
     assert main.PUBLICATION_CANDIDATE_ATTEMPTS == 6
     assert main.AI_SCAN_MAX_REQUESTS == 14
 
-    print("RUNTIME POLICY: OK | v12.3 accountable recovery outcomes + quality checks active")
+    print("RUNTIME POLICY: OK | v12.4 editorial freedom + factual guards active")
     return 0
 
 

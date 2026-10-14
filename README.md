@@ -46,6 +46,21 @@ Closed Binance 1-minute candles verify entry and target order. Ambiguous
 target-and-stop candles never produce an automatic claim. Public follow-ups
 report only verified complete targets or stops, never interim TP1/TP2.
 
+## v12.4 — DeepSeek editorial freedom
+
+- DeepSeek is still primary. It now chooses story angle, length, paragraph
+  count, opening and conclusion; requested format IDs are metadata with
+  optional inspiration rather than rigid prose templates.
+- Actual trade entry/stop/TP1–TP3 figures, fact locking, ticker,
+  semantic review, duplicate protection and no invented catalysts remain strict.
+- Live body limits are broadened to 185–520 characters (including any public
+  trade plan). Reader-value scoring no longer rewards RSI/VWAP/ADX keyword
+  density and penalizes multi-indicator dumps.
+- Increase API temperature moderately for variation, with conservative output
+  validation and Groq fallback unchanged. A/B author-cohort version increments
+  to v3 to prevent apples-to-oranges reach comparisons after the prompt change.
+- This is an editorial experiment, not evidence or a guarantee of more views.
+
 ## v12.3 — Verified outcomes during distribution recovery
 
 - Production startup now preserves the workflow's `OUTCOME_POST_STOPS=1`.
