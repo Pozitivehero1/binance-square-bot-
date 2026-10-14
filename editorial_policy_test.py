@@ -37,6 +37,8 @@ def main():
     assert not evaluate_story(Attention(.4,.5,1.1),Micro(.2,.6),opp,lane="TRADE").allowed
     strong = "$BTC — объём вырос x3 после движения +2.4% за 15 минут\n\nРеальный всплеск активности требует проверки уровня."
     assert review_copy(strong).allowed
+    assert review_copy("$PUMP — 0.005127: уровень, который пока не пускает цену выше\n\n"
+                       "Объём заметно вырос, но цена стоит рядом с сопротивлением.").allowed
     weak = "$BTC торгуется по цене 56.4\n\nНаблюдаем за реакцией. Ждём чистую реакцию рынка."
     assert not review_copy(weak).allowed
     broken = "$BTC — объём на\n\n15 минутах вырос x4.0."

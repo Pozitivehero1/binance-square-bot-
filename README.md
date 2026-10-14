@@ -46,6 +46,25 @@ Closed Binance 1-minute candles verify entry and target order. Ambiguous
 target-and-stop candles never produce an automatic claim. Public follow-ups
 report only verified complete targets or stops, never interim TP1/TP2.
 
+## DeepSeek 15:20 incident: reject the right things
+
+- A verified `$PUMP` 5m -0.84% / x4.49 volume, with reach score 78.6
+  and an already validated DeepSeek draft, was rejected solely by the
+  *second* legacy editorial selection score gate (60.6 < 71.5).
+- The recovery gate now accepts a **measured fresh shock** only when price,
+  relative 5m volume, audience demand, novelty and the existing independent
+  reach/fact-quality checks all pass. It is not a forced cadence exemption;
+  ordinary and stale markets remain blocked.
+- Genuine level-centric headlines count as reader insight. The statement
+  `не вход` is allowed for observation-only drafts; an actual proposed
+  entry is still forbidden without a valid Python-owned plan.
+- Fixed number validation for outcome reports on tickers starting with digits
+  and log a safe, precise warning when deterministic outcome copy cannot pass.
+  No invalid outcome is published.
+- DeepSeek's JSON `candidates` response is expected; one rejected AI draft
+  does not mean the API failed. New authored posts remain subject to all hard
+  market and publication preflight checks.
+
 ## v12.4 — DeepSeek editorial freedom
 
 - DeepSeek is still primary. It now chooses story angle, length, paragraph

@@ -48,7 +48,10 @@ def _allowed_numbers(facts: dict) -> List[float]:
 
 def _numbers_ok(text: str, facts: dict) -> bool:
     allowed = _allowed_numbers(facts)
-    for raw in re.findall(r"(?<![\w])[-+]?\d+(?:[.,]\d+)?", text):
+    # Many Binance ticker symbols start with digits (e.g. 1000PEPE).
+    # They are identifiers, not numeric market claims.
+    text_without_cashtags = re.sub(r"\$[A-Za-z0-9][A-Za-z0-9_]{0,35}", " ", text)
+    for raw in re.findall(r"(?<![\w])[-+]?\d+(?:[.,]\d+)?", text_without_cashtags):
         try:
             value = float(raw.replace(",", "."))
         except ValueError:
@@ -164,6 +167,12 @@ def build_outcome_post(facts: Dict, memory: Optional[PostMemory] = None) -> tupl
         if _valid(text, facts):
             candidates.append((text, "deterministic_outcome"))
     if not candidates:
+        logger.warning(
+            "No valid verified outcome copy: symbol=%s kind=%s target=%s "
+            "deterministic_candidates=%d; no post attempted",
+            facts.get("symbol"), facts.get("event_kind"), facts.get("target_name"),
+            len(_deterministic(facts)),
+        )
         raise RuntimeError("No valid outcome copy candidate")
 
     ranked = []

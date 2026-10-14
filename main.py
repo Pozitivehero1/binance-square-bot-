@@ -1368,6 +1368,8 @@ def _run_once() -> int:
             recovery_mode=recovery_mode,
             hour_affinity=adaptive.hour_affinity,
             hour_samples=adaptive.hour_samples,
+            change_5m=micro.change_5m,
+            volume_spike_5m=micro.volume_spike_5m,
         )
         logger.info("v11.6 recovery gate: %s", recovery.reason)
         if not DRY_RUN and not recovery.allowed:

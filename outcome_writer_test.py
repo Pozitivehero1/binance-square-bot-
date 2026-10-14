@@ -22,6 +22,8 @@ def main():
         facts("MUBARAK","stop_after_target",entry=.07823,reached=.07731,stop=.07731,rr=-1,move=-1.18),
         facts("S","stop",entry=.06021,reached=.05993,stop=.05993,rr=-1,move=-.47),
         facts("PEPE","target_complete",entry=.00000251,reached=.00000285,stop=.0000024,rr=3.1,move=13.55,target="tp3"),
+        facts("1000PEPE","stop",entry=.0062,reached=.0061,stop=.0061,rr=-1,move=-1.61),
+        facts("1INCH","target_complete",entry=.22,reached=.24,stop=.21,rr=2.1,move=9.09,target="tp3"),
     ]
     with patch("outcome_writer.OUTCOME_AI_ENABLED", False):
         for case in cases:

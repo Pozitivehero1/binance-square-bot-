@@ -21,6 +21,46 @@ def decision(**overrides):
     return evaluate_recovery_candidate(**payload)
 
 
+# Real PUMP-style source data: a fresh 5m move with x4.49 volume
+# should not be blocked by the lagging learned selection score alone.
+pump = decision(
+    lane="event", writer_source="deepseek_local_event",
+    event_class="ordinary", micro_phase="fresh",
+    opportunity_score=63.6, audience_demand=62.2,
+    attention_score=57.1, micro_score=71.3,
+    monetization_score=51.2, selection_score=60.6,
+    reach_score=78.6, plan_valid=False,
+    change_5m=-0.84, volume_spike_5m=4.49,
+)
+assert pump.allowed and "verified fresh 5m event" in pump.reason, pump.reason
+assert not decision(
+    lane="event", writer_source="deepseek_local_event",
+    event_class="ordinary", micro_phase="fresh",
+    opportunity_score=63.6, audience_demand=62.2,
+    attention_score=57.1, micro_score=71.3,
+    monetization_score=51.2, selection_score=60.6,
+    reach_score=78.6, plan_valid=False,
+    change_5m=-0.09, volume_spike_5m=4.49,
+).allowed
+assert not decision(
+    lane="event", writer_source="deepseek_local_event",
+    event_class="ordinary", micro_phase="fresh",
+    opportunity_score=63.6, audience_demand=62.2,
+    attention_score=57.1, micro_score=71.3,
+    monetization_score=51.2, selection_score=60.6,
+    reach_score=78.6, plan_valid=False,
+    change_5m=-0.84, volume_spike_5m=1.09,
+).allowed
+assert not decision(
+    lane="event", writer_source="deterministic_event",
+    event_class="ordinary", micro_phase="fresh",
+    opportunity_score=63.6, audience_demand=62.2,
+    attention_score=57.1, micro_score=71.3,
+    monetization_score=51.2, selection_score=60.6,
+    reach_score=78.6, plan_valid=False,
+    change_5m=-0.84, volume_spike_5m=4.49,
+).allowed
+
 # Healthy ordinary AI trade remains publishable.
 assert decision().allowed
 

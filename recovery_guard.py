@@ -33,6 +33,8 @@ def evaluate_recovery_candidate(
     recovery_mode: bool = False,
     hour_affinity: float = 50.0,
     hour_samples: int = 0,
+    change_5m: float = 0.0,
+    volume_spike_5m: float = 1.0,
 ) -> RecoveryDecision:
     lane_name = str(lane or "").strip().lower()
     source = str(writer_source or "").strip().lower()
@@ -69,7 +71,33 @@ def evaluate_recovery_candidate(
 
     # There is deliberately no cadence escape. A cron tick is an
     # opportunity to publish, not an obligation to fill the slot.
+    # Exception: genuinely fresh *observed* price + volume shock in an
+    # audience-relevant market. This requires verified micro data and the
+    # upstream factual, novelty, anti-duplicate and reach gates still apply.
+    # A high model quality score alone never unlocks it. In production the
+    # v11.8 recovery wrapper treats lagging 24h distribution as advisory
+    # for AI copy; real fresh micro data can then unlock the same event.
     if not deterministic and not recovery_mode:
+        verified_micro_event = (
+            lane_name == "event"
+            and phase == "fresh"
+            and abs(float(change_5m)) >= 0.75
+            and float(volume_spike_5m) >= 3.5
+            and micro >= 65.0
+            and demand >= 55.0
+            and opportunity >= 60.0
+            and selection >= 58.0
+            and reach >= 75.0
+            and monetization >= 45.0
+        )
+        if verified_micro_event:
+            return RecoveryDecision(
+                True,
+                f"verified fresh 5m event pass: move={float(change_5m):+.2f}% "
+                f"volume=x{float(volume_spike_5m):.2f} demand={demand:.1f} "
+                f"reach={reach:.1f} (normal checks still active)",
+                75.0,
+            )
         broad_live_interest = (
             demand >= 75.0
             and opportunity >= 64.0

@@ -496,7 +496,13 @@ def _validate_event_post(
             reasons.append("direction forbidden without public plan")
         if any(token in lowered for token in ("tp1", "tp2", "tp3", "стоп", "stop-loss", "стоп-лосс", "r/r", "р/р", "тейк-профит")):
             reasons.append("trade targets forbidden without public plan")
-        if re.search(r"\bвход(?:а|у|ом|е)?\b", lowered):
+        # A statement like "это не вход" is explicitly a refusal to
+        # recommend a trade, not an invented actionable entry.
+        without_negated_entry = re.sub(
+            r"(?iu)\b(?:это\s+)?не\s+вход(?:а|у|ом|е)?\b|\bбез\s+входа\b",
+            "", lowered,
+        )
+        if re.search(r"\bвход(?:а|у|ом|е)?\b", without_negated_entry):
             reasons.append("entry forbidden without public plan")
         if re.search(r"\b(?:покупаю|продаю|вхожу|открываю\s+позици\w*)\b", lowered):
             reasons.append("trade action forbidden without public plan")
