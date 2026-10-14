@@ -412,7 +412,7 @@ def _decorate_headline(text: str, *, format_id: str, attention: AttentionSnapsho
     headline = parts[first_index].strip()
     token = f"event|{headline}|{format_id}|{index}".encode("utf-8")
     bucket = int(hashlib.sha1(token).hexdigest()[:8], 16) / 0xFFFFFFFF
-    if bucket < EMOJI_RATE and not any(mark in headline for mark in ("⚡", "⚠️", "👀")):
+    if bucket < EMOJI_RATE and not re.search(r"[\U0001F300-\U0001FAFF\u2600-\u27BF]", text):
         if micro.score >= 76 or attention.volume_spike >= 5:
             mark = "⚡"
         elif attention.overextended:
@@ -458,8 +458,8 @@ def _validate_event_post(
         reasons.append("too many questions")
     if re.search(r"#[A-Za-zА-Яа-я0-9_]+", text):
         reasons.append("hashtags forbidden")
-    if len(re.findall(r"[\U0001F300-\U0001FAFF\u2600-\u27BF]", text)) > 0:
-        reasons.append("AI emoji forbidden")
+    if len(re.findall(r"[\U0001F300-\U0001FAFF\u2600-\u27BF]", text)) > 1:
+        reasons.append("too many emojis")
     if any(item in lowered for item in _ROBOTIC):
         reasons.append("robotic wording")
     if any(re.search(pattern, lowered, flags=re.IGNORECASE) for pattern in _FORBIDDEN_PATTERNS):
