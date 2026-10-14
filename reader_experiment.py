@@ -8,7 +8,7 @@ import os
 
 
 ARMS = ("what_changed", "risk_map")
-EXPERIMENT_VERSION = "v3"
+EXPERIMENT_VERSION = "v4"
 
 
 def _dt(value):
@@ -31,7 +31,7 @@ def assigned_arm(symbol: str, lane: str, *, now=None) -> str:
     """Stable within one UTC day; supports unbiased split across symbol-days."""
     when = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     clean = str(symbol or "").upper().replace("$", "").replace("USDT", "")
-    payload = f"reader-exp-v3:{clean}:{str(lane).upper()}:{when.date().isoformat()}"
+    payload = f"reader-exp-v4:{clean}:{str(lane).upper()}:{when.date().isoformat()}"
     return ARMS[int.from_bytes(sha256(payload.encode("utf-8")).digest()[:4], "big") % 2]
 
  
@@ -51,13 +51,15 @@ def writing_brief(arm: str, lane: str) -> str:
             "ФОРМАТ A — ИНТЕРЕСНОЕ НАБЛЮДЕНИЕ. Это только возможный ракурс, "
             "а не требование структуры: выбери сам, какую закономерность, необычный "
             "контраст или практическое понимание события показать. "
-            "Свободно меняй композицию и длину, не выдумывая фактов."
+            "Свободно меняй композицию и длину. Дай понятный вывод без "
+            "биржевого жаргона, не выдумывая фактов."
         )
     return (
         "ФОРМАТ B — ПОЛЕЗНЫЙ РАЗБОР. Это необязательная подсказка: "
         "можно объяснить ограничение рыночного сигнала, ошибку интерпретации, "
         "цену поспешного решения или честно показать, чего пока не знаем. "
-        "Никакого обязательного 'если — то' финала. Не выдумывай фактов."
+        "Никакого обязательного 'если — то' финала. Объясни риск обычными "
+        "словами, не выдумывая фактов и не преувеличивая значения одного индикатора."
     )
 
 

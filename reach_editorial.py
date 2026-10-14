@@ -4,6 +4,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 import re
 
+from reader_voice import assess_voice
+
 
 @dataclass(frozen=True)
 class EditorialReachAdjustment:
@@ -61,6 +63,10 @@ def editorial_reach_adjustment(text: str) -> EditorialReachAdjustment:
     indicator_count = sum(bool(re.search(rf"(?i)\b{indicator}\b", editorial))
                           for indicator in ("RSI", "ADX", "VWAP", "ATR", "EMA", "MACD"))
     score -= max(0, indicator_count - 1) * 2.0
+    # Prefer readable insight over abbreviation-stuffed copy. The canonical
+    # Python-owned trade plan is excluded by assess_voice().
+    voice = assess_voice(value)
+    score += voice.score * 0.6
     length = len(value)
     if 195 <= length <= 420:
         score += 1.5
@@ -77,5 +83,6 @@ def editorial_reach_adjustment(text: str) -> EditorialReachAdjustment:
     score = max(-8.0, min(7.0, score))
     return EditorialReachAdjustment(
         round(score, 2), specificity, generic,
-        f"editorial={score:+.1f} specificity={specificity} generic={generic} chars={length} hook={len(first)}",
+        f"editorial={score:+.1f} specificity={specificity} generic={generic} "
+        f"voice={voice.score:+.1f}/terms{voice.tech_terms} chars={length} hook={len(first)}",
     )

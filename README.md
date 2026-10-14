@@ -46,6 +46,25 @@ Closed Binance 1-minute candles verify entry and target order. Ambiguous
 target-and-stop candles never produce an automatic claim. Public follow-ups
 report only verified complete targets or stops, never interim TP1/TP2.
 
+## v12.5 — clear language without amateur market conclusions
+
+- **Audience:** understandable to a curious first-time investor, defensible to
+  an experienced trader. Explains *what happened and why it matters*, without
+  talking down or promising a profitable outcome.
+- DeepSeek remains primary and keeps editorial freedom. System prompts request
+  plain Russian prose and normally no RSI/ADX/VWAP/ATR/EMA/MACD in the authored
+  narrative. One genuinely necessary indicator may be explained briefly and
+  carefully; there is no mandatory glossary or formulaic tutorial.
+- Reader-voice preference lowers the rank of unexplained abbreviation clusters
+  and unsupported metaphors. It excludes the canonical, Python-owned
+  LONG/SHORT/TP1–TP3 block from evaluation. No new editorial hard blocker.
+- Original numeric fact lock, trade geometry, no fake-news rules and
+  publication safety remain authoritative. An indicator alone never proves
+  trader intention or an inevitable market reversal.
+- New A/B cohort `v4` prevents misleading comparisons between the previous
+  more technical prompts and the reader-friendly copy.
+- These changes target clarity and trust, not guaranteed reach.
+
 ## DeepSeek 15:20 incident: reject the right things
 
 - A verified `$PUMP` 5m -0.84% / x4.49 volume, with reach score 78.6

@@ -7,6 +7,8 @@ Production enables it via GitHub Actions environment settings.
 from __future__ import annotations
 
 from dataclasses import dataclass
+
+from reader_voice import assess_voice
 import math
 import os
 import re
@@ -132,10 +134,11 @@ def review_copy(text: str) -> EditorialDecision:
         return EditorialDecision(False, -20, "first paragraph ends mid-sentence")
     counts = sum(bool(re.search(pattern, editorial)) for pattern in _SOFT_GENERIC)
     jargon = sum(bool(re.search(rf"(?i)\b{name}\b", editorial)) for name in ("RSI","ADX","VWAP","ATR","EMA","MACD"))
-    penalty = -min(15, counts*4 + max(0,jargon-2)*4)
+    voice = assess_voice(source)
+    penalty = -min(15, counts*4 + max(0,jargon-2)*4 + abs(voice.score)*0.5)
     if counts >= 3:
         return EditorialDecision(False, -20, "generic phrases dominate the explanation")
-    return EditorialDecision(True, float(penalty), f"generic={counts} indicators={jargon} adjustment={penalty}")
+    return EditorialDecision(True, float(penalty), f"generic={counts} indicators={jargon} voice={voice.score} adjustment={penalty}")
 
 
 def recommend_copy(draft, *, reviewer=review_copy):
