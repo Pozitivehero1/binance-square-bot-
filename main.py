@@ -1014,8 +1014,13 @@ def _cleanup_files(paths: Iterable[Optional[str]]) -> None:
 
 
 def _try_outcome_fallback(*, memory: PostMemory, guard: PublicationGuard, recovery_mode: bool) -> bool:
-    """Publish a queued TP3 only when no fresh post won and reach is healthy."""
-    if recovery_mode:
+    """Publish a verified outcome only when no fresh post wins the selection.
+
+    Account reach is a signal about distribution, not evidence that a verified
+    stop or completed target is untrue. Publication safety, history matching,
+    and the global outcome cadence still apply inside process_outcomes().
+    """
+    if recovery_mode and os.getenv("OUTCOME_IN_RECOVERY", "0").strip().lower() not in {"1", "true", "yes", "on"}:
         logger.info("Outcome follow-up postponed while reach recovery mode is active")
         return False
     try:

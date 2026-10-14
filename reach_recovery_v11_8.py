@@ -57,8 +57,10 @@ def configure_environment() -> None:
     os.environ["DETERMINISTIC_COMPARE_SLOTS"] = "0"
     os.environ["EVENT_DETERMINISTIC_COMPARE_SLOTS"] = "0"
 
-    os.environ["OUTCOME_POST_STOPS"] = "0"
-    os.environ["OUTCOME_POST_PARTIAL_TARGETS"] = "0"
+    # Respect production workflow's explicit, fact-verified stop postmortems.
+    # These were previously overwritten with "0" every time the bot started.
+    os.environ.setdefault("OUTCOME_POST_STOPS", "0")
+    os.environ.setdefault("OUTCOME_POST_PARTIAL_TARGETS", "0")
 
 
 def _parse_dt(value: object) -> Optional[datetime]:

@@ -114,6 +114,12 @@ for broken in [
     assert semantic_quality_reasons(broken), broken
     assert final_text_reasons(broken), broken
 
+assert "internal-ranking-score-leak" in semantic_quality_reasons(
+    "$ZAMA — свежесть события 79/100, объём вырос в 3 раза."
+)
+assert not semantic_quality_reasons(
+    "$BTC — цена выросла на 2.4% за 15 минут при объёме x3."
+)
 assert not semantic_quality_reasons("$BTC: RSI 37.0 отражает слабый импульс.")
 assert not semantic_quality_reasons("$BTC: цена выше VWAP, но объём пока не подтвердил импульс.")
 

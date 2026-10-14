@@ -32,6 +32,8 @@ def main():
     assert evaluate_story(Attention(-4,-8,1.1),Micro(.2,.7),opp,lane="EVENT").allowed
     assert not evaluate_story(Attention(1.4,2.5,2.4),Micro(.2,.7,"stale"),opp,lane="EVENT").allowed
     assert not evaluate_story(Attention(.8,2,2),Micro(.4,2),Opportunity(5),lane="EVENT").allowed
+    assert not evaluate_story(Attention(1.3,2.1,2.8),Micro(.6,2.1),Opportunity(32),lane="EVENT").allowed
+    assert evaluate_story(Attention(4.1,6.0,2.2),Micro(2.6,3.0),Opportunity(15),lane="EVENT").allowed
     assert not evaluate_story(Attention(.4,.5,1.1),Micro(.2,.6),opp,lane="TRADE").allowed
     strong = "$BTC — объём вырос x3 после движения +2.4% за 15 минут\n\nРеальный всплеск активности требует проверки уровня."
     assert review_copy(strong).allowed

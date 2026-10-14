@@ -68,7 +68,9 @@ def evaluate_story(attention, micro, opportunity, *, lane: str) -> EditorialDeci
     )
     if freshness == "stale" and not exceptional:
         return EditorialDecision(False, score, "stale market, no new catalyst")
-    if demand < 25 and not (exceptional and v15 >= 1.6):
+    # Ordinary movements in obscure tickers repeatedly attract little reader
+    # demand. A genuinely exceptional *measured* move can still break through.
+    if demand < 40 and not (exceptional and v15 >= 1.6):
         return EditorialDecision(False, score, "audience too small for an ordinary move")
     if not (exceptional or any(notable) or solid_trade):
         return EditorialDecision(False, score, "no significant verified price/volume event")

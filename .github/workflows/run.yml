@@ -201,6 +201,9 @@ jobs:
       OUTCOME_AI: "0"
       OUTCOME_POST_STOPS: "1"
       OUTCOME_POST_PARTIAL_TARGETS: "0"
+      # Verified original-post-bound outcomes remain truthful even in reach recovery.
+      # The 6h global follow-up interval and publisher deduplication remain active.
+      OUTCOME_IN_RECOVERY: "1"
       OUTCOME_PENDING_ENTRY_HOURS: "18"
       OUTCOME_MAX_AGE_HOURS: "72"
       OUTCOME_MIN_FOLLOWUP_GAP_MIN: "360"

@@ -6,6 +6,9 @@ import os
 
 def main() -> int:
     os.environ["DRY_RUN"] = "1"
+    # Startup must NOT silently undo the workflow's verified stop policy.
+    os.environ["OUTCOME_POST_STOPS"] = "1"
+    os.environ["OUTCOME_POST_PARTIAL_TARGETS"] = "0"
 
     # Importing run_bot activates policies but does not execute main().
     import run_bot  # noqa: F401
@@ -14,7 +17,7 @@ def main() -> int:
     import recovery_guard
     import writer
 
-    assert os.environ.get("BOT_VERSION") == "v12.2"
+    assert os.environ.get("BOT_VERSION") == "v12.3"
     assert os.environ.get("AI_RETRIES") == "2"
     assert os.environ.get("EVENT_AI_RETRIES") == "2"
     assert os.environ.get("ORCAROUTER_RETRIES") == "1"
@@ -39,10 +42,13 @@ def main() -> int:
     assert event_writer.EVENT_DETERMINISTIC_COMPARE_SLOTS == 0
 
     import main
+    import outcome_engine
+    assert outcome_engine.POST_STOPS is True
+    assert outcome_engine.POST_PARTIAL_TARGETS is False
     assert main.PUBLICATION_CANDIDATE_ATTEMPTS == 6
     assert main.AI_SCAN_MAX_REQUESTS == 14
 
-    print("RUNTIME POLICY: OK | v12.2 accountable posts + quality checks active")
+    print("RUNTIME POLICY: OK | v12.3 accountable recovery outcomes + quality checks active")
     return 0
 
 

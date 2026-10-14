@@ -46,6 +46,25 @@ Closed Binance 1-minute candles verify entry and target order. Ambiguous
 target-and-stop candles never produce an automatic claim. Public follow-ups
 report only verified complete targets or stops, never interim TP1/TP2.
 
+## v12.3 — Verified outcomes during distribution recovery
+
+- Production startup now preserves the workflow's `OUTCOME_POST_STOPS=1`.
+  Previously, an older release configurator silently overwrote it with `0`,
+  which disabled honest stop-loss reviews.
+- `OUTCOME_IN_RECOVERY=1` allows *verified* outcomes when the rolling
+  distribution-recovery flag is active. They are still a fallback after live
+  scanning and limited to one public post every six hours (globally).
+  Original published levels, candle order, ambiguous-case quarantine and
+  idempotent publisher receipts are unchanged.
+- Low-demand obscure tickers now need a truly exceptional measured market
+  event instead of a routine volume spike to enter the author pipeline.
+  Scanning is still every 20 minutes; no forced quota.
+- DeepSeek remains the first prose author. Prompt rules reject internal
+  ranking scores, urge plain-language value, and do not invent catalysts.
+  Final text validation blocks visible internal 0–100 scoring leaks.
+- Reach must be measured using comparable, matured posting cohorts; no
+  claim that these changes guarantee 100+ views is implied.
+
 ## v12.2 — accountable analysis and honest experiments
 
 - Corrected the A/B author assignment for TRADE: the real `market.ticker`
