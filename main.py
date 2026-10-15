@@ -508,6 +508,26 @@ def _event_candidate_gate(
     but dead ticker (for example high demand with stale 5m activity) does not
     pass just because the coin is large.
     """
+    # Measured-activity publishing mode: market facts choose whether a story
+    # exists. No speculative 100-view/W2E interest predictor may veto it.
+    # Zero-move and stale low-volume markets are not news, however.
+    if os.getenv("PUBLISH_ACTIVE_MARKETS", "0").strip() == "1":
+        move_5m = abs(float(micro.change_5m))
+        move_15m = abs(float(attention.change_15m))
+        vol_5m = float(micro.volume_spike_5m)
+        vol_15m = float(attention.volume_spike)
+        active = (
+            move_5m >= 0.40
+            or move_15m >= 0.80
+            or ((vol_5m >= 2.8 or vol_15m >= 2.8)
+                and (move_5m >= 0.18 or move_15m >= 0.35))
+        )
+        if micro.phase == "stale" and move_15m < 0.80:
+            return False, "stale market with no meaningful 15m movement"
+        if not active:
+            return False, "no measurable market change worth explaining"
+        return True, "observed price/volume movement; interest-score hard gate disabled"
+
     if micro.phase == "stale" and attention.score < 72.0:
         return False, "stale event"
 
@@ -738,9 +758,9 @@ def _best_event_post_variant(
         drafts=drafts,
         basic=basic,
         memory=memory,
-        min_feed_appeal=EVENT_MIN_FEED_APPEAL,
-        min_conversion=EVENT_MIN_CONVERSION,
-        min_quality=EVENT_MIN_POST_QUALITY,
+        min_feed_appeal=(0.0 if os.getenv("RELAX_EDITORIAL_FILTERS", "0") == "1" else EVENT_MIN_FEED_APPEAL),
+        min_conversion=(0.0 if os.getenv("RELAX_EDITORIAL_FILTERS", "0") == "1" else EVENT_MIN_CONVERSION),
+        min_quality=(0.0 if os.getenv("RELAX_EDITORIAL_FILTERS", "0") == "1" else EVENT_MIN_POST_QUALITY),
         max_similarity=MAX_POST_SIMILARITY,
         plan_available=bool(levels.get("plan_valid", False)),
         event_class=opportunity.event_class,
@@ -937,8 +957,8 @@ def _best_post_variant(
             if (
                 report.valid
                 and memory_similarity < MAX_POST_SIMILARITY
-                and appeal.score >= MIN_FEED_APPEAL
-                and conversion.score >= MIN_CONVERSION_INTENT
+                and (os.getenv("RELAX_EDITORIAL_FILTERS", "0") == "1" or appeal.score >= MIN_FEED_APPEAL)
+                and (os.getenv("RELAX_EDITORIAL_FILTERS", "0") == "1" or conversion.score >= MIN_CONVERSION_INTENT)
             ):
                 variants.append((draft, report, adjusted_score))
             elif report.valid and conversion.score < MIN_CONVERSION_INTENT:
@@ -971,7 +991,7 @@ def _best_post_variant(
         return None
     variants.sort(key=lambda item: item[2], reverse=True)
     best_draft, best_report, _ = variants[0]
-    if best_report.score < MIN_POST_QUALITY:
+    if os.getenv("RELAX_EDITORIAL_FILTERS", "0") != "1" and best_report.score < MIN_POST_QUALITY:
         logger.info(
             "Best post quality %.1f is below MIN_POST_QUALITY %.1f",
             best_report.score,
@@ -1372,7 +1392,9 @@ def _run_once() -> int:
             volume_spike_5m=micro.volume_spike_5m,
         )
         logger.info("v11.6 recovery gate: %s", recovery.reason)
-        if not DRY_RUN and not recovery.allowed:
+        # Modelled audience-interest estimates are advisory in active-market mode.
+        # Fact-lock, public plan and final publication preflight remain hard gates.
+        if not DRY_RUN and not recovery.allowed and os.getenv("RELAX_PREDICTED_REACH", "0") != "1":
             write_status(
                 "skipped", "v11.6 recovery gate: " + recovery.reason,
                 symbol=symbol, lane=lane, recovery_mode=recovery_mode,
