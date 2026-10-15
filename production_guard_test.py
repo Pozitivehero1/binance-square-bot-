@@ -110,6 +110,8 @@ for broken in [
     "$ENA: Пробой вниз отменит идею шорта из этой зоны.",
     "$BTC: Пробой вверх отменяет идею лонга.",
     "$ZEC: Цена выше VWAP, что ограничивает пространство для быстрого роста.",
+    "$FET: покупатели, входившие в последний час, сейчас в убытке.",
+    "$GTC: это первый раз за последнее время, когда цена закрепилась выше 0.2075.",
 ]:
     assert semantic_quality_reasons(broken), broken
     assert final_text_reasons(broken), broken
@@ -120,6 +122,8 @@ assert "internal-ranking-score-leak" in semantic_quality_reasons(
 assert not semantic_quality_reasons(
     "$BTC — цена выросла на 2.4% за 15 минут при объёме x3."
 )
+assert not semantic_quality_reasons("$BTC: цена ниже средней за час, но реальные цены входа трейдеров неизвестны.")
+assert not semantic_quality_reasons("$GTC: цена находится выше 0.2075, однако история удержания уровня не установлена.")
 assert not semantic_quality_reasons("$BTC: RSI 37.0 отражает слабый импульс.")
 assert not semantic_quality_reasons("$BTC: цена выше VWAP, но объём пока не подтвердил импульс.")
 

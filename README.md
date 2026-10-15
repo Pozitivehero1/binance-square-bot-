@@ -46,6 +46,23 @@ Closed Binance 1-minute candles verify entry and target order. Ambiguous
 target-and-stop candles never produce an automatic claim. Public follow-ups
 report only verified complete targets or stops, never interim TP1/TP2.
 
+## 15 October audit — avoid template fallback and unverified claims
+
+- **Observed:** v12.5 first 13 posts reached median 15 views (10 mature
+  at six hours); 7 of 13 drafts came from deterministic fallback/outcome
+  writers, despite DeepSeek being connected. Both figures are early,
+  not evidence that DeepSeek lowers reach.
+- **Change:** disable `ENABLE_PROVIDER_OUTAGE_COPY` in production. The
+  multi-provider AI chain is still intact; when all AI drafts fail fact
+  validation, skip a weak post instead of filling the feed with mechanical
+  templates. Deterministic *verified trade outcomes* remain available:
+  these are retrospective fact-based reports, not generic market filler.
+- Block unsupported inferences about traders' actual cost basis and unverified
+  historical superlatives (e.g. "first time in recent history"). Values from
+  hourly averages do not reveal individual trade entry prices.
+- Keep honesty above cadence: a green Actions run can mean a valid skip.
+  Success is tracked using real mature views and engagement, not post volume.
+
 ## v12.5 — clear language without amateur market conclusions
 
 - **Audience:** understandable to a curious first-time investor, defensible to
