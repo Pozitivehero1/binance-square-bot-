@@ -123,6 +123,26 @@ def main() -> None:
     stale_allowed, _ = _event_candidate_gate(score, stale_attention, stale_micro, stale_mon, stale_opp)
     assert not stale_allowed, stale_opp
 
+    # Publication policy: no model's estimated interestingness/W2E score may
+    # veto real observed movement in a liquid market. No fake/no-op events.
+    with patch.dict(os.environ, {"PUBLISH_ACTIVE_MARKETS": "1"}):
+        weak_estimates = replace(opportunity, score=11.0, audience_demand=5.0)
+        weak_revenue = replace(monetization, score=9.0)
+        active_ok, active_reason = _event_candidate_gate(
+            score, attention, micro, weak_revenue, weak_estimates
+        )
+        assert active_ok and "observed price/volume" in active_reason, active_reason
+        quiet_attention = replace(attention, change_15m=0.01, volume_spike=1.0)
+        quiet_micro = replace(micro, change_5m=0.01, volume_spike_5m=1.0)
+        quiet_ok, _ = _event_candidate_gate(
+            score, quiet_attention, quiet_micro, weak_revenue, weak_estimates
+        )
+        assert not quiet_ok, "quiet market cannot be fabricated into a story"
+        stale_ok, _ = _event_candidate_gate(
+            score, stale_attention, stale_micro, weak_revenue, weak_estimates
+        )
+        assert not stale_ok, "stale market needs fresh verifiable change"
+
     print(
         "DUAL LANE: OK | technical gate bypassed for fresh event | "
         f"event={opportunity.score:.1f} w2e={monetization.score:.1f} | "

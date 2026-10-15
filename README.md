@@ -46,6 +46,26 @@ Closed Binance 1-minute candles verify entry and target order. Ambiguous
 target-and-stop candles never produce an automatic claim. Public follow-ups
 report only verified complete targets or stops, never interim TP1/TP2.
 
+## v12.6 — publish real market updates, not subjective interest scores
+
+- A 20-minute scan now accepts a measurable price or unusual-volume event
+  without requiring predicted virality, W2E-interest or editorial-keyword
+  thresholds. Truly stale and zero-move markets still do not qualify.
+- Subjective copy quality, appeal and conversion scores rank acceptable
+  candidates but do not veto fact-valid, genuinely distinct DeepSeek prose.
+  The previous two-arm writing experiment is paused to stop enforcing a
+  specific hook or conclusion; author format selection remains varied.
+- Factual validation, numeric/timeframe binding, canonical entry/stop/TPs,
+  semantic integrity, deduplication and live trade preflight remain hard.
+  Unavailable AI leads to a skipped post, never a mechanical market template.
+- Cadence target is **no more than 28 posts/day** with a 45-minute global
+  minimum gap; these are limits, not mandatory publishing quotas. An empty
+  20-minute scan still skips. Outcomes remain verified and may be published
+  when fresh posts lose selection.
+- This is an experiment on aggregate views and interaction, not a promise that
+  increasing posts automatically improves recommendation reach or payout.
+  Compare observed 6h/24h posts and content-type source mixes before expanding.
+
 ## 15 October audit — avoid template fallback and unverified claims
 
 - **Observed:** v12.5 first 13 posts reached median 15 views (10 mature

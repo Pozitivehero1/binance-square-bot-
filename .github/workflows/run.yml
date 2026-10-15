@@ -69,21 +69,29 @@ jobs:
       STATS_REFRESH_PAGES: "4"
       ANALYTICS_TZ_OFFSET: "3"
 
-      # Recovery mode: keep the 20-minute scan, but publish only when predicted reach
-      # and editorial quality clear the gate. Empty cycles are intentional.
+      # Run a 20-minute scan, publish verified active-market observations on a
+      # bounded schedule, and rank (rather than hard-reject) by subjective appeal.
       # Avoid canned template posts while DeepSeek/Groq have valid API access.
       # Outage fallback can be re-enabled explicitly after examining provider errors.
       ENABLE_PROVIDER_OUTAGE_COPY: "0"
       ENABLE_EVENT_REACH_LEARNING: "1"
       ENABLE_TICKER_STORY_NOVELTY: "1"
-      ENABLE_READER_EXPERIMENT: "1"
-      ENABLE_EDITORIAL_STORY_GATE: "1"
-      ENABLE_EDITORIAL_COPY_FILTER: "1"
+      # Write naturally: factual checks are hard; predicted interestingness is not.
+      ENABLE_READER_EXPERIMENT: "0"
+      ENABLE_EDITORIAL_STORY_GATE: "0"
+      ENABLE_EDITORIAL_COPY_FILTER: "0"
+      PUBLISH_ACTIVE_MARKETS: "1"
+      RELAX_EDITORIAL_FILTERS: "1"
+      RELAX_PREDICTED_REACH: "1"
       EVENT_OBSERVATION_PREFERRED: "1"
       NO_POST_ALERT_HOURS: "6"
       VIEW_TARGET_HARD_GATE: "0"
-      ENABLE_PACING_LIMITS: "0"
-      ENABLE_REACH_GATE: "1"
+      # Wider experiment than the old 19/day baseline, but bounded to avoid
+      # flooding the feed with near-identical updates or breaching quotas.
+      ENABLE_PACING_LIMITS: "1"
+      MIN_GLOBAL_INTERVAL_MIN: "45"
+      MAX_POSTS_PER_DAY: "28"
+      ENABLE_REACH_GATE: "0"
       MIN_REACH_SCORE: "72"
 
       # Empirical account-specific quality target. This does not cap daily posts:
@@ -150,7 +158,7 @@ jobs:
       EVENT_MIN_VALID_AI_DRAFTS: "1"
       EVENT_DETERMINISTIC_COMPARE_SLOTS: "0"
 
-      # Recovery editorial controls prioritize novelty over slot fill.
+      # Retain fact safety, cross-post uniqueness and same-ticker cooldown.
       EMOJI_RATE: "0.16"
       QUESTION_EVERY: "9"
       USE_HASHTAGS: "0"
@@ -161,7 +169,7 @@ jobs:
       POST_MAX_CHARS: "520"
       MIN_POST_QUALITY: "84"
       MIN_FEED_APPEAL: "76"
-      MAX_POST_SIMILARITY: "0.38"
+      MAX_POST_SIMILARITY: "0.42"
       MIN_CONVERSION_INTENT: "75"
 
       # Recovery selection restores stricter discovery/ranking gates.
