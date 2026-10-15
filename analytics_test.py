@@ -62,5 +62,32 @@ out = build_dashboard_payload()
 assert out["posts"][0]["views"] == 184
 assert out["posts"][0]["engine_version"] == "v11.15"
 assert out["meta"]["profile_uid"] == "public-test"
+
+# Comparable 2h/6h/24h cohorts must report hit rates and observed engagement
+# from the actual narrow-window snapshot, never lifetime/early learning views.
+from datetime import datetime, timedelta, timezone
+from content_metrics import build_content_metrics
+now = datetime(2026, 10, 15, 12, tzinfo=timezone.utc)
+def observation(pid, views, age=1440, **engagement):
+    return {
+        "post_id": pid, "lane": "EVENT", "direction": "OBSERVATION",
+        "published_at": (now - timedelta(days=2)).isoformat(),
+        "content_milestones": {"24h": {"age_minutes": age, "views": views, **engagement}},
+    }
+cohort = build_content_metrics({"posts": {
+    "a": observation("a", 50, likes=1),
+    "b": observation("b", 150, likes=2, comments=1),
+    "c": observation("c", 350, shares=1),
+    "early": observation("early", 999, age=1200, likes=99),
+}}, now)
+rows = {g["kind"]: g for g in cohort["groups"]}
+snap = rows["observation"]["milestones"]["24h"]
+assert snap["samples"] == 3 and snap["median_views"] == 150, snap
+assert snap["posts_100_plus"] == 2 and snap["rate_100_plus_pct"] == 66.7, snap
+assert snap["posts_300_plus"] == 1 and snap["rate_300_plus_pct"] == 33.3, snap
+assert snap["views_sum"] == 550 and snap["interactions"] == 5, snap
+assert snap["interaction_rate_pct"] == 0.909, snap
+assert rows["trade_plan"]["milestones"]["24h"]["rate_100_plus_pct"] is None
+
 print("analytics_test: OK")
 tmp.cleanup()

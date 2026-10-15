@@ -32,6 +32,7 @@ def build_content_metrics(store, now=None):
         milestones = {}
         for label, (low, high) in WINDOWS.items():
             values = []
+            interaction_totals = {name: 0 for name in ('likes', 'comments', 'quotes', 'shares')}
             for post in posts:
                 row = (post.get('content_milestones') or {}).get(label) or (post.get('milestones') or {}).get(label) or {}
                 try:
@@ -40,6 +41,27 @@ def build_content_metrics(store, now=None):
                     continue
                 if low <= age <= high and views >= 0:
                     values.append(views)
-            milestones[label] = {'samples': len(values), 'median_views': median(values) if values else None}
+                    for name in interaction_totals:
+                        try:
+                            interaction_totals[name] += max(0, int(row.get(name, 0) or 0))
+                        except (ValueError, TypeError):
+                            pass
+            count = len(values)
+            total_views = sum(values)
+            total_interactions = sum(interaction_totals.values())
+            over_100 = sum(value >= 100 for value in values)
+            over_300 = sum(value >= 300 for value in values)
+            milestones[label] = {
+                'samples': count,
+                'median_views': median(values) if values else None,
+                'posts_100_plus': over_100,
+                'rate_100_plus_pct': round(100 * over_100 / count, 1) if count else None,
+                'posts_300_plus': over_300,
+                'rate_300_plus_pct': round(100 * over_300 / count, 1) if count else None,
+                'views_sum': total_views,
+                'interactions': total_interactions,
+                'interaction_rate_pct': round(100 * total_interactions / total_views, 3) if total_views else None,
+                **interaction_totals,
+            }
         result.append({'kind': kind, 'posts': len(posts), 'milestones': milestones})
     return {'window_days': 7, 'age_windows_minutes': WINDOWS, 'groups': result}
