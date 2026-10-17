@@ -49,7 +49,8 @@ def main() -> None:
         "text": (
             "$ZEN рынок снова стал заметнее\n\n"
             "LONG вход 123.45, стоп 120, TP1 130, TP2 140, TP3 150.\n\n"
-            "Мне интересна сама реакция участников рынка, но один всплеск активности я не хочу превращать в готовый торговый сигнал."
+            "Мне интересна сама реакция участников рынка, но один всплеск активности я не хочу превращать в готовый торговый сигнал. "
+            "Нужно увидеть, как цена ведёт себя после этого события: одно движение не объясняет, что произойдёт дальше."
         ),
     }
     repaired_rows = policy._repair_event_rows([raw], package, ["event_pulse"])
@@ -61,6 +62,16 @@ def main() -> None:
     assert "long" not in lowered and "tp1" not in lowered and "123.45" not in repaired["text"]
     valid, reasons = policy._event_row_is_valid(repaired, package)
     assert valid, reasons
+
+    # Short repairs must never acquire a stock paragraph merely to satisfy
+    # the length floor. The generator should retry the AI instead.
+    short = {
+        "format_id": "event_pulse",
+        "_provider": "openrouter_free",
+        "text": "$ZEN — Движение пока неубедительно.\n\nОбъём вырос, но без новой информации нельзя делать вывод о направлении.",
+    }
+    assert policy._repair_event_rows([short], package, ["event_pulse"]) == []
+    assert "Мне здесь важнее качество самой реакции" not in repaired["text"]
 
     # If nothing meaningful from the model survives, it must not be counted as AI.
     garbage = {

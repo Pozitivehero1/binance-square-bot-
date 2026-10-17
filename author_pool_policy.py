@@ -40,12 +40,6 @@ _UNSAFE_FRAGMENTS = (
     "инсайд", "киты покуп", "киты прода", "памп неизбеж", "срочно покуп",
     "срочно прода", "поставь лайк", "оставь комментар", "подпиш",
 )
-_SAFE_EVENT_FILLERS = (
-    "Мне здесь важнее качество самой реакции, чем желание немедленно превратить движение в сигнал.",
-    "Пока это наблюдение: без чистой структуры я не пытаюсь выжать сделку из одного всплеска активности.",
-    "Если интерес быстро исчезнет, сам импульс для меня ничего не доказывает; если сохранится — график останется в наблюдении.",
-)
-
 
 def _is_ai(draft) -> bool:
     return not str(getattr(draft, "source", "") or "").lower().startswith("deterministic")
@@ -167,13 +161,9 @@ def _repair_event_narrative(raw_text: str, *, ticker: str, plan_available: bool)
     if not narrative or not _text_has_meaningful_ai_residue(narrative, ticker):
         return None
 
-    # Add only neutral Python-owned connective prose when the surviving AI text
-    # is too short for the feed contract. This is explicitly labelled repaired.
-    for filler in _SAFE_EVENT_FILLERS:
-        if len(narrative) >= 235:
-            break
-        if filler.lower() not in narrative.lower():
-            narrative = f"{narrative}\n\n{filler}".strip()
+    # Do not pad short model prose with canned paragraphs. If the repaired
+    # candidate is too short, normal validation rejects it and the existing
+    # AI retry/provider chain gets a chance to write a fresh, original draft.
     if len(narrative) > 390:
         paragraphs = [p.strip() for p in narrative.split("\n\n") if p.strip()]
         out: list[str] = []
