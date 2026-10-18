@@ -149,11 +149,11 @@ def _repair_event_narrative(raw_text: str, *, ticker: str, plan_available: bool)
             continue
         if not plan_available and _TRADE_ACTION_RE.search(line):
             continue
-        # Numeric market claims from a free model are not trusted during repair.
-        # The clean path still preserves exact package numbers when the original
-        # candidate already passes validation.
+        # Do not erase factual market sentences to force an AI draft through.
+        # Invalid numeric claims require a fresh generation and strict validation.
         if _NUMBER_RE.search(line):
-            continue
+            logger.info("EVENT AI repair declined: numeric narrative needs regeneration")
+            return None
         kept.append(line)
 
     narrative = "\n\n".join(kept).strip()
