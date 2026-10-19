@@ -59,11 +59,15 @@ class NewsTests(unittest.TestCase):
              patch.object(news, "_cover", return_value="/tmp/cover.jpg"), \
              patch.object(news, "_draft", return_value=(title, body)) as draft, \
              patch.object(news, "publish", side_effect=[fake_failure, fake_success]) as publish, \
-             patch.object(news, "atomic_write_json") as save:
+             patch.object(news, "atomic_write_json") as save, \
+             patch.object(news, "write_status") as status, \
+             patch("performance_store.record_publication") as tracking:
             self.assertTrue(news.maybe_publish_news())
             self.assertEqual(draft.call_count, 2)
             self.assertEqual(publish.call_count, 2)
             self.assertEqual(save.call_count, 1)
+            self.assertEqual(status.call_count, 1)
+            self.assertEqual(tracking.call_count, 1)
 
 
 class CreatorTests(unittest.TestCase):
