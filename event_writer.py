@@ -399,6 +399,7 @@ def _request_ai_candidates(
         try:
             from square_creator_inspiration import recent_creator_topics
             topics = recent_creator_topics(limit=5)
+            logger.info("Creator inspiration passed to EVENT writer: %d topic(s)", len(topics))
             if topics:
                 payload["external_editorial_inspiration"] = [
                     {"theme": x["topic"][:240]} for x in topics
