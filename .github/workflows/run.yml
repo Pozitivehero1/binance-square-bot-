@@ -86,11 +86,11 @@ jobs:
       EVENT_OBSERVATION_PREFERRED: "1"
       NO_POST_ALERT_HOURS: "6"
       VIEW_TARGET_HARD_GATE: "0"
-      # Reach experiment: fewer competing posts while 24h mature views and
-      # genuine engagement are measured. Revert if controlled cohorts worsen.
-      ENABLE_PACING_LIMITS: "1"
-      MIN_GLOBAL_INTERVAL_MIN: "90"
-      MAX_POSTS_PER_DAY: "12"
+      # No artificial global pacing: the external cron controls cadence.
+      # Keep platform quotas, duplicate prevention and symbol cooldown safeguards.
+      ENABLE_PACING_LIMITS: "0"
+      MIN_GLOBAL_INTERVAL_MIN: "0"
+      MAX_POSTS_PER_DAY: "100"
       ENABLE_REACH_GATE: "0"
       MIN_REACH_SCORE: "72"
 
