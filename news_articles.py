@@ -129,34 +129,50 @@ def _cover(url, directory):
 
 def maybe_publish_news():
     """Return True only when an article is confirmed published; otherwise fall back to market."""
-    if os.getenv("ENABLE_NEWS_ARTICLES", "0") != "1" or not configured():
+    if os.getenv("ENABLE_NEWS_ARTICLES", "0") != "1":
+        log.info("News lane disabled")
         return False
-    import random
-    if random.random() >= float(os.getenv("NEWS_SLOT_PROBABILITY", "0.25")):
+    if not configured():
+        log.warning("News lane unavailable: DeepSeek not configured")
         return False
+    # Always inspect the news lane when enabled; cooldown and deduplication
+    # decide eligibility rather than a silent random 75% skip.
     state = _load()
     seen = state.get("seen", {})
     now = datetime.now(timezone.utc)
     last = state.get("last_news_at", "")
     try:
         if (now - datetime.fromisoformat(last)).total_seconds() < 3 * 3600:
+            log.info("News lane cooldown active (last=%s)", last)
             return False
     except (ValueError, TypeError):
         pass
-    for item in _fetch():
+    items = _fetch()
+    log.info("News lane RSS entries=%d", len(items))
+    rejected = {"seen": 0, "ticker": 0, "image": 0, "draft": 0, "cover": 0}
+    for item in items:
         key = hashlib.sha256(item["link"].encode()).hexdigest()
         tickers = _ticker(item)
-        if not tickers or key in seen or not item["image"]:
+        if key in seen:
+            rejected["seen"] += 1
+            continue
+        if not tickers:
+            rejected["ticker"] += 1
+            continue
+        if not item["image"]:
+            rejected["image"] += 1
             continue
         # Use the image supplied by the news feed as requested. The URL must
         # still be HTTPS and the response must be a bounded valid image.
         try:
             draft = _draft(item, tickers)
             if not draft:
+                rejected["draft"] += 1
                 continue
             with tempfile.TemporaryDirectory() as directory:
                 cover = _cover(item["image"], directory)
                 if not cover:
+                    rejected["cover"] += 1
                     continue
                 result = publish(draft[1], image_path=cover, article_title=draft[0])
                 if not result:
@@ -170,4 +186,5 @@ def maybe_publish_news():
             return True
         except (requests.RequestException, ValueError, KeyError, TypeError, OSError) as exc:
             log.warning("News draft failed: %s", type(exc).__name__)
+    log.info("News lane no article published; rejected=%s", rejected)
     return False
