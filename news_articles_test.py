@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 import news_articles as news
 import square_creator_inspiration as creator
+from publisher import PublishResult
 
 
 def news_item(link="https://example.org/news/one"):
@@ -49,8 +50,8 @@ class NewsTests(unittest.TestCase):
     def test_article_rejection_continues_to_next_story(self):
         title, body = sample_article()
         items = [news_item("https://example.org/one"), news_item("https://example.org/two")]
-        fake_failure = SimpleNamespace(success=False, stderr="text integrity: language:unexpected-english-density")
-        fake_success = SimpleNamespace(success=True, stderr="", post_id="123")
+        fake_failure = PublishResult(False, stderr="text integrity: language:unexpected-english-density")
+        fake_success = PublishResult(True, post_id="123")
         with patch.dict(os.environ, {"ENABLE_NEWS_ARTICLES": "1", "NEWS_MAX_DRAFT_ATTEMPTS": "2"}), \
              patch.object(news, "configured", return_value=True), \
              patch.object(news, "_load", return_value={"seen": {}, "last_news_at": ""}), \
