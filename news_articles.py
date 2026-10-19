@@ -72,31 +72,65 @@ def _ticker(item):
     found = [v for k, v in SYMBOLS.items() if re.search(r"(?<![a-z])" + re.escape(k) + r"(?![a-z])", text)]
     return list(dict.fromkeys(found))[:3]
 
+def _parse_news_completion(payload):
+    """Accept a JSON object or a fenced JSON object, never arbitrary proxy prose."""
+    try:
+        message = payload["choices"][0]["message"]
+        value = message.get("content") or ""
+        if isinstance(value, dict):
+            return value
+        if not isinstance(value, str):
+            return None
+        value = value.strip()
+        if value.startswith("```"):
+            value = re.sub(r"^\x60{3}(?:json)?\\s*|\\s*\x60{3}$", "", value, flags=re.I).strip()
+        try:
+            decoded = json.loads(value)
+        except (ValueError, TypeError):
+            # Some proxies wrap a valid JSON object in a one-line preamble.
+            offset = value.find("{")
+            if offset < 0:
+                return None
+            decoded, _ = json.JSONDecoder().raw_decode(value[offset:])
+        return decoded if isinstance(decoded, dict) else None
+    except (KeyError, IndexError, TypeError, ValueError):
+        return None
+
+
 def _draft(item, tickers):
     payload = {
         "model": os.getenv("DEEPSEEK_MODEL", "deepseek-chat"),
         "messages": [
             {"role": "system", "content": (
-                "Ты независимый русскоязычный редактор криптоновостей Binance Square. "
-                "Напиши оригинальную содержательную статью 900-1800 символов по данным новости. "
-                "Не копируй исходные формулировки. Не выдумывай цифры, цитаты, даты, "
-                "причинно-следственные связи или прогнозы. Разделяй факты и интерпретацию. "
-                "Добавь органично связанные тикеры в формате $BTC. "
-                "Не вставляй ссылки на источник в опубликованный текст. "
-                "Заверши содержательным вопросом только если он уместен. "
-                "Верни JSON с полями title и text." )},
+                "Ты независимый редактор криптоновостей. Пиши по-русски: "
+                "английские слова допустимы лишь в собственных названиях компаний и проектов. "
+                "Создай оригинальную новостную статью на 500–1000 символов по имеющимся фактам. "
+                "Если данных мало, честно сообщи об этом; не дополняй домыслами. "
+                "Не придумывай цифры, цитаты, даты, причины, прогнозы, сделки или инсайды. "
+                "Отделяй факт от вывода и не копируй английский заголовок дословно. "
+                "Содержательно используй указанный cashtag вида $BTC. "
+                "Ответ строго один JSON-объект с полями title и text, без Markdown."
+            )},
             {"role": "user", "content": json.dumps({"headline": item["title"],
                 "description": item["summary"], "tickers": tickers}, ensure_ascii=False)},
         ],
-        "response_format": {"type": "json_object"}, "temperature": 0.75,
-        "max_tokens": 1100, "stream": False,
+        "response_format": {"type": "json_object"}, "temperature": 0.5,
+        "max_tokens": 1000, "stream": False,
     }
-    r = requests.post(endpoint(), json=payload, timeout=25, allow_redirects=False,
-                      headers={"Authorization": "Bearer " + os.environ["DEEPSEEK_API_KEY"]})
-    r.raise_for_status()
-    result = json.loads(r.json()["choices"][0]["message"]["content"])
+    response = requests.post(
+        endpoint(), json=payload, timeout=(5, 18), allow_redirects=False,
+        headers={"Authorization": "Bearer " + os.environ["DEEPSEEK_API_KEY"]},
+    )
+    response.raise_for_status()
+    try:
+        result = _parse_news_completion(response.json())
+    except (ValueError, TypeError):
+        result = None
+    if not result:
+        log.warning("News proxy returned invalid or missing JSON content (HTTP %s)", response.status_code)
+        return None
     title, body = str(result.get("title", "")).strip(), str(result.get("text", "")).strip()
-    if not 15 <= len(title) <= 130 or not 650 <= len(body) <= 2800:
+    if not 15 <= len(title) <= 130 or not 450 <= len(body) <= 2000:
         return None
     if not any("$" + ticker in body.upper() for ticker in tickers):
         return None
@@ -150,6 +184,8 @@ def maybe_publish_news():
     items = _fetch()
     log.info("News lane RSS entries=%d", len(items))
     rejected = {"seen": 0, "ticker": 0, "image": 0, "draft": 0, "cover": 0}
+    attempts = 0
+    max_attempts = max(1, min(5, int(os.getenv("NEWS_MAX_DRAFT_ATTEMPTS", "3"))))
     for item in items:
         key = hashlib.sha256(item["link"].encode()).hexdigest()
         tickers = _ticker(item)
@@ -162,29 +198,42 @@ def maybe_publish_news():
         if not item["image"]:
             rejected["image"] += 1
             continue
-        # Use the image supplied by the news feed as requested. The URL must
-        # still be HTTPS and the response must be a bounded valid image.
+        if attempts >= max_attempts:
+            log.info("News lane AI budget reached: %s/%s", attempts, max_attempts)
+            break
+        # Check the feed's cover before spending a model request.
         try:
-            draft = _draft(item, tickers)
-            if not draft:
-                rejected["draft"] += 1
-                continue
             with tempfile.TemporaryDirectory() as directory:
                 cover = _cover(item["image"], directory)
                 if not cover:
                     rejected["cover"] += 1
                     continue
+                attempts += 1
+                draft = _draft(item, tickers)
+                if not draft:
+                    rejected["draft"] += 1
+                    continue
                 result = publish(draft[1], image_path=cover, article_title=draft[0])
                 if not result:
                     log.warning("News article not confirmed: %s", result.stderr[:200])
-                    return False
+                    # Ambiguous remote sends must never be retried.
+                    if "unresolved send" in result.stderr or "timeout" in result.stderr:
+                        return False
+                    rejected["draft"] += 1
+                    continue
             seen[key] = now.isoformat()
             state["seen"] = dict(list(seen.items())[-500:])
             state["last_news_at"] = now.isoformat()
             atomic_write_json(resolve_state_file("NEWS_STATE_FILE", "news_articles.json"), state)
             log.info("News article published id=%s ticker=%s", result.post_id, tickers)
             return True
+        except requests.Timeout:
+            log.warning("News draft timed out; stop news attempts this run")
+            break
         except (requests.RequestException, ValueError, KeyError, TypeError, OSError) as exc:
             log.warning("News draft failed: %s", type(exc).__name__)
-    log.info("News lane no article published; rejected=%s", rejected)
+            # A broken proxy should not consume the full cron window.
+            if isinstance(exc, (requests.HTTPError, ValueError)):
+                break
+    log.info("News lane no article published; AI attempts=%s rejected=%s", attempts, rejected)
     return False
