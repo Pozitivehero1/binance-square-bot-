@@ -115,8 +115,9 @@ def main() -> int:
     question_every = _number("QUESTION_EVERY", "9", int, 4, 50, errors)
     post_min = _number("POST_MIN_CHARS", "220", int, 120, 700, errors)
     post_max = _number("POST_MAX_CHARS", "430", int, 300, 1500, errors)
-    min_interval = _number("MIN_GLOBAL_INTERVAL_MIN", "20", int, 20, 1440, errors)
-    max_daily = _number("MAX_POSTS_PER_DAY", "72", int, 1, 72, errors)
+    # Zero interval is valid when pacing is disabled. Platform limit is 100/day.
+    min_interval = _number("MIN_GLOBAL_INTERVAL_MIN", "20", int, 0 if not enable_pacing else 20, 1440, errors)
+    max_daily = _number("MAX_POSTS_PER_DAY", "72", int, 1, 100, errors)
     min_reach = _number("MIN_REACH_SCORE", "69", float, 0, 100, errors)
     cooldown = _number("COOLDOWN_MIN", "240", int, 20, 10080, errors)
     adaptive_max = _number("ADAPTIVE_MAX_TOTAL", "14", float, 0, 25, errors)
