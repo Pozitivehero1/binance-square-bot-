@@ -23,7 +23,7 @@ class _ProfileParser(HTMLParser):
         if self.active is not None:
             if tag == "a":
                 self.depth += 1
-        elif tag == "a" and re.search(r"/square/post/\\d+", attrs.get("href", "")):
+        elif tag == "a" and re.search(r"/square/post/\d+", attrs.get("href", "")):
             self.active = {"url": urljoin(BASE, attrs["href"]), "text": ""}
             self.depth = 1
     def handle_data(self, data):
@@ -53,7 +53,7 @@ def recent_creator_topics(limit=8):
             for item in parser.links:
                 if urlparse(item["url"]).hostname != "www.binance.com":
                     continue
-                title = re.sub(r"\\s+", " ", item["text"]).strip()[:450]
+                title = re.sub(r"\s+", " ", item["text"]).strip()[:450]
                 if title and not any(x["url"] == item["url"] for x in result):
                     result.append({"creator": handle, "url": item["url"], "topic": title})
                     if len(result) >= limit:
