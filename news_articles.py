@@ -13,7 +13,7 @@ from email.utils import parsedate_to_datetime
 from pathlib import Path
 from urllib.parse import urlparse
 import requests
-from runtime import resolve_state_file, atomic_write_json
+from runtime import resolve_state_file, atomic_write_json, write_status
 from publisher import publish
 from deepseek_primary import configured, request_candidates
 
@@ -192,6 +192,21 @@ def maybe_publish_news():
             state["seen"] = dict(list(seen.items())[-500:])
             state["last_news_at"] = now.isoformat()
             atomic_write_json(resolve_state_file("NEWS_STATE_FILE", "news_articles.json"), state)
+            # Successful news publication must be visible to run telemetry and
+            # the same 2h/6h/24h performance tracking as ordinary posts.
+            write_status("published", "Binance Square news article with RSS cover published",
+                         lane="news", post_id=result.post_id, symbol=tickers[0])
+            try:
+                from performance_store import record_publication
+                record_publication(
+                    post_id=result.post_id, symbol=tickers[0],
+                    market_symbol=tickers[0] + "USDT", text=draft[1],
+                    lane="NEWS", direction="observation",
+                    content_format="news_article", visual_style="rss_cover",
+                    event_class="news", writer_source="deepseek_local",
+                )
+            except Exception:
+                log.exception("News published but performance tracking failed")
             log.info("News article published id=%s ticker=%s", result.post_id, tickers)
             return True
         except requests.Timeout:
