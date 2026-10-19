@@ -229,8 +229,6 @@ jobs:
       # News uses the SAME external-cron-triggered workflow; market is fallback.
       ENABLE_NEWS_ARTICLES: "1"
       NEWS_SLOT_PROBABILITY: "0.25"
-      # Only hosts with verified image reuse rights. Configure in repository vars.
-      NEWS_COVER_ALLOWED_HOSTS: ${{ vars.NEWS_COVER_ALLOWED_HOSTS || '' }}
       PUBLISH_MEDIA_MODE: "chart"
 
     steps:
