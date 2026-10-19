@@ -104,7 +104,7 @@ def publish(text: str, image_path: ImageInput = None, *, article_title: str = ""
     if article_title and "language:unexpected-english-density" in reasons:
         cyrillic = len(re.findall(r"[А-Яа-яЁё]", prepared))
         latin = len(re.findall(r"[A-Za-z]", prepared))
-        english_paragraph = bool(re.search(r"(?:\\b[A-Za-z]{3,}\\b[\\s,:;–—-]+){4,}", prepared))
+        english_paragraph = bool(re.search(r"(?:\b[A-Za-z]{3,}\b[\s,:;–—-]+){4,}", prepared))
         if cyrillic >= 150 and cyrillic >= 4 * latin and not english_paragraph:
             reasons = tuple(r for r in reasons if r != "language:unexpected-english-density")
             logger.info("Accepted Russian news article with foreign proper names")
