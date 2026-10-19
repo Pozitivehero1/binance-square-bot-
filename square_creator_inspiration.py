@@ -13,28 +13,20 @@ BASE = "https://www.binance.com"
 _CACHE = {"at": 0.0, "topics": []}
 
 class _ProfileParser(HTMLParser):
-    """Extract post text from either linked excerpts or enclosing article elements."""
+    """Extract creator posts from linked excerpts or enclosing article blocks."""
     def __init__(self):
         super().__init__()
         self.links = []
         self.active = None
         self.article = None
-        self.anchor_depth = 0
-        self.article_depth = 0
 
     def handle_starttag(self, tag, attrs):
         attrs = dict(attrs)
-        if self.article is not None:
-            self.article_depth += 1
-        elif tag == "article":
+        if tag == "article" and self.article is None:
             self.article = {"url": "", "text": ""}
-            self.article_depth = 1
-        if self.active is not None:
-            self.anchor_depth += 1
-        elif tag == "a" and re.search(r"/square/post/\\d+", attrs.get("href", "")):
+        if tag == "a" and self.active is None and re.search(r"/square/post/\d+", attrs.get("href", "")):
             url = urljoin(BASE, attrs["href"])
             self.active = {"url": url, "text": ""}
-            self.anchor_depth = 1
             if self.article is not None and not self.article["url"]:
                 self.article["url"] = url
 
@@ -45,18 +37,14 @@ class _ProfileParser(HTMLParser):
             self.article["text"] += data + " "
 
     def handle_endtag(self, tag):
-        if self.active is not None:
-            self.anchor_depth -= 1
-            if self.anchor_depth <= 0:
-                if len(self.active["text"].strip()) >= 55:
-                    self.links.append(self.active)
-                self.active = None
-        if self.article is not None:
-            self.article_depth -= 1
-            if self.article_depth <= 0:
-                if self.article["url"] and len(self.article["text"].strip()) >= 70:
-                    self.links.append(self.article)
-                self.article = None
+        if tag == "a" and self.active is not None:
+            if len(self.active["text"].strip()) >= 55:
+                self.links.append(self.active)
+            self.active = None
+        if tag == "article" and self.article is not None:
+            if self.article["url"] and len(self.article["text"].strip()) >= 70:
+                self.links.append(self.article)
+            self.article = None
 
 def recent_creator_topics(limit=8):
     """Best effort; returns empty when Binance blocks requests or renders via JS."""
@@ -79,7 +67,11 @@ def recent_creator_topics(limit=8):
                 title = re.sub(r"\s+", " ", item["text"]).strip()[:450]
                 if not title or re.search(r"(?i)premium group|free trial|scan qr|subscribe now", title):
                     continue
-                if not any(x["url"] == item["url"] for x in result):
+                existing = next((x for x in result if x["url"] == item["url"]), None)
+                if existing:
+                    if len(title) > len(existing["topic"]):
+                        existing["topic"] = title
+                else:
                     result.append({"creator": handle, "url": item["url"], "topic": title})
                     if len(result) >= limit:
                         _CACHE.update(at=time.monotonic(), topics=result)
