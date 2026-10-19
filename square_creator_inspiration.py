@@ -5,10 +5,12 @@ from urllib.parse import urljoin, urlparse
 import logging
 import re
 import requests
+import time
 
 LOG = logging.getLogger(__name__)
 CREATORS = ("cryptonexus_btc",)
 BASE = "https://www.binance.com"
+_CACHE = {"at": 0.0, "topics": []}
 
 class _ProfileParser(HTMLParser):
     def __init__(self):
@@ -37,6 +39,8 @@ class _ProfileParser(HTMLParser):
 
 def recent_creator_topics(limit=8):
     """Best effort; returns empty when Binance blocks requests or renders via JS."""
+    if time.monotonic() - _CACHE["at"] < 3600:
+        return _CACHE["topics"][:limit]
     result = []
     for handle in CREATORS:
         try:
@@ -53,7 +57,9 @@ def recent_creator_topics(limit=8):
                 if title and not any(x["url"] == item["url"] for x in result):
                     result.append({"creator": handle, "url": item["url"], "topic": title})
                     if len(result) >= limit:
-                        return result
+                        _CACHE.update(at=time.monotonic(), topics=result)
+                        _CACHE.update(at=time.monotonic(), topics=result)
+    return result
         except (requests.RequestException, ValueError) as exc:
             LOG.info("Creator feed unavailable for %s: %s", handle, type(exc).__name__)
     return result
