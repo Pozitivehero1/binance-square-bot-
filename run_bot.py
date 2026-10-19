@@ -55,4 +55,16 @@ from main import main
 
 if __name__ == "__main__":
     from operations import run_entrypoint
-    raise SystemExit(run_entrypoint(main))
+    def run_news_or_market():
+        # Same cron invocation, same process. A failed/unavailable news slot
+        # never prevents the existing market pipeline from running.
+        try:
+            from news_articles import maybe_publish_news
+            if maybe_publish_news():
+                return 0
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception("News lane failed; continuing market scan")
+        return main()
+
+    raise SystemExit(run_entrypoint(run_news_or_market))
