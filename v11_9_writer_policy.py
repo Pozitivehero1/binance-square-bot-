@@ -34,10 +34,10 @@ def _strict_repair_event_narrative(raw_text: str, *, ticker: str, plan_available
             continue
         if not plan_available and policy._TRADE_ACTION_RE.search(line):
             continue
-        # During repair, numeric market claims are discarded because Python owns
-        # the factual package. Clean candidates still keep package-owned numbers.
+        # Never strip factual numeric sentences into generic AI filler.
+        # Reject the repair and let the normal AI regeneration chain retry.
         if policy._NUMBER_RE.search(line):
-            continue
+            return None
         kept.append(line)
 
     narrative = "\n\n".join(kept).strip()
