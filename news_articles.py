@@ -15,7 +15,7 @@ from urllib.parse import urlparse
 import requests
 from runtime import resolve_state_file, atomic_write_json
 from publisher import publish
-from deepseek_primary import configured, endpoint
+from deepseek_primary import configured, request_candidates
 
 log = logging.getLogger(__name__)
 FEEDS = (
@@ -72,71 +72,38 @@ def _ticker(item):
     found = [v for k, v in SYMBOLS.items() if re.search(r"(?<![a-z])" + re.escape(k) + r"(?![a-z])", text)]
     return list(dict.fromkeys(found))[:3]
 
-def _parse_news_completion(payload):
-    """Accept a JSON object or a fenced JSON object, never arbitrary proxy prose."""
-    try:
-        message = payload["choices"][0]["message"]
-        value = message.get("content") or ""
-        if isinstance(value, dict):
-            return value
-        if not isinstance(value, str):
-            return None
-        value = value.strip()
-        if value.startswith("```"):
-            value = re.sub(r"^\x60{3}(?:json)?\s*|\s*\x60{3}$", "", value, flags=re.I).strip()
-        try:
-            decoded = json.loads(value)
-        except (ValueError, TypeError):
-            # Some proxies wrap a valid JSON object in a one-line preamble.
-            offset = value.find("{")
-            if offset < 0:
-                return None
-            decoded, _ = json.JSONDecoder().raw_decode(value[offset:])
-        return decoded if isinstance(decoded, dict) else None
-    except (KeyError, IndexError, TypeError, ValueError):
-        return None
-
-
 def _draft(item, tickers):
-    payload = {
-        "model": os.getenv("DEEPSEEK_MODEL", "deepseek-chat"),
-        "messages": [
-            {"role": "system", "content": (
-                "Ты независимый редактор криптоновостей. Пиши по-русски: "
-                "английские слова допустимы лишь в собственных названиях компаний и проектов. "
-                "Создай оригинальную новостную статью на 500–1000 символов по имеющимся фактам. "
-                "Если данных мало, честно сообщи об этом; не дополняй домыслами. "
-                "Не придумывай цифры, цитаты, даты, причины, прогнозы, сделки или инсайды. "
-                "Отделяй факт от вывода и не копируй английский заголовок дословно. "
-                "Содержательно используй указанный cashtag вида $BTC. "
-                "Ответ строго один JSON-объект с полями title и text, без Markdown."
-            )},
-            {"role": "user", "content": json.dumps({"headline": item["title"],
-                "description": item["summary"], "tickers": tickers}, ensure_ascii=False)},
-        ],
-        "response_format": {"type": "json_object"}, "temperature": 0.5,
-        "max_tokens": 1000, "stream": False,
-    }
-    response = requests.post(
-        endpoint(), json=payload, timeout=(5, 18), allow_redirects=False,
-        headers={"Authorization": "Bearer " + os.environ["DEEPSEEK_API_KEY"]},
+    """Use the proven DeepSeek candidate protocol, not a separate fragile JSON shape."""
+    result = request_candidates(
+        system_prompt=(
+            "Ты независимый русскоязычный редактор криптоновостей. "
+            "Используй исключительно факты из headline и description. "
+            "Не придумывай факты, числа, причины, цитаты, сделки или прогнозы. "
+            "При нехватке сведений не заполняй текст общими фразами. "
+            "Напиши оригинальную содержательную новость длиной 450–1000 символов. "
+            "Основной текст только на русском, английский допустим в названиях. "
+            "Укажи подходящий cashtag вида $BTC из входных данных. "
+            "Верни ровно один JSON-объект с массивом candidates, "
+            "в котором один элемент с полями title (русский заголовок) и text "
+            "(текст новости). Никакого Markdown и текста вне JSON."
+        ),
+        user_payload={"headline": item["title"], "description": item["summary"],
+                      "tickers": tickers,
+                      "output_schema": {"candidates": [{"title": "Заголовок", "text": "Статья"}]}},
+        temperature=0.5, max_tokens=1200, timeout=25,
     )
-    response.raise_for_status()
-    try:
-        result = _parse_news_completion(response.json())
-    except (ValueError, TypeError):
-        result = None
-    if not result:
-        log.warning("News proxy returned invalid or missing JSON content (HTTP %s)", response.status_code)
-        return None
-    title, body = str(result.get("title", "")).strip(), str(result.get("text", "")).strip()
-    if not 15 <= len(title) <= 130 or not 450 <= len(body) <= 2000:
-        return None
-    if not any("$" + ticker in body.upper() for ticker in tickers):
-        return None
-    if re.search(r"https?://|(?:гарантированн|точно вырастет|без риска)", body, re.I):
-        return None
-    return title, body
+    for row in result.candidates:
+        title, body = str(row.get("title", "")).strip(), str(row.get("text", "")).strip()
+        if not 15 <= len(title) <= 130 or not 450 <= len(body) <= 2000:
+            continue
+        if not any("$" + ticker in body.upper() for ticker in tickers):
+            continue
+        if re.search(r"https?://|(?:гарантированн|точно вырастет|без риска)", body, re.I):
+            continue
+        log.info("News AI draft valid provider=%s chars=%d", result.provider, len(body))
+        return title, body
+    log.info("News AI returned candidates without eligible title/body")
+    return None
 
 def _cover(url, directory):
     if not url or urlparse(url).scheme != "https":
@@ -230,10 +197,10 @@ def maybe_publish_news():
         except requests.Timeout:
             log.warning("News draft timed out; stop news attempts this run")
             break
-        except (requests.RequestException, ValueError, KeyError, TypeError, OSError) as exc:
+        except (requests.RequestException, ValueError, KeyError, TypeError, OSError, RuntimeError) as exc:
             log.warning("News draft failed: %s", type(exc).__name__)
             # A broken proxy should not consume the full cron window.
-            if isinstance(exc, (requests.HTTPError, ValueError)):
+            if isinstance(exc, (requests.HTTPError, ValueError, RuntimeError)):
                 break
     log.info("News lane no article published; AI attempts=%s rejected=%s", attempts, rejected)
     return False
