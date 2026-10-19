@@ -19,7 +19,8 @@ class _ProfileParser(HTMLParser):
     def handle_starttag(self, tag, attrs):
         attrs = dict(attrs)
         if self.active is not None:
-            self.depth += 1
+            if tag == "a":
+                self.depth += 1
         elif tag == "a" and re.search(r"/square/post/\\d+", attrs.get("href", "")):
             self.active = {"url": urljoin(BASE, attrs["href"]), "text": ""}
             self.depth = 1
@@ -27,7 +28,7 @@ class _ProfileParser(HTMLParser):
         if self.active is not None:
             self.active["text"] += data
     def handle_endtag(self, tag):
-        if self.active is not None:
+        if self.active is not None and tag == "a":
             self.depth -= 1
             if self.depth <= 0:
                 if len(self.active["text"].strip()) >= 45:
