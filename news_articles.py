@@ -148,12 +148,8 @@ def maybe_publish_news():
         tickers = _ticker(item)
         if not tickers or key in seen or not item["image"]:
             continue
-        # An article image is reused only when the operator has explicitly
-        # authorized the originating host; feed visibility is not a reuse license.
-        host = urlparse(item["image"]).hostname or ""
-        permitted = [x.strip().lower() for x in os.getenv("NEWS_COVER_ALLOWED_HOSTS", "").split(",") if x.strip()]
-        if not any(host == x or host.endswith("." + x) for x in permitted):
-            continue
+        # Use the image supplied by the news feed as requested. The URL must
+        # still be HTTPS and the response must be a bounded valid image.
         try:
             draft = _draft(item, tickers)
             if not draft:
