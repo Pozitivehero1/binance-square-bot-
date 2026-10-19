@@ -26,7 +26,7 @@ class NewsTests(unittest.TestCase):
         title, body = sample_article()
         response = SimpleNamespace(candidates=[{"title": title, "text": body}], provider="deepseek_local")
         with patch.object(news, "request_candidates", return_value=response) as req:
-            self.assertEqual(news._draft(news_item(), ["BTC"]), (title, body))
+            self.assertEqual(news._draft(news_item(), ["BTC"]), (title, body.strip()))
             self.assertEqual(req.call_count, 1)
 
     def test_draft_rejects_missing_cashtag(self):
