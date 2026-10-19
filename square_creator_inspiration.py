@@ -58,8 +58,8 @@ def recent_creator_topics(limit=8):
                     result.append({"creator": handle, "url": item["url"], "topic": title})
                     if len(result) >= limit:
                         _CACHE.update(at=time.monotonic(), topics=result)
-                        _CACHE.update(at=time.monotonic(), topics=result)
-    return result
+                        return result
         except (requests.RequestException, ValueError) as exc:
             LOG.info("Creator feed unavailable for %s: %s", handle, type(exc).__name__)
+    _CACHE.update(at=time.monotonic(), topics=result)
     return result
