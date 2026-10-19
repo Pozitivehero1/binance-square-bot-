@@ -393,6 +393,25 @@ def _request_ai_candidates(
             "и ограничения trade_mode."
         )
 
+    # Inspiration only: public creator themes may influence the angle, never
+    # serve as factual evidence or as text to reproduce.
+    if os.getenv("ENABLE_CREATOR_INSPIRATION", "1") == "1":
+        try:
+            from square_creator_inspiration import recent_creator_topics
+            topics = recent_creator_topics(limit=5)
+            if topics:
+                payload["external_editorial_inspiration"] = [
+                    {"theme": x["topic"][:240]} for x in topics
+                ]
+                payload["external_inspiration_rules"] = (
+                    "Используй только общую идею или угол подачи, если он подходит "
+                    "к проверенным данным semantic_package. Не копируй текст, "
+                    "не переноси числа, прогнозы или утверждения из чужих постов. "
+                    "Если темы не связаны с текущими данными, игнорируй их."
+                )
+        except Exception:
+            logger.exception("Optional creator inspiration unavailable")
+
     result = request_candidates(
         system_prompt=(
             "Ты сильный русскоязычный редактор крипторынка и автор Binance Square. "
