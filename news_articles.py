@@ -83,7 +83,7 @@ def _parse_news_completion(payload):
             return None
         value = value.strip()
         if value.startswith("```"):
-            value = re.sub(r"^\x60{3}(?:json)?\\s*|\\s*\x60{3}$", "", value, flags=re.I).strip()
+            value = re.sub(r"^\x60{3}(?:json)?\s*|\\s*\x60{3}$", "", value, flags=re.I).strip()
         try:
             decoded = json.loads(value)
         except (ValueError, TypeError):
