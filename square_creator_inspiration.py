@@ -50,6 +50,8 @@ def recent_creator_topics(limit=8):
             r.raise_for_status()
             parser = _ProfileParser()
             parser.feed(r.text[:2_000_000])
+            LOG.info("Creator %s: HTTP=%d page_bytes=%d candidate_post_links=%d",
+                     handle, r.status_code, len(r.content), len(parser.links))
             for item in parser.links:
                 if urlparse(item["url"]).hostname != "www.binance.com":
                     continue
@@ -60,6 +62,7 @@ def recent_creator_topics(limit=8):
                         _CACHE.update(at=time.monotonic(), topics=result)
                         return result
         except (requests.RequestException, ValueError) as exc:
-            LOG.info("Creator feed unavailable for %s: %s", handle, type(exc).__name__)
+            LOG.warning("Creator feed unavailable for %s: %s", handle, type(exc).__name__)
     _CACHE.update(at=time.monotonic(), topics=result)
+    LOG.info("Creator inspiration topics_available=%d", len(result))
     return result
