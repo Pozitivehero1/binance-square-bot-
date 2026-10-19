@@ -92,7 +92,7 @@ def _prepare_text_for_square(text: str) -> tuple[str, tuple[str, ...]]:
     return normalized, reasons
 
 
-def publish(text: str, image_path: ImageInput = None) -> PublishResult:
+def publish(text: str, image_path: ImageInput = None, *, article_title: str = "") -> PublishResult:
     if not text or not text.strip():
         logger.error("Refusing to publish an empty post")
         return PublishResult(False, stderr="empty post")
@@ -124,7 +124,15 @@ def publish(text: str, image_path: ImageInput = None) -> PublishResult:
     environment["BINANCE_SQUARE_OPENAPI_KEY"] = api_key
     images = _existing_images(image_path)
 
-    if images:
+    if article_title:
+        if not images or len(images) != 1:
+            return PublishResult(False, stderr="article requires exactly one cover")
+        if not 5 <= len(article_title.strip()) <= 150:
+            return PublishResult(False, stderr="invalid article title")
+        script = Path(skill_dir) / "scripts" / "post-image.mjs"
+        command = ["node", str(script), "--text", text, "--title", article_title.strip(), "--cover", images[0]]
+        logger.info("Publishing Square article with cover (%s chars)", len(text))
+    elif images:
         script = Path(skill_dir) / "scripts" / "post-image.mjs"
         command = ["node", str(script), "--text", text, "--images", ",".join(images)]
         logger.info("Publishing image post (%s chars, %s image(s))", len(text), len(images))
