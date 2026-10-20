@@ -41,6 +41,11 @@ class Facts(unittest.TestCase):
         for text in ('Цена выше на 1%.','Цена выше, чем 5 минут назад.'):
             self.assertFalse(fact_consistency_reasons(text,package),text)
 
+    def test_spelled_out_magnitudes_cannot_evade_fact_lock(self):
+        package={'market_event':{'change_15m':'-1.6%'}}
+        for text in ('Цена упала на полтора процента.','Падение на пять процентов.','Последние пятнадцать минут дали лишь полтора.'):
+            self.assertIn('written-market-number-use-source-digits',fact_consistency_reasons(text,package))
+
     def test_hourly_average_is_not_available(self):
         self.assertIn("unprovided-hour-average",fact_consistency_reasons("Цена выше средней за час.",{"market_event":{"vwap":"0.5"}}))
 

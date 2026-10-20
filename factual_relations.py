@@ -18,6 +18,11 @@ def _float(value):
 def relation_reasons(text: str, market: dict) -> tuple[str, ...]:
     value = str(text).lower().replace("ё", "е")
     reasons = []
+    # Model prose must retain the supplied numeric literals. Spelling a value
+    # out (especially "полтора" for 1.6) must not evade the numeric whitelist.
+    written = r"(?:нул\w*|один|одного|одна|дв[аеу]|двух|три|трех|четыр\w*|пят[ьи]|шест[ьи]|сем[ьи]|восем[ьи]|девят[ьи]|десят\w*|полтор\w*|половин\w*)"
+    if re.search(rf"\b{written}\s+(?:процент\w*|раз(?:а|\b))", value) or re.search(r"\bполтор\w*\b",value):
+        reasons.append("written-market-number-use-source-digits")
     price = _float(market.get("current_price"))
     # A snapshot cannot establish a historical crossing. Conditional/future
     # clauses are excluded so an honest scenario does not become a false fact.
