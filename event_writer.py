@@ -393,22 +393,35 @@ def _request_ai_candidates(
             "и ограничения trade_mode."
         )
 
-    # Inspiration only: public creator themes may influence the angle, never
-    # serve as factual evidence or as text to reproduce.
+    # Read-only creator posts provide editorial angles/styles, not market facts.
+    # Only same-ticker angles can influence a factual EVENT; generic structural
+    # hints can improve other posts without importing someone else's claim.
     if os.getenv("ENABLE_CREATOR_INSPIRATION", "1") == "1":
         try:
             from square_creator_inspiration import recent_creator_topics
-            topics = recent_creator_topics(limit=5)
-            logger.info("Creator inspiration passed to EVENT writer: %d topic(s)", len(topics))
-            if topics:
+            topics = recent_creator_topics(limit=10)
+            current_ticker = str(package.get("market_event", {}).get("ticker") or "").lstrip("$").upper()
+            relevant = [row for row in topics if current_ticker in row.get("tickers", [])][:2]
+            styles = list(dict.fromkeys(
+                str(row["style"]) for row in topics if row.get("style")
+            ))[:3]
+            logger.info(
+                "Creator inspiration: fetched=%d relevant_to_%s=%d style_hints=%d",
+                len(topics), current_ticker or "unknown", len(relevant), len(styles),
+            )
+            if relevant:
                 payload["external_editorial_inspiration"] = [
-                    {"theme": x["topic"][:240]} for x in topics
+                    {"theme": row["topic"][:250]} for row in relevant
                 ]
+            if styles:
+                payload["external_editorial_style_examples"] = styles
+            if relevant or styles:
                 payload["external_inspiration_rules"] = (
-                    "Используй только общую идею или угол подачи, если он подходит "
-                    "к проверенным данным semantic_package. Не копируй текст, "
-                    "не переноси числа, прогнозы или утверждения из чужих постов. "
-                    "Если темы не связаны с текущими данными, игнорируй их."
+                    "Это НЕ источники рыночных фактов и НЕ торговые рекомендации. "
+                    "Учитывай только общую тему для текущего тикера или композиционный "
+                    "приём автора. Не копируй текст, числа, сигналы, уровни, "
+                    "прогнозы или непроверенные события. "
+                    "Любые утверждения подкрепляй ТОЛЬКО semantic_package."
                 )
         except Exception:
             logger.exception("Optional creator inspiration unavailable")
