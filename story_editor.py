@@ -3,6 +3,22 @@ from __future__ import annotations
 
 import math
 import re
+from copy import deepcopy
+
+
+def author_fact_package(package: dict) -> dict:
+    """Expose observed market facts, not ranking/phase labels, to prose authors."""
+    allowed = {'ticker','current_price','key_level','support','resistance','vwap',
+               'vwap_definition','volume_definition','change_5m','change_15m','change_45m',
+               'relative_volume_5m','relative_volume_15m','turnover_1h','price_vs_vwap',
+               'btc_context','higher_timeframes'}
+    clean = deepcopy(package)
+    for key in ('market', 'market_event'):
+        if isinstance(clean.get(key),dict):
+            clean[key]={name:value for name,value in clean[key].items() if name in allowed}
+    clean.pop('editorial_arm',None)
+    clean.pop('editorial_experiment_version',None)
+    return clean
 
 
 def _n(value, default=0.0):
@@ -92,6 +108,7 @@ def copy_adjustment(text: str, recent_texts=()) -> tuple[float, str]:
         r"не просто (?:цифр|отметк)|решается больше, чем кажется",
         r"смотреть.{0,15}пока не на что|рынок решает",
         r"важнее сам\w* движен|есть повод открыть тикер",
+        r"свежий сигнал отсутствует|чистого сигнала нет",
     ))
     # Reward explanation rather than ticker/keyword presence. These are
     # editorial diagnostics, explicitly not probabilities of reach/conversion.

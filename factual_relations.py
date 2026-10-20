@@ -23,6 +23,8 @@ def relation_reasons(text: str, market: dict) -> tuple[str, ...]:
     written = r"(?:нул\w*|один|одного|одна|дв[аеу]|двух|три|трех|четыр\w*|пят[ьи]|шест[ьи]|сем[ьи]|восем[ьи]|девят[ьи]|десят\w*|полтор\w*|половин\w*)"
     if re.search(rf"\b{written}\s+(?:процент\w*|раз(?:а|\b))", value) or re.search(r"\bполтор\w*\b",value):
         reasons.append("written-market-number-use-source-digits")
+    if re.search(r"данн\w*.{0,35}(?:помечен|устарел|устарев)|(?:алгоритм|модель).{0,20}(?:счита|помет|оцен)",value):
+        reasons.append("internal-diagnostic-is-not-market-fact")
     price = _float(market.get("current_price"))
     # A snapshot cannot establish a historical crossing. Conditional/future
     # clauses are excluded so an honest scenario does not become a false fact.

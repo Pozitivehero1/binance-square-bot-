@@ -46,6 +46,9 @@ class Facts(unittest.TestCase):
         for text in ('Цена упала на полтора процента.','Падение на пять процентов.','Последние пятнадцать минут дали лишь полтора.'):
             self.assertIn('written-market-number-use-source-digits',fact_consistency_reasons(text,package))
 
+    def test_old_event_is_not_outdated_market_data(self):
+        self.assertIn('internal-diagnostic-is-not-market-fact',fact_consistency_reasons('Данные помечены как устаревшие.',{'market_event':{'event_phase':'stale'}}))
+
     def test_hourly_average_is_not_available(self):
         self.assertIn("unprovided-hour-average",fact_consistency_reasons("Цена выше средней за час.",{"market_event":{"vwap":"0.5"}}))
 
@@ -113,6 +116,16 @@ class Editorial(unittest.TestCase):
         brief=story_brief(market)
         self.assertEqual(brief['kind'],'counter_move')
         self.assertEqual(brief['evidence']['change_5m'],'-0.8%')
+
+    def test_author_does_not_receive_internal_labels(self):
+        from story_editor import author_fact_package
+        original={'market_event':{'ticker':'$ALT','current_price':'0.01','event_phase':'stale',
+                                 'audience_demand':'40/100','micro_freshness':'57/100','rsi_15m':'49.9'},
+                  'optional_trade_plan':{'available':False},'editorial_arm':'risk_map'}
+        clean=author_fact_package(original)
+        self.assertEqual(clean['market_event'],{'ticker':'$ALT','current_price':'0.01'})
+        self.assertEqual(original['market_event']['event_phase'],'stale')
+        self.assertFalse(clean['optional_trade_plan']['available'])
 
     def test_semantic_repetition_ignores_ticker_and_price(self):
         previous='$AAA — цена 1.2 возле уровня. Чистой сделки нет, наблюдать честнее. Полезнее следить за движением.'

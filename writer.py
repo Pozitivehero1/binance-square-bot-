@@ -362,7 +362,7 @@ def _semantic_package(
         "adx_15m": f"{ind.adx:.1f}",
         "price_vs_vwap": "выше" if ind.price >= ind.vwap else "ниже",
         "vwap": _fmt_price(ind.vwap),
-        "vwap_definition": "средневзвешенная цена по 50 закрытым 15-минутным свечам; не средняя за час",
+        "vwap_definition": "средневзвешенная цена по 50 закрытым 15-минутным свечам",
         "volume_definition": "объём монет в последней закрытой свече относительно медианы предыдущих свечей; не число сделок",
         "support": _fmt_price(ind.support),
         "resistance": _fmt_price(ind.resistance),
@@ -486,7 +486,8 @@ def _allowed_numeric_values(package: Dict[str, Any]) -> set[str]:
         elif isinstance(value, str):
             values.update(_extract_numeric_tokens(value))
 
-    walk(package)
+    from story_editor import author_fact_package
+    walk(author_fact_package(package))
     values.update(token.lstrip('x+-') for token in list(values) if token.startswith(('x','+','-')))
     return values
 
@@ -747,6 +748,8 @@ def _request_ai_candidates(
             "отсутствие торгового блока и точное совпадение format_id."
         )
 
+    from story_editor import author_fact_package
+    payload["semantic_package"] = author_fact_package(package)
     result = request_candidates(
         system_prompt=(
             "Ты сильный русскоязычный редактор крипторынка и автор Binance Square. "
