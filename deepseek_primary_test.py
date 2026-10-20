@@ -48,6 +48,9 @@ def main():
             assert post.call_args.kwargs["json"]["model"] == "deepseek-chat"
             assert post.call_args.kwargs["timeout"] == (5.0, 25.0)
             assert post.call_args.kwargs["allow_redirects"] is False
+            first_user = post.call_args.kwargs['json']['user']
+            ai_provider.request_candidates(**kwargs)
+            assert post.call_args.kwargs['json']['user'] != first_user
 
         # Every unusable primary must hand off to Groq without an immediate retry.
         for bad in [response(401), response(403), response(429), response(503),

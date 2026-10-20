@@ -58,13 +58,23 @@ class FeedAppealEvaluator:
         numbers = re.findall(r"(?<!\w)[+-]?\d+(?:[.,]\d+)?%?", narrative)
         paragraphs = [x.strip() for x in text.split("\n\n") if x.strip()]
 
-        hook = 44.0
+        # An editorial diagnostic, never a reach probability. A ticker and
+        # stock words such as "сейчас/цена/важнее" do not establish an event.
+        hook = 35.0
         if "$" in first:
+            hook += 4.0
+        if re.search(r"[+-]?\d+(?:[.,]\d+)?\s*%|[xх]\s*\d", first_lower):
             hook += 16.0
-        if any(marker in first_lower for marker in self.HOOK_MARKERS):
-            hook += 24.0
+        elif re.search(r"\d+(?:[.,]\d+)?", first_lower):
+            hook += 6.0
+        if re.search(r"вырос|снизил|упал|откат|пробил|скачок|обвал|всплеск|расхожд|изменил|риск", first_lower):
+            hook += 16.0
+        if re.search(r"\bно\b|однако|при этом|вопреки", first_lower):
+            hook += 8.0
         if 30 <= len(first) <= 118:
-            hook += 14.0
+            hook += 8.0
+        if re.search(r"важнее сам|не просто цифра|решается больше, чем кажется", first_lower):
+            hook -= 15.0
         if re.match(r"^\$[A-Z0-9]+:\s*[+-]?\d+(?:[.,]\d+)?%", first):
             hook -= 16.0
         if first_lower.startswith(("направление", "сигнал")):

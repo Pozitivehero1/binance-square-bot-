@@ -205,6 +205,8 @@ def _package_levels(package: Dict[str, Any]) -> Optional[Dict[str, float]]:
 def _event_candidate_validation_text(text: str, package: Dict[str, Any]) -> str:
     """Mirror event_writer's canonical-plan append for pre-validation."""
     import event_writer
+    from editorial_repair import normalize_headline
+    text = normalize_headline(str(text or ""))
 
     plan = package.get("optional_trade_plan") if isinstance(package.get("optional_trade_plan"), dict) else {}
     levels = _package_levels(package)

@@ -42,6 +42,8 @@ def fact_consistency_reasons(text: str, package: Dict[str, Any]) -> Tuple[str, .
     market = _market(package or {})
     from metric_binding import metric_binding_reasons
     reasons.extend(metric_binding_reasons(value, market))
+    from factual_relations import relation_reasons
+    reasons.extend(relation_reasons(value, market))
 
     # A public setup is published before the outcome engine can confirm an entry.
     # It must therefore read as a plan/condition, never as an already open or

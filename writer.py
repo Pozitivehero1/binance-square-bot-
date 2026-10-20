@@ -12,7 +12,7 @@ Invalid drafts are rejected; deterministic copy is the final outage safety net.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import hashlib
 import json
 import logging
@@ -101,6 +101,7 @@ class GeneratedPost:
     headline: str = ""
     question_mode: str = "optional"
     source: str = "deterministic"
+    fact_package: dict = field(default_factory=dict)
 
 
 def _fmt_price(value: float) -> str:
@@ -353,13 +354,18 @@ def _semantic_package(
     market: Dict[str, Any] = {
         "ticker": ticker,
         "current_price": _fmt_price(ind.price),
-        "change_15m": _fmt_pct(attention.change_15m) if attention else _fmt_pct(ind.change_1h / 4.0),
-        "change_45m": _fmt_pct(attention.change_45m) if attention else _fmt_pct(ind.change_1h * 0.75),
+        "change_15m": _fmt_pct(attention.change_15m) if attention else "нет измерения",
+        "change_45m": _fmt_pct(attention.change_45m) if attention else "нет измерения",
         "relative_volume_15m": _fmt_x(attention.volume_spike) if attention else _fmt_x(ind.volume_relative),
         "turnover_1h": format_turnover(attention.turnover_1h) if attention else "n/a",
         "rsi_15m": f"{ind.rsi:.1f}",
         "adx_15m": f"{ind.adx:.1f}",
         "price_vs_vwap": "выше" if ind.price >= ind.vwap else "ниже",
+        "vwap": _fmt_price(ind.vwap),
+        "vwap_definition": "средневзвешенная цена по 50 закрытым 15-минутным свечам; не средняя за час",
+        "volume_definition": "объём монет в последней закрытой свече относительно медианы предыдущих свечей; не число сделок",
+        "support": _fmt_price(ind.support),
+        "resistance": _fmt_price(ind.resistance),
         "higher_timeframes": _higher_tf_context(mtf, direction),
         "overextended": bool(attention.overextended) if attention else False,
     }
@@ -400,7 +406,8 @@ def _semantic_package(
         "risk_pct": f"{float(levels.get('public_risk_pct', 0.0)):.2f}%",
         "state_rule": _state_instruction(levels, direction),
     }
-    return {"market": market, "trade_plan": trade}
+    from story_editor import story_brief
+    return {"market": market, "trade_plan": trade, "editorial_brief": story_brief(market)}
 
 
 def _recent_phrase_families(text: str) -> set[str]:
@@ -480,6 +487,7 @@ def _allowed_numeric_values(package: Dict[str, Any]) -> set[str]:
             values.update(_extract_numeric_tokens(value))
 
     walk(package)
+    values.update(token.lstrip('x+-') for token in list(values) if token.startswith(('x','+','-')))
     return values
 
 
@@ -651,6 +659,13 @@ def _request_ai_candidates(
             "Формат ответа JSON обязателен, но формат поста свободный."
         ),
         "semantic_package": package,
+        "reader_value_rules": [
+            "Начни с конкретного события, затем объясни одно последствие или ограничение. Не начинай с общих слов о том, что цифра важнее цены.",
+            "Не называй VWAP средней за час: его точный период дан в определении. Объём не означает число сделок или покупателей.",
+            "Числа цен, процентов и коэффициентов пиши цифрами из источника; не заменяй их словами и не округляй.",
+            "Не заканчивай автоматически словами сделки нет, наблюдаем, честнее наблюдать. Не выдавай оценку или метафору за новый факт.",
+            "Разные варианты должны раскрывать разные факты из editorial_brief. Ничего не выдумывай ради разнообразия.",
+        ],
         "requested_formats": requested,
         "candidate_count": len(requested),
         "recent_posts_to_avoid": [str(item)[:650] for item in recent_posts[-8:]],
@@ -720,6 +735,9 @@ def _request_ai_candidates(
     if os.getenv("ENABLE_READER_EXPERIMENT", "0").strip() == "1":
         from reader_experiment import arm_for_package, writing_brief
         arm = arm_for_package(package, "TRADE")
+        from reader_experiment import EXPERIMENT_VERSION
+        package["editorial_arm"] = arm
+        package["editorial_experiment_version"] = EXPERIMENT_VERSION
         payload["experiment_brief"] = writing_brief(arm, "TRADE")
         logger.info("READER EXPERIMENT lane=TRADE arm=%s", arm)
     if attempt > 1:
@@ -887,6 +905,7 @@ def _build_generated(
         headline=headline,
         question_mode="optional",
         source=source,
+        fact_package=package,
     )
 
 

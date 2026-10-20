@@ -15,6 +15,7 @@ from urllib.parse import urlparse
 import requests
 from runtime import resolve_state_file, atomic_write_json, write_status
 from publisher import publish
+from news_evidence import source_has_event, draft_reasons
 from deepseek_primary import configured, request_candidates
 
 log = logging.getLogger(__name__)
@@ -74,32 +75,42 @@ def _ticker(item):
 
 def _draft(item, tickers):
     """Use the proven DeepSeek candidate protocol, not a separate fragile JSON shape."""
+    if not source_has_event(item):
+        log.info("News skipped: RSS item has no specific event")
+        return None
     result = request_candidates(
         system_prompt=(
             "Ты независимый русскоязычный редактор криптоновостей. "
             "Используй исключительно факты из headline и description. "
             "Не придумывай факты, числа, причины, цитаты, сделки или прогнозы. "
             "При нехватке сведений не заполняй текст общими фразами. "
-            "Напиши оригинальную содержательную новость длиной 450–1000 символов. "
+            "Напиши оригинальную содержательную новость длиной 180–1000 символов; краткий факт не растягивай до статьи. "
             "Основной текст только на русском, английский допустим в названиях. "
             "Укажи подходящий cashtag вида $BTC из входных данных. "
             "Верни ровно один JSON-объект с массивом candidates, "
             "в котором один элемент с полями title (русский заголовок) и text "
-            "(текст новости). Никакого Markdown и текста вне JSON."
+            "(текст новости), evidence_quote (дословный фрагмент исходного headline/description с конкретным событием, минимум 25 символов). Никакого Markdown и текста вне JSON."
         ),
         user_payload={"headline": item["title"], "description": item["summary"],
                       "tickers": tickers,
-                      "output_schema": {"candidates": [{"title": "Заголовок", "text": "Статья"}]}},
+                      "output_schema": {"candidates": [{"title": "Заголовок", "text": "Статья", "evidence_quote": "Exact source event"}]}},
         temperature=0.5, max_tokens=1200, timeout=25,
     )
     for row in result.candidates:
         title, body = str(row.get("title", "")).strip(), str(row.get("text", "")).strip()
-        if not 15 <= len(title) <= 130 or not 450 <= len(body) <= 2000:
+        if not 15 <= len(title) <= 130 or not 180 <= len(body) <= 1200:
             continue
         if not any("$" + ticker in body.upper() for ticker in tickers):
             continue
         if re.search(r"https?://|(?:гарантированн|точно вырастет|без риска)", body, re.I):
             continue
+        reasons = draft_reasons(body, str(row.get("evidence_quote") or ""), item)
+        if reasons:
+            log.info("News evidence rejected: %s", ", ".join(reasons))
+            continue
+        source_name = urlparse(item["link"]).hostname or "источник"
+        body += "\n\nИсточник: " + source_name
+        item["verified_evidence_quote"] = row["evidence_quote"]
         log.info("News AI draft valid provider=%s chars=%d", result.provider, len(body))
         return title, body
     log.info("News AI returned candidates without eligible title/body")
@@ -204,6 +215,8 @@ def maybe_publish_news():
                     lane="NEWS", direction="observation",
                     content_format="news_article", visual_style="rss_cover",
                     event_class="news", writer_source="deepseek_local",
+                    fact_package={"source_url": item["link"], "headline": item["title"],
+                                  "description": item["summary"], "evidence_quote": item.get("verified_evidence_quote", "")},
                 )
             except Exception:
                 log.exception("News published but performance tracking failed")

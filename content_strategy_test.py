@@ -10,7 +10,7 @@ def _store(ev, tr, n=20):
         for i in range(n):
             posts[f"{lane}{i}"] = {"lane": lane,
                 "published_at": (now - timedelta(days=3)).isoformat(),
-                "milestones": {"24h": {"views": views}}, "learning_eligible": True}
+                "milestones": {"24h": {"age_minutes": 1440, "views": views}}, "learning_eligible": True}
     return {"posts": posts}, now
 
 

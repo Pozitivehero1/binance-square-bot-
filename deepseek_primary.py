@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import time
+from uuid import uuid4
 from email.utils import parsedate_to_datetime
 from urllib.parse import urlsplit
 
@@ -60,7 +61,9 @@ def request_candidates(*, system_prompt, user_payload, temperature, max_tokens, 
             {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False)},
         ],
         "stream": False,
-        "user": "binance-square-" + os.getenv("GITHUB_RUN_ID", "local"),
+        # The web proxy remembers previous turns by user id. Every author call
+        # is a complete independent fact package, not a conversational follow-up.
+        "user": "binance-square-" + os.getenv("GITHUB_RUN_ID", "local") + "-" + uuid4().hex,
         "temperature": temperature,
         "max_tokens": max_tokens,
         "response_format": {"type": "json_object"},

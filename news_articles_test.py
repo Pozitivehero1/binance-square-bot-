@@ -12,21 +12,23 @@ from publisher import PublishResult
 
 
 def news_item(link="https://example.org/news/one"):
-    return {"title": "Bitcoin network update", "summary": "Bitcoin adoption news with independently reported background.",
+    return {"title": "Company launches Bitcoin network service", "summary": "The company launched a Bitcoin infrastructure service after testing the network.",
             "link": link, "image": "https://example.org/cover.jpg", "age": 100}
 
 
 def sample_article():
     return ("Биткоин и новые возможности инфраструктуры",
-            "$BTC: " + "Новая публикация описывает развитие инфраструктуры цифровых активов. " * 9)
+            "$BTC: Компания запустила сервис инфраструктуры после тестирования сети. "
+            "Публикация описывает запуск нового продукта и предшествовавшую проверку его работы. "
+            "Информации о финансовых показателях сервиса в исходном сообщении нет.")
 
 
 class NewsTests(unittest.TestCase):
     def test_draft_uses_verified_candidate_protocol(self):
         title, body = sample_article()
-        response = SimpleNamespace(candidates=[{"title": title, "text": body}], provider="deepseek_local")
+        response = SimpleNamespace(candidates=[{"title": title, "text": body, "evidence_quote": news_item()["summary"]}], provider="deepseek_local")
         with patch.object(news, "request_candidates", return_value=response) as req:
-            self.assertEqual(news._draft(news_item(), ["BTC"]), (title, body.strip()))
+            self.assertEqual(news._draft(news_item(), ["BTC"]), (title, body.strip()+"\n\nИсточник: example.org"))
             self.assertEqual(req.call_count, 1)
 
     def test_draft_rejects_missing_cashtag(self):

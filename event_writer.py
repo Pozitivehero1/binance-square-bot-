@@ -24,6 +24,7 @@ from quality import QualityReport
 from writer import GeneratedPost, _enforce_full_plan_block, _fmt_pct, _fmt_price, _fmt_x, phrase_family_penalty
 from adaptive import score_content_performance, score_format_performance
 from reach_editorial import editorial_reach_adjustment
+from editorial_repair import normalize_headline
 
 logger = logging.getLogger(__name__)
 
@@ -147,6 +148,9 @@ def _allowed_numeric_values(package: Dict[str, Any]) -> set[str]:
             values.update(_extract_numeric_tokens(value))
 
     walk(package)
+    # Signed changes and x-ratios may be expressed as an unsigned magnitude
+    # after "снизилась на" / "в N раза". Their meaning is checked separately.
+    values.update(token.lstrip('x+-') for token in list(values) if token.startswith(('x','+','-')))
     return values
 
 
@@ -206,6 +210,9 @@ def _semantic_package(
         "rsi_15m": f"{ind.rsi:.1f}",
         "adx_15m": f"{ind.adx:.1f}",
         "price_vs_vwap": "выше" if ind.price >= ind.vwap else "ниже",
+        "vwap": _fmt_price(ind.vwap),
+        "vwap_definition": "средневзвешенная цена по 50 закрытым 15-минутным свечам; не средняя за час",
+        "volume_definition": "объём монет в последней закрытой свече относительно медианы предыдущих свечей; не число сделок",
         "micro_freshness": f"{micro.score:.0f}/100",
         "event_phase": micro.phase,
         "audience_demand": f"{float(opportunity.audience_demand):.0f}/100",
@@ -247,7 +254,8 @@ def _semantic_package(
             "OBSERVATION_ONLY: clean public trade plan is unavailable. Do not write LONG/SHORT, "
             "entry, stop-loss or TP targets. It is valid to say there is no clean trade yet."
         )
-    return {"market_event": market, "optional_trade_plan": plan}
+    from story_editor import story_brief
+    return {"market_event": market, "optional_trade_plan": plan, "editorial_brief": story_brief(market)}
 
 
 def _format_rotation(memory: Optional[PostMemory], count: int) -> List[str]:
@@ -304,6 +312,12 @@ def _request_ai_candidates(
             "интонацию, композицию и финал, не превращая текст в перечень индикаторов."
         ),
         "semantic_package": package,
+        "reader_value_rules": [
+            "Начни с конкретного события, затем объясни одно последствие или ограничение. Не начинай с общих слов о том, что цифра важнее цены.",
+            "Не называй VWAP средней за час: его точный период дан в определении. Объём не означает число сделок или покупателей.",
+            "Не заканчивай автоматически словами сделки нет, наблюдаем, честнее наблюдать. Не выдавай оценку или метафору за новый факт.",
+            "Разные варианты должны раскрывать разные факты из editorial_brief. Ничего не выдумывай ради разнообразия.",
+        ],
         "requested_formats": requested,
         "candidate_count": len(requested),
         "recent_posts_to_avoid": [str(item)[:650] for item in recent_posts[-10:]],
@@ -332,7 +346,7 @@ def _request_ai_candidates(
             "length": (
                 "Сам выбери длину повествования с учётом того, что полный план добавит Python."
                 if plan_available else
-                f"Свободная форма: ориентир {POST_MIN_CHARS}–{POST_MAX_CHARS} символов, "
+                f"Свободная форма: цель 260–400 символов вместе с заголовком; предел {POST_MIN_CHARS}–{POST_MAX_CHARS}, "
                 "количество абзацев — на твоё усмотрение."
             ),
         },
@@ -356,7 +370,9 @@ def _request_ai_candidates(
             "или эмодзи, если это действительно улучшает текст.",
             "Не публикуй внутренние баллы, свежесть события N/100, rank, demand, scoring, оценки качества, алгоритмические метки или параметры пайплайна.",
             "Не называй обычный объём доказательством интереса инвесторов и не приписывай действия или мотивы покупателям без фактов.",
-            "Цена ниже средней за час НЕ означает, что вошедшие в течение часа трейдеры в убытке: их реальные цены входа неизвестны.",
+            "Относительный объём сравнивается с медианой предыдущих свечей, а не с предыдущей свечой. x1 означает обычный объём, а не неизменность объёма во времени.",
+            "По снимку нельзя категорично утверждать это не разворот или движение продолжится; можно объяснить, почему снимок не доказывает такой вывод.",
+            "Цена ниже VWAP по 50 свечам не означает, что участники в убытке: их реальные цены входа неизвестны.",
             "Не утверждай 'впервые за последнее время', 'ранее пробивал' или другие факты о прошлом, если история этих событий явно не передана.",
             "Не копируй начало, ритм абзацев, набор фактов или финал recent_posts_to_avoid. "
             "Каждый предложенный вариант должен отличаться не только словами, но и логикой подачи.",
@@ -370,6 +386,7 @@ def _request_ai_candidates(
             "Текст понятен новичку без технического словаря, но не содержит неточных "
             "или самоуверенных утверждений, над которыми посмеётся опытный трейдер.",
             "Все числа взяты дословно из semantic_package.",
+            "Проценты, коэффициенты и цены пиши цифрами из источника, не словами: нельзя заменить 1.6% словом полтора или 5% словами пять процентов.",
             "Направление слов совпадает со знаком движения.",
             "В observation-only нет торгового плана.",
             "Все варианты различаются по подаче.",
@@ -377,13 +394,16 @@ def _request_ai_candidates(
         ],
         "output_schema": {
             "candidates": [
-                {"format_id": "точный format_id из requested_formats", "text": "готовый пост"}
+                {"format_id": "точный format_id из requested_formats", "text": "$TICKER — короткий законченный заголовок\n\nОсновной текст, весь пост до 500 символов"}
             ]
         },
     }
     if os.getenv("ENABLE_READER_EXPERIMENT", "0").strip() == "1":
         from reader_experiment import arm_for_package, writing_brief
         arm = arm_for_package(package, "EVENT")
+        from reader_experiment import EXPERIMENT_VERSION
+        package["editorial_arm"] = arm
+        package["editorial_experiment_version"] = EXPERIMENT_VERSION
         payload["experiment_brief"] = writing_brief(arm, "EVENT")
         logger.info("READER EXPERIMENT lane=EVENT arm=%s", arm)
     if attempt > 1:
@@ -436,7 +456,7 @@ def _request_ai_candidates(
             "а не маскируй отсутствие новости абстрактными фразами. "
             "Допустимы короткий факт, разбор, опровержение заблуждения, практический вывод, "
             "сравнение, контраргумент или вопрос к аудитории — без обязательной структуры. "
-            "Начни с законченной строки с cashtag (не длиннее 125 символов). "
+            "Начни с отдельной законченной строки с cashtag (до 90 символов), затем два перевода строки и основной текст. Выбери одну мысль, весь пост 260–400 символов. "
             "Нет обязательного порядка «цена — объём — индикаторы — условие». "
             "Избегай аббревиатур RSI, VWAP, ADX и другого жаргона: "
             "читатель должен понимать пост без специальной подготовки. "
@@ -634,6 +654,8 @@ def generate_event_candidates(
         opportunity=opportunity,
         monetization=monetization,
     )
+    from story_editor import prioritize_formats
+    formats = prioritize_formats(formats, package["editorial_brief"]["kind"])
     recent_posts = memory.recent_texts(10) if memory else []
     drafts: List[GeneratedPost] = []
 
@@ -655,7 +677,7 @@ def generate_event_candidates(
                 fmt = str(raw.get("format_id", "")).strip()
                 if fmt not in ai_formats or fmt not in EVENT_FORMAT_SPECS:
                     continue
-                text = re.sub(r"\n{3,}", "\n\n", str(raw.get("text", "") or "").strip())
+                text = normalize_headline(re.sub(r"\n{3,}", "\n\n", str(raw.get("text", "") or "").strip()))
                 if plan_available and levels is not None:
                     text = _enforce_full_plan_block(text, levels, direction, seed=f"ai-event|{fmt}|{len(drafts)}")
                 valid, reasons = _validate_event_post(
@@ -683,6 +705,7 @@ def generate_event_candidates(
                     visual_style=EVENT_FORMAT_SPECS[fmt]["visual"],
                     headline=headline,
                     question_mode="optional",
+                    fact_package=package,
                     source=("deepseek_event" if str(raw.get("_provider", "")) == "deepseek_v4_pro" else "mistral_event"),
                 )
                 if all(PostMemory.compare_texts(draft.text, item.text) < 0.78 for item in drafts):
@@ -744,6 +767,7 @@ def generate_event_candidates(
             headline=headline,
             question_mode="optional",
             source="deterministic_event",
+            fact_package=package,
         )
         if all(PostMemory.compare_texts(draft.text, item.text) < 0.78 for item in drafts):
             drafts.append(draft)
@@ -872,6 +896,9 @@ def rank_event_candidates(
             direction=direction,
         )
         editorial = editorial_reach_adjustment(draft.text)
+        from story_editor import copy_adjustment
+        reader_adjustment, reader_reason = copy_adjustment(draft.text, recent_texts)
+        logger.info("Reader value diagnostic: %+.1f %s", reader_adjustment, reader_reason)
 
         adjusted = (
             report.score * 0.45
@@ -882,6 +909,7 @@ def rank_event_candidates(
             - min(12.0, novelty_pen)
             + content_adaptive.total
             + editorial.score
+            + reader_adjustment
         )
         logger.info(
             "Event copy candidate format=%s source=%s quality=%.1f appeal=%.1f conversion=%.1f similarity=%.3f "

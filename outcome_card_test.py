@@ -13,9 +13,9 @@ def main() -> None:
         entry=0.1723, reached_price=0.1892, rr=3.12, move_pct=9.81, stop=0.1618,
         original_post_id="356784938216225", event_time="2026-08-17T20:04:00+00:00",
     )
-    image = Image.open(path)
-    assert image.size == (1080, 1350)
-    assert image.mode == "RGB"
+    with Image.open(path) as image:
+        assert image.size == (1080, 1350)
+        assert image.mode == "RGB"
     Path(path).unlink(missing_ok=True)
     try:
         generate_outcome_card(

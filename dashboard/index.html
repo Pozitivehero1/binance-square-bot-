@@ -38,7 +38,7 @@
 
       <section class="tab" id="posts">
         <article class="panel">
-          <div class="toolbar"><input id="postSearch" placeholder="Поиск по тикеру или тексту"/><select id="laneFilter"><option value="">Все типы</option><option>TRADE</option><option>EVENT</option><option>UNKNOWN</option><option>OUTCOME</option></select></div>
+          <div class="toolbar"><input id="postSearch" placeholder="Поиск по тикеру или тексту"/><select id="laneFilter"><option value="">Все типы</option><option>TRADE</option><option>EVENT</option><option>NEWS</option><option>UNKNOWN</option><option>OUTCOME</option></select></div>
           <div class="table-wrap"><table><thead><tr><th>Пост</th><th>Тип</th><th>Время</th><th>Просмотры</th><th>30м</th><th>2ч</th><th>6ч</th><th>24ч</th><th>Реакции</th></tr></thead><tbody id="postsBody"></tbody></table></div>
         </article>
       </section>
@@ -61,9 +61,9 @@
       <section class="tab" id="learning">
         <div class="grid two">
           <article class="panel"><div class="panel-head"><h2>Adaptive Learning</h2><span>история мягко корректирует ranking</span></div><div id="learningStats" class="learning-card"></div></article>
-          <article class="panel"><div class="panel-head"><h2>TRADE vs EVENT</h2><span>сравнение зрелых постов</span></div><div id="laneStats" class="bar-list"></div></article>
+          <article class="panel"><div class="panel-head"><h2>Типы публикаций</h2><span>сравнение зрелых постов</span></div><div id="laneStats" class="bar-list"></div></article>
         </div>
-        <article class="panel"><div class="panel-head"><h2>AI авторы</h2><span>DeepSeek primary · Mistral fallback</span></div><div id="authorStats" class="bar-list"></div></article>
+        <article class="panel"><div class="panel-head"><h2>AI авторы</h2><span>Замеры в одинаковом возрасте; темы могут различаться</span></div><div id="authorStats" class="bar-list"></div></article>
         <article class="panel"><div class="panel-head"><h2>Что собирается</h2></div><div class="feature-grid"><div><b>Пост</b><span>тикер, lane, текст, формат</span></div><div><b>Рынок</b><span>freshness, volume, opportunity</span></div><div><b>Охват</b><span>30m, 2h, 6h, 24h</span></div><div><b>Реакции</b><span>likes, comments, quotes, shares</span></div></div></article>
       </section>
     </main>
