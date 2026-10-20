@@ -57,7 +57,7 @@ EVENT_FORMAT_SPECS: Dict[str, Dict[str, str]] = {
         "visual": "context_chart",
     },
     "event_no_trade": {
-        "brief": "Событие интересное, но чистой сделки пока нет. Скажи это уверенно и полезно, без шаблона 'жду подтверждения'.",
+        "brief": "Объясни одно рискованное прочтение этих данных. Отсутствие плана не является новостью и не должно заменять полезный вывод.",
         "visual": "clean_chart",
     },
     "event_trade_bridge": {
@@ -147,7 +147,8 @@ def _allowed_numeric_values(package: Dict[str, Any]) -> set[str]:
         elif isinstance(value, str):
             values.update(_extract_numeric_tokens(value))
 
-    walk(package)
+    from story_editor import author_fact_package
+    walk(author_fact_package(package))
     # Signed changes and x-ratios may be expressed as an unsigned magnitude
     # after "снизилась на" / "в N раза". Their meaning is checked separately.
     values.update(token.lstrip('x+-') for token in list(values) if token.startswith(('x','+','-')))
@@ -211,7 +212,7 @@ def _semantic_package(
         "adx_15m": f"{ind.adx:.1f}",
         "price_vs_vwap": "выше" if ind.price >= ind.vwap else "ниже",
         "vwap": _fmt_price(ind.vwap),
-        "vwap_definition": "средневзвешенная цена по 50 закрытым 15-минутным свечам; не средняя за час",
+        "vwap_definition": "средневзвешенная цена по 50 закрытым 15-минутным свечам",
         "volume_definition": "объём монет в последней закрытой свече относительно медианы предыдущих свечей; не число сделок",
         "micro_freshness": f"{micro.score:.0f}/100",
         "event_phase": micro.phase,
@@ -252,7 +253,7 @@ def _semantic_package(
     else:
         plan["rule"] = (
             "OBSERVATION_ONLY: clean public trade plan is unavailable. Do not write LONG/SHORT, "
-            "entry, stop-loss or TP targets. It is valid to say there is no clean trade yet."
+            "entry, stop-loss or TP targets. The absence of a plan is an internal constraint, not the headline or conclusion of the post."
         )
     from story_editor import story_brief
     return {"market_event": market, "optional_trade_plan": plan, "editorial_brief": story_brief(market)}
@@ -446,6 +447,8 @@ def _request_ai_candidates(
         except Exception:
             logger.exception("Optional creator inspiration unavailable")
 
+    from story_editor import author_fact_package
+    payload["semantic_package"] = author_fact_package(package, focus_story=True)
     result = request_candidates(
         system_prompt=(
             "Ты сильный русскоязычный редактор крипторынка и автор Binance Square. "
