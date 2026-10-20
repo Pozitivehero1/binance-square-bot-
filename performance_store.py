@@ -353,7 +353,11 @@ def build_learning_summary(store: Optional[dict] = None) -> dict:
     all_posts = [item for item in store.get("posts", {}).values() if isinstance(item, dict)]
     # Outcome follow-ups are tracked for reach in the dashboard, but they must not
     # contaminate ticker/hour/lane priors used to choose fresh market setups.
-    posts = [item for item in all_posts if item.get("learning_eligible", True)]
+    now = _now()
+    window_days = max(3, min(60, int(os.getenv("ADAPTIVE_LOOKBACK_DAYS", "7"))))
+    posts = [item for item in all_posts if item.get("learning_eligible", True)
+             and (published := _parse_dt(item.get("published_at", ""))) is not None
+             and now-timedelta(days=window_days) <= published <= now]
     mature = [v for item in posts if (v := _metric_views(item)) is not None]
     account_median = float(median(mature)) if mature else 0.0
 
@@ -397,6 +401,7 @@ def build_learning_summary(store: Optional[dict] = None) -> dict:
     return {
         "learning_only": str(os.getenv("LEARNING_ONLY", "0")).lower() in {"1", "true", "yes"},
         "account_median_24h": round(account_median, 1),
+        "window_days": window_days,
         "mature_samples": len(mature),
         "tickers": [row for row in tickers if row["posts"]],
         "lanes": [row for row in lanes if row["posts"]],

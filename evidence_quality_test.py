@@ -36,6 +36,11 @@ class Facts(unittest.TestCase):
         self.assertIn("volume-is-not-trade-count",fact_consistency_reasons("Сделок стало больше обычного.",{"market_event":{"relative_volume_5m":"x3.28"}}))
         self.assertFalse(fact_consistency_reasons("Объём за 5 минут x3.28 обычного.",{"market_event":{"relative_volume_5m":"x3.28"}}))
 
+    def test_percentage_or_time_is_not_a_price_boundary(self):
+        package={'market_event':{'current_price':'0.01','change_5m':'+1.0%'}}
+        for text in ('Цена выше на 1%.','Цена выше, чем 5 минут назад.'):
+            self.assertFalse(fact_consistency_reasons(text,package),text)
+
     def test_hourly_average_is_not_available(self):
         self.assertIn("unprovided-hour-average",fact_consistency_reasons("Цена выше средней за час.",{"market_event":{"vwap":"0.5"}}))
 
@@ -108,6 +113,14 @@ class Editorial(unittest.TestCase):
         previous='$AAA — цена 1.2 возле уровня. Чистой сделки нет, наблюдать честнее. Полезнее следить за движением.'
         new=previous.replace('AAA','BBB').replace('1.2','45.8')
         self.assertLess(copy_adjustment(new,[previous]*3)[0],copy_adjustment(new,[])[0])
+
+    def test_repeated_story_type_is_a_soft_ranking_penalty(self):
+        attention=SimpleNamespace(change_15m=2,change_45m=3,volume_spike=4)
+        micro=SimpleNamespace(change_5m=.8,volume_spike_5m=4,phase='fresh')
+        opportunity=SimpleNamespace(audience_demand=60)
+        fresh=market_story_adjustment(attention,micro,opportunity)
+        repeated=market_story_adjustment(attention,micro,opportunity,recent_story_kinds=['volume_shock']*8)
+        self.assertLess(repeated,fresh)
 
     def test_specific_news_requires_exact_event_evidence(self):
         item={'title':'Strive bought Bitcoin for treasury reserves','summary':'The company bought 335 million dollars of Bitcoin after raising capital.'}

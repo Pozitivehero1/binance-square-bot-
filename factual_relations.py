@@ -32,6 +32,10 @@ def relation_reasons(text: str, market: dict) -> tuple[str, ...]:
         if not re.search(r"\bцен\w*\b|\bсейчас\b|\bкотировк\w*\b", clause):
             continue
         for match in re.finditer(rf"\b(выше|ниже)\b[^\d!?;]{{0,55}}({NUM})", clause):
+            # "выше на 2%" and "выше, чем 5 минут назад" do not compare
+            # current price to a numeric price level of 2 or 5.
+            if re.match(r"\s*(?:%|мин|час|дн|раз|[xх×])", clause[match.end():]):
+                continue
             before = clause[:match.start()]
             subjects = list(re.finditer(r"\b(?:цен\w*|котировк\w*|сейчас|поддержк\w*|сопротивлен\w*|средн\w*|объем\w*|оборот\w*|активност\w*)\b", before))
             if not subjects or not subjects[-1].group().startswith(("цен", "котиров", "сейчас")):
