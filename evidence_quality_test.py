@@ -122,6 +122,14 @@ class Editorial(unittest.TestCase):
         repeated=market_story_adjustment(attention,micro,opportunity,recent_story_kinds=['volume_shock']*8)
         self.assertLess(repeated,fresh)
 
+    def test_format_follows_actual_event_without_duplicate_requests(self):
+        from story_editor import prioritize_formats
+        formats=['event_one_price','event_pulse','event_price_volume','event_market_story']*3
+        selected=prioritize_formats(formats,'counter_move')
+        self.assertEqual(len(selected),len(formats))
+        self.assertEqual(len(set(selected[:3])),3)
+        self.assertNotIn('event_one_price',selected[:3])
+
     def test_specific_news_requires_exact_event_evidence(self):
         item={'title':'Strive bought Bitcoin for treasury reserves','summary':'The company bought 335 million dollars of Bitcoin after raising capital.'}
         self.assertTrue(source_has_event(item))

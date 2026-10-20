@@ -64,6 +64,20 @@ def _shape(text):
     return set(re.findall(r"[а-я]{4,}",value))
 
 
+def prioritize_formats(formats, kind):
+    """A counter-move is a price/volume story, not automatically a VWAP post."""
+    priorities = {
+        'counter_move': ['event_price_volume','event_market_story','event_pulse'],
+        'volume_shock': ['event_price_volume','event_pulse','event_market_story'],
+        'price_displacement': ['event_market_story','event_pulse','event_price_volume'],
+        'above_range': ['event_one_price','event_market_story','event_pulse'],
+        'below_range': ['event_one_price','event_market_story','event_pulse'],
+    }.get(kind, [])
+    unique=list(dict.fromkeys(formats))
+    ordered=[fmt for fmt in priorities if fmt in unique]+[fmt for fmt in unique if fmt not in priorities]
+    return [ordered[i % len(ordered)] for i in range(len(formats))] if ordered else []
+
+
 def copy_adjustment(text: str, recent_texts=()) -> tuple[float, str]:
     value = str(text).lower().replace("ё","е")
     shape = _shape(value)
