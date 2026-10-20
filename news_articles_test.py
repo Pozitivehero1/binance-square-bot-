@@ -71,25 +71,72 @@ class NewsTests(unittest.TestCase):
 
 
 class CreatorTests(unittest.TestCase):
-    def test_post_in_article_with_short_link_still_extracted(self):
-        parser = creator._ProfileParser()
-        parser.feed('<article><a href="/en/square/post/123">post</a><p>' +
-                    "Price observation about this market and new verified developments. " * 2 +
-                    '</p></article>')
-        self.assertEqual(len(parser.links), 1)
-        self.assertEqual(parser.links[0]["url"], "https://www.binance.com/en/square/post/123")
+    NOW_MS = 1792485000000
 
-    def test_public_profile_topics_not_accepted_from_other_domain(self):
+    def _post(self, ident, body, age_minutes=5):
+        return {"id": ident, "bodyTextOnly": body,
+                "firstReleaseTime": self.NOW_MS - age_minutes * 60_000}
+
+    def test_parses_recent_posts_without_importing_trade_prices(self):
+        rows = [
+            self._post("123", "$AVA bounced strongly from 0.3793 and is moving towards resistance. The author discusses a possible recovery."),
+            self._post("124", "$SUI LONG TRADE SIGNAL! Buyers may be watching a correction, but the trade carries risks and needs verification."),
+            self._post("125", "Please join our Premium group with a free trial and price alerts for every market."),
+            self._post("126", "$ETH old news about market momentum, and this is deliberately older than the allowed freshness.", age_minutes=3000),
+        ]
+        topics = [creator._topic_from_post(row, self.NOW_MS) for row in rows]
+        self.assertEqual(sum(item is not None for item in topics), 2)
+        self.assertEqual(topics[0]["tickers"], ["AVA"])
+        self.assertIn("восстановления", topics[0]["topic"])
+        self.assertNotIn("0.3793", topics[0]["topic"])
+        self.assertIn("SUI", topics[1]["tickers"])
+
+    def test_public_profile_and_posts_api_end_to_end_mock(self):
         creator._CACHE.update(at=0.0, topics=[])
-        fake_response = SimpleNamespace(
-            status_code=200, content=b"x" * 300,
-            text='<article><a href="https://evil.example/square/post/123">' +
-                 "Long unsafe external link pretending to be a Binance post." * 2 +
-                 '</a></article>',
-            raise_for_status=lambda: None)
-        with patch.object(creator.requests, "get", return_value=fake_response):
-            self.assertEqual(creator.recent_creator_topics(limit=5), [])
+        class Response:
+            def __init__(self, data):
+                self.data = data
+            def raise_for_status(self):
+                return None
+            def json(self):
+                return self.data
+        class FakeSession:
+            headers = {}
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return None
+            def post(self, url, **kwargs):
+                self._post_kwargs = kwargs
+                return Response({"code": "000000", "success": True,
+                                 "data": {"squareUid": "SampleAuthorUid-42"}})
+            def get(self, url, **kwargs):
+                if "queryUserProfilePageContentsWithFilter" in url:
+                    self._get_kwargs = kwargs
+                    return Response({"code": "000000", "success": True,
+                                     "data": {"contents": [
+                                         CreatorTests()._post("246",
+                                             "$ADA is correcting and traders are watching a recovery attempt. The scenario requires confirmation.")
+                                     ]}})
+                return Response({})
+        fake = FakeSession()
+        with patch.object(creator.requests, "Session", return_value=fake), \
+             patch.object(creator.time, "time", return_value=self.NOW_MS / 1000):
+            rows = creator.recent_creator_topics(limit=5)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["url"], "https://www.binance.com/en/square/post/246")
+        self.assertEqual(rows[0]["tickers"], ["ADA"])
+        self.assertEqual(fake._post_kwargs["json"]["username"], "cryptonexus_btc")
+        self.assertEqual(fake._get_kwargs["params"]["targetSquareUid"], "SampleAuthorUid-42")
         creator._CACHE.update(at=0.0, topics=[])
+
+    def test_invalid_user_and_api_response_fail_closed(self):
+        self.assertEqual(creator._fetch_creator("not/valid", self.NOW_MS), [])
+        with self.assertRaises(ValueError):
+            creator._request_data(
+                type("Resp", (), {"raise_for_status": lambda self: None,
+                                  "json": lambda self: {"code": "000000", "data": {}}})(),
+                "profile")
 
 
 if __name__ == "__main__":
