@@ -6,7 +6,7 @@ import re
 from copy import deepcopy
 
 
-def author_fact_package(package: dict) -> dict:
+def author_fact_package(package: dict, *, focus_story=False) -> dict:
     """Expose observed market facts, not ranking/phase labels, to prose authors."""
     allowed = {'ticker','current_price','key_level','support','resistance','vwap',
                'vwap_definition','volume_definition','change_5m','change_15m','change_45m',
@@ -18,6 +18,14 @@ def author_fact_package(package: dict) -> dict:
             clean[key]={name:value for name,value in clean[key].items() if name in allowed}
     clean.pop('editorial_arm',None)
     clean.pop('editorial_experiment_version',None)
+    if focus_story and isinstance(clean.get('market_event'),dict) and not clean.get('optional_trade_plan',{}).get('available'):
+        # A price/volume event need not become another arbitrary-level post.
+        # Keep range boundaries only when the observed story is a range break.
+        fields=['vwap','vwap_definition','price_vs_vwap','key_level']
+        if clean.get('editorial_brief',{}).get('kind') not in {'above_range','below_range'}:
+            fields += ['support','resistance']
+        for name in fields:
+            clean['market_event'].pop(name,None)
     return clean
 
 

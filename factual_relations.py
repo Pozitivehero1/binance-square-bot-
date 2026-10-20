@@ -77,4 +77,6 @@ def relation_reasons(text: str, market: dict) -> tuple[str, ...]:
     if not market.get("relative_trade_count_5m") and not market.get("relative_trade_count_15m"):
         if re.search(r"(?:числ\w*|количеств\w*)\s+сделок|сделок\s+(?:стало|больше|меньше)|всплеск\s+сделок", value):
             reasons.append("volume-is-not-trade-count")
+    if not market.get('taker_buy_volume') and re.search(r"ускорени\w*\s+(?:продаж|покупок)|(?:объем|число)\s+(?:продаж|покупок).{0,15}(?:вырос|увеличил)",value):
+        reasons.append('order-flow-not-in-package')
     return tuple(dict.fromkeys(reasons))

@@ -749,7 +749,7 @@ def _request_ai_candidates(
         )
 
     from story_editor import author_fact_package
-    payload["semantic_package"] = author_fact_package(package)
+    payload["semantic_package"] = author_fact_package(package, focus_story=True)
     result = request_candidates(
         system_prompt=(
             "Ты сильный русскоязычный редактор крипторынка и автор Binance Square. "

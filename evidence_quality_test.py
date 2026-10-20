@@ -49,6 +49,9 @@ class Facts(unittest.TestCase):
     def test_old_event_is_not_outdated_market_data(self):
         self.assertIn('internal-diagnostic-is-not-market-fact',fact_consistency_reasons('Данные помечены как устаревшие.',{'market_event':{'event_phase':'stale'}}))
 
+    def test_total_volume_is_not_selling_acceleration(self):
+        self.assertIn('order-flow-not-in-package',fact_consistency_reasons('Это умеренное ускорение продаж.',{'market_event':{'relative_volume_15m':'x1.62'}}))
+
     def test_hourly_average_is_not_available(self):
         self.assertIn("unprovided-hour-average",fact_consistency_reasons("Цена выше средней за час.",{"market_event":{"vwap":"0.5"}}))
 
@@ -126,6 +129,15 @@ class Editorial(unittest.TestCase):
         self.assertEqual(clean['market_event'],{'ticker':'$ALT','current_price':'0.01'})
         self.assertEqual(original['market_event']['event_phase'],'stale')
         self.assertFalse(clean['optional_trade_plan']['available'])
+
+    def test_price_volume_story_does_not_inject_arbitrary_levels(self):
+        from story_editor import author_fact_package
+        package={'market_event':{'ticker':'$ALT','current_price':'0.01','support':'0.008','vwap':'0.011'},
+                 'optional_trade_plan':{'available':False},'editorial_brief':{'kind':'volume_shock'}}
+        clean=author_fact_package(package,focus_story=True)
+        self.assertNotIn('support',clean['market_event'])
+        self.assertNotIn('vwap',clean['market_event'])
+        self.assertIn('support',author_fact_package(package)['market_event'])
 
     def test_semantic_repetition_ignores_ticker_and_price(self):
         previous='$AAA — цена 1.2 возле уровня. Чистой сделки нет, наблюдать честнее. Полезнее следить за движением.'
