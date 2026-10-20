@@ -20,6 +20,8 @@ def due_post_ids(store, seen_ids, *, now=None, limit=8):
     now = now or datetime.now(timezone.utc)
     due=[]
     for post in (store.get('posts') or {}).values():
+        if not isinstance(post, dict):
+            continue
         post_id=str(post.get('post_id') or '')
         published=parse_time(post.get('published_at'))
         if not post_id.isdigit() or post_id in seen_ids or not published or not post.get('tracked_from_publish'):
