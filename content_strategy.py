@@ -33,8 +33,8 @@ def lane_bonus(store: dict, *, now=None, lookback_days: int = 7) -> tuple[float,
         timestamp = _date(row.get("published_at"))
         if not timestamp or timestamp > now - timedelta(hours=24) or timestamp < cutoff:
             continue
-        milestones = row.get("milestones") or {}
-        mature = milestones.get("24h") if isinstance(milestones, dict) else None
+        from evidence_metrics import observation
+        mature = observation(row, "24h")
         try:
             value = float(mature["views"]) if isinstance(mature, dict) else None
         except (ValueError, TypeError):

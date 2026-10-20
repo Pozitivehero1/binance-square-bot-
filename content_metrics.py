@@ -1,12 +1,15 @@
 """Content cohorts using measured reach at comparable ages, never lifetime totals."""
 from datetime import datetime, timezone
 from statistics import median
+from evidence_metrics import WINDOWS, observation
 
 # Explicit windows are intentionally narrower than legacy learning milestones.
-WINDOWS = {"30m": (25, 45), "2h": (110, 150), "6h": (330, 390), "24h": (1380, 1500)}
+
 
 
 def content_kind(post):
+    if str(post.get('lane', '')).upper() == 'NEWS':
+        return 'news'
     if str(post.get('lane', '')).upper() == 'OUTCOME':
         return 'outcome'
     if str(post.get('direction', '')).upper() in {'LONG', 'SHORT'}:
@@ -18,7 +21,7 @@ def content_kind(post):
 
 def build_content_metrics(store, now=None):
     now = now or datetime.now(timezone.utc)
-    groups = {kind: [] for kind in ('trade_plan', 'observation', 'outcome', 'unknown')}
+    groups = {kind: [] for kind in ('trade_plan', 'observation', 'news', 'outcome', 'unknown')}
     for post in store.get('posts', {}).values():
         try:
             published = datetime.fromisoformat(post.get('published_at', '').replace('Z', '+00:00'))
@@ -34,7 +37,7 @@ def build_content_metrics(store, now=None):
             values = []
             interaction_totals = {name: 0 for name in ('likes', 'comments', 'quotes', 'shares')}
             for post in posts:
-                row = (post.get('content_milestones') or {}).get(label) or (post.get('milestones') or {}).get(label) or {}
+                row = observation(post, label) or {}
                 try:
                     age, views = float(row['age_minutes']), int(row['views'])
                 except (ValueError, TypeError, KeyError):
@@ -61,6 +64,8 @@ def build_content_metrics(store, now=None):
                 'views_sum': total_views,
                 'interactions': total_interactions,
                 'interaction_rate_pct': round(100 * total_interactions / total_views, 3) if total_views else None,
+                'interactions_per_1000_views': round(1000 * total_interactions / total_views, 2) if total_views else None,
+                'coverage_pct': round(100 * count / len(posts), 1) if posts else None,
                 **interaction_totals,
             }
         result.append({'kind': kind, 'posts': len(posts), 'milestones': milestones})

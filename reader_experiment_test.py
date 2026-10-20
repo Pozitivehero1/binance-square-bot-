@@ -32,15 +32,15 @@ def main():
     for arm in ARMS:
         for i in range(21):
             posts[f"{arm}{i}"]={"editorial_arm":arm,"editorial_experiment_version":EXPERIMENT_VERSION,"published_at":(now-timedelta(days=2)).isoformat(),
-             "milestones":{"24h":{"views":120 if arm=="what_changed" else 45}}}
+             "milestones":{"24h":{"age_minutes":1440,"views":120 if arm=="what_changed" else 45}}}
     metrics=summarize_arms(posts,now=now)
     assert metrics["decision_ready"] is True
     assert metrics["arms"][0]["median_views_24h"]==120
     assert metrics["arms"][1]["median_views_24h"]==45
-    posts["old"]={"editorial_arm":"what_changed","published_at":now.isoformat(),"milestones":{"24h":{"views":99999}}}
+    posts["old"]={"editorial_arm":"what_changed","published_at":now.isoformat(),"milestones":{"24h":{"age_minutes":1440,"views":99999}}}
     assert summarize_arms(posts,now=now)["arms"][0]["samples"]==21
     posts["legacy"]={"editorial_arm":"what_changed","published_at":(now-timedelta(days=2)).isoformat(),
-                     "milestones":{"24h":{"views":9000}}}
+                     "milestones":{"24h":{"age_minutes":1440,"views":9000}}}
     assert summarize_arms(posts,now=now)["arms"][0]["samples"]==21
     print("READER EXPERIMENT TEST: OK")
 

@@ -1,9 +1,10 @@
-# Binance Square Bot — v12.0 Quality & Reliability Engine
+# Binance Square Bot — v12.7 Evidence-led Publishing
 
-Production bot for `PozitiveHero`: live TRADE/EVENT selection, fact-locked AI
-copy, public-performance learning, a hard full-plan contract and exact
-post-bound trade outcomes. v11.17 keeps the 20-minute market scan and adds an
-account-specific pre-publication model trained on mature posts that reached 100+ views.
+Production bot for `PozitiveHero`: evidence-led TRADE/EVENT stories, grounded
+news, full public-plan checks and age-matched performance learning. The existing
+20-minute publishing schedule and pacing settings are preserved. See
+[the v12.7 changes](CHANGES_V12_7.md) for factual checks, measurement definitions,
+reader experiments and validation.
 
 No bot can guarantee views or a fixed W2E payout. v11.17 improves the parts the
 bot controls—candidate quality, copy selection, repetition, timing and feedback—

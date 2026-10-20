@@ -483,6 +483,10 @@ def _choose_market_candidate(
                 logger.info("EDITORIAL REPEAT SKIP TRADE %s: %s", mtf.symbol, reason)
                 continue
 
+        from story_editor import market_story_adjustment
+        adjusted_score += market_story_adjustment(attention, micro, opportunity,
+            recent_story_kinds=[item.get("story_kind", "") for item in memory.items],
+            market={"current_price": mtf.tf_15m.price,"support": mtf.tf_15m.support,"resistance": mtf.tf_15m.resistance})
         eligible.append((
             adjusted_score, mtf, score, funding, best_angle.id, attention, micro, monetization, opportunity, levels, adaptive
         ))
@@ -713,6 +717,10 @@ def _choose_event_candidate(
                 logger.info("EDITORIAL REPEAT SKIP EVENT %s: %s", mtf.symbol, reason)
                 continue
 
+        from story_editor import market_story_adjustment
+        selection_score += market_story_adjustment(attention, micro, opportunity,
+            recent_story_kinds=[item.get("story_kind", "") for item in memory.items],
+            market={"current_price": mtf.tf_15m.price,"support": mtf.tf_15m.support,"resistance": mtf.tf_15m.resistance})
         eligible.append((
             selection_score, mtf, score, attention, micro, monetization, opportunity, levels, adaptive
         ))
@@ -907,6 +915,9 @@ def _best_post_variant(
                 direction=score.direction,
             )
             editorial = editorial_reach_adjustment(draft.text)
+            from story_editor import copy_adjustment
+            reader_adjustment, reader_reason = copy_adjustment(draft.text, recent_texts)
+            logger.info("Reader value diagnostic: %+.1f %s", reader_adjustment, reader_reason)
 
             adjusted_score = (
                 report.score * 0.30
@@ -924,6 +935,7 @@ def _best_post_variant(
                 + author_bonus
                 + content_adaptive.total
                 + editorial.score
+                + reader_adjustment
             )
             logger.info(
                 "Post candidate %s: source=%s format=%s visual=%s angle=%s quality=%.1f appeal=%.1f conversion=%.1f valid=%s "
@@ -1315,6 +1327,9 @@ def _run_once() -> int:
         selected_post, quality_report = generated
         # Store and fingerprint the same normalized text actually sent to Square.
         post_text, final_reasons = _prepare_text_for_square(selected_post.text)
+        from fact_consistency import fact_consistency_reasons
+        if getattr(selected_post, "fact_package", None):
+            final_reasons = tuple(final_reasons) + fact_consistency_reasons(post_text, selected_post.fact_package)
         if final_reasons:
             logger.warning("Final text rejected: %s", "; ".join(final_reasons))
             write_status("skipped", "final text integrity failed", symbol=symbol, reasons=list(final_reasons))
@@ -1367,7 +1382,7 @@ def _run_once() -> int:
             continue
 
         logger.info(
-            "Reach recovery mode=%s rolling24h=%.0f baseline=%.0f",
+            "Reach recovery mode=%s observed24h_median=%.0f baseline_median=%.0f",
             recovery_mode, rolling_reach, reach_baseline,
         )
 
@@ -1476,6 +1491,7 @@ def _run_once() -> int:
                             confidence=best_score.total,
                             change_1h=indicator.change_1h,
                             post_style=selected_post.style_id,
+                story_kind=getattr(selected_post, "fact_package", {}).get("editorial_brief", {}).get("kind", ""),
                             signal_label=selected_post.angle_title,
                             content_format=selected_post.content_format,
                             visual_style=selected_post.visual_style,
@@ -1583,8 +1599,9 @@ def _run_once() -> int:
                     event_class=opportunity.event_class,
                     writer_source=selected_post.source,
                     signal_type=selected_post.signal_type,
+                    fact_package=getattr(selected_post, "fact_package", {}),
                     editorial_arm=(
-                        __import__("reader_experiment").assigned_arm(basic, lane)
+                        getattr(selected_post, "fact_package", {}).get("editorial_arm") or __import__("reader_experiment").assigned_arm(basic, lane)
                         if os.getenv("ENABLE_READER_EXPERIMENT", "0").strip() == "1"
                         and not selected_post.source.startswith("deterministic")
                         else ""

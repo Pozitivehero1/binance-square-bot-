@@ -27,6 +27,7 @@ STANDARD_TESTS = [
     "visual_test.py",
     "cron_test.py",
     "analytics_test.py",
+    "evidence_quality_test.py",
     "provider_test.py",
     "groq_primary_test.py",
     "deepseek_primary_test.py",

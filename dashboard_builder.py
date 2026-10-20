@@ -10,6 +10,7 @@ from typing import Optional
 from performance_store import build_learning_summary, load_store
 from trade_journal import summarize_journal
 from runtime import PROJECT_DIR, atomic_write_json
+from evidence_metrics import observation
 
 DASHBOARD_DIR = PROJECT_DIR / "dashboard"
 SUMMARY_POST_LIMIT = 20
@@ -150,7 +151,8 @@ def build_dashboard_payload() -> dict:
                 "comments": _safe_int(stats.get("comments")),
                 "quotes": _safe_int(stats.get("quotes")),
                 "shares": _safe_int(stats.get("shares")),
-                "milestones": item.get("milestones") or {},
+                "milestones": {k: v for k in ("30m", "2h", "6h", "24h") if (v := observation(item, k)) is not None},
+                "content_milestones": item.get("content_milestones") or {},
                 "scores": item.get("scores") or {},
                 "market": item.get("market") or {},
                 "adaptive": item.get("adaptive") or {},
@@ -171,7 +173,12 @@ def build_dashboard_payload() -> dict:
     outcomes = summarize_journal()
     mature_med = float(median(mature_views)) if mature_views else 0.0
     best = max(posts, key=lambda post: post["views"], default=None)
+    from evidence_metrics import measured_views
+    comparable = [v for item in items if (dt := _parse(item.get("published_at", ""))) is not None and 0 <= (now-dt).total_seconds() <= 7*86400 and (v := measured_views(item)) is not None]
     overview = {
+        "median_views_24h_observed": float(median(comparable)) if comparable else None,
+        "observed_24h_samples": len(comparable),
+        "score_note": "quality/appeal/conversion are editorial diagnostics, not measured probabilities",
         "posts_24h": len(last_24h),
         "views_on_24h_posts": sum(_safe_int((item.get("stats") or {}).get("views")) for item in last_24h),
         "median_views_6h_plus": round(mature_med, 1),
@@ -187,6 +194,7 @@ def build_dashboard_payload() -> dict:
         "reader_experiment": reader_experiment,
         "meta": {
             "generated_at": now.isoformat(),
+            "last_public_stats_at": max((str(item.get("last_stats_at") or "") for item in items), default=""),
             "profile_uid": store.get("profile_uid", ""),
             "learning_only": learning.get("learning_only", True),
             "timezone": "UTC+3",

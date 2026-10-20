@@ -104,22 +104,8 @@ class ViewTargetAssessment:
 
 
 def _mature_24h_views(item: dict, now: datetime) -> Optional[float]:
-    milestones = item.get("milestones") if isinstance(item.get("milestones"), dict) else {}
-    row = milestones.get("24h")
-    if isinstance(row, dict):
-        try:
-            return float(row.get("views", 0) or 0)
-        except (TypeError, ValueError):
-            return None
-    published = _parse_dt(item.get("published_at", ""))
-    if not published or (now - published).total_seconds() < 24 * 3600:
-        return None
-    stats = item.get("stats") if isinstance(item.get("stats"), dict) else {}
-    try:
-        return float(stats.get("views", 0) or 0)
-    except (TypeError, ValueError):
-        return None
-
+    from evidence_metrics import measured_views
+    return measured_views(item, "24h")
 
 def _view_target_profile(
     rows: list[dict],
@@ -308,32 +294,8 @@ def _parse_dt(value: str) -> Optional[datetime]:
 
 
 def _metric(item: dict, now: datetime) -> Optional[float]:
-    milestones = item.get("milestones") if isinstance(item.get("milestones"), dict) else {}
-    if isinstance(milestones.get("24h"), dict):
-        try:
-            return float(milestones["24h"].get("views", 0) or 0)
-        except (TypeError, ValueError):
-            return None
-    # Early feedback is converted to a conservative 24h-equivalent. It reacts
-    # to failing formats within hours while giving mature 24h data precedence.
-    # Calibrated on the account's tracked history: most Square distribution is
-    # delivered early. Large generic multipliers (for example 30m x5) grossly
-    # overstate weak fresh posts and poison the feedback loop.
-    for label, factor in (("6h", 1.04), ("2h", 1.12), ("30m", 1.25)):
-        if isinstance(milestones.get(label), dict):
-            try:
-                return float(milestones[label].get("views", 0) or 0) * factor
-            except (TypeError, ValueError):
-                pass
-    published = _parse_dt(item.get("published_at", ""))
-    if not published or (now - published).total_seconds() < 24 * 3600:
-        return None
-    stats = item.get("stats") if isinstance(item.get("stats"), dict) else {}
-    try:
-        return float(stats.get("views", 0) or 0)
-    except (TypeError, ValueError):
-        return None
-
+    from evidence_metrics import measured_views
+    return measured_views(item, "24h")
 
 def _weighted_median(values: Iterable[tuple[float, float]]) -> float:
     rows = sorted((float(v), max(0.0, float(w))) for v, w in values if w > 0)

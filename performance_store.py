@@ -27,59 +27,30 @@ MILESTONES = {
 
 
 def reach_recovery_state(now: Optional[datetime] = None) -> tuple[bool, float, float]:
-    """Return (enabled, rolling_24h_views, seven-day daily baseline).
+    """Compare per-post observed 24h medians; quantity cannot fake recovery.
 
-    The state is data-driven and fail-open until enough history exists. The
-    current day enters recovery below 82% of the preceding six complete daily
-    buckets, with a small hysteresis margin supplied by the stricter threshold.
+    The current cohort is the most recent fully matured day. Older days form
+    the baseline; both require enough actual observations. No projected totals.
     """
+    from evidence_metrics import measured_views
     now = now or _now()
-    rows: list[tuple[datetime, dict]] = []
+    recent, historical = [], []
     for item in load_store().get("posts", {}).values():
-        if not isinstance(item, dict):
+        if not isinstance(item, dict) or item.get("learning_eligible") is False:
             continue
         published = _parse_dt(item.get("published_at", ""))
-        if published and now - timedelta(days=7) <= published <= now:
-            rows.append((published, item))
-
-    def projected(item: dict) -> float:
-        milestones = item.get("milestones") if isinstance(item.get("milestones"), dict) else {}
-        for label, factor in (("24h", 1.0), ("6h", 1.04), ("2h", 1.12), ("30m", 1.25)):
-            row = milestones.get(label)
-            if isinstance(row, dict):
-                try:
-                    return float(row.get("views", 0) or 0) * factor
-                except (TypeError, ValueError):
-                    pass
-        stats = item.get("stats") if isinstance(item.get("stats"), dict) else {}
-        try:
-            return float(stats.get("views", 0) or 0) * 1.25
-        except (TypeError, ValueError):
-            return 0.0
-
-    current = sum(projected(item) for published, item in rows if published >= now - timedelta(hours=24))
-    buckets = []
-    for day in range(1, 7):
-        high = now - timedelta(days=day)
-        low = high - timedelta(days=1)
-        total = 0.0
-        for published, item in rows:
-            if not low <= published < high:
-                continue
-            milestone = item.get("milestones") if isinstance(item.get("milestones"), dict) else {}
-            row = milestone.get("24h")
-            if isinstance(row, dict):
-                try:
-                    total += float(row.get("views", 0) or 0)
-                except (TypeError, ValueError):
-                    pass
-        if total > 0:
-            buckets.append(total)
-    if len(buckets) < 3:
-        return False, round(current, 1), 0.0
-    baseline = float(median(buckets))
-    return current < baseline * 0.82, round(current, 1), round(baseline, 1)
-
+        views = measured_views(item, "24h")
+        if published is None or views is None:
+            continue
+        age = (now-published).total_seconds()/3600
+        if 25 <= age < 49:
+            recent.append(views)
+        elif 49 <= age <= 8*24:
+            historical.append(views)
+    if len(recent)<8 or len(historical)<20:
+        return False, round(float(median(recent)),1) if recent else 0.0, 0.0
+    current, baseline = float(median(recent)), float(median(historical))
+    return current < baseline*.82, round(current,1), round(baseline,1)
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
@@ -182,6 +153,7 @@ def record_publication(
     learning_eligible: bool = True,
     editorial_arm: str = "",
     editorial_experiment_version: str = "",
+    fact_package: Optional[dict] = None,
 ) -> None:
     store = load_store()
     posts = store.setdefault("posts", {})
@@ -206,6 +178,8 @@ def record_publication(
             "event_class": str(event_class or ""),
             "writer_source": str(writer_source or ""),
             "signal_type": str(signal_type or ""),
+            "fact_package": fact_package or {},
+            "fact_package_recorded_at": now.isoformat(),
             "editorial_arm": str(editorial_arm or ""),
             "editorial_experiment_version": str(editorial_experiment_version or ""),
             "learning_eligible": bool(learning_eligible),
@@ -347,15 +321,9 @@ def merge_public_stats(rows: Iterable[PublicPostStats], profile_uid: str = "") -
 
 
 def _metric_views(item: dict) -> Optional[int]:
-    milestones = item.get("milestones") if isinstance(item.get("milestones"), dict) else {}
-    if isinstance(milestones.get("24h"), dict):
-        return int(milestones["24h"].get("views", 0))
-    published = _parse_dt(item.get("published_at", ""))
-    if published and (_now() - published).total_seconds() >= 24 * 3600:
-        stats = item.get("stats") if isinstance(item.get("stats"), dict) else {}
-        return int(stats.get("views", 0))
-    return None
-
+    from evidence_metrics import measured_views
+    value = measured_views(item, "24h")
+    return int(value) if value is not None else None
 
 def _affinity(rows: list[dict], account_median: float) -> dict:
     values = [v for item in rows if (v := _metric_views(item)) is not None]

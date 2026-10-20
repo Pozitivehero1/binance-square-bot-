@@ -13,7 +13,7 @@ def _post(symbol: str, views: float, published: datetime, lane: str = "EVENT") -
         "symbol": symbol,
         "published_at": published.isoformat(),
         "lane": lane,
-        "milestones": {"24h": {"views": views}},
+        "milestones": {"24h": {"age_minutes": 1440, "views": views}},
         "stats": {"views": views},
     }
 

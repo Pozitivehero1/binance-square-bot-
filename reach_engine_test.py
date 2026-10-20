@@ -24,15 +24,14 @@ def post(index: int, *, views: float, fmt: str, writer: str, published: datetime
         "writer_source": writer,
         "event_class": "active_market",
         "learning_eligible": True,
-        "milestones": {"24h": {"views": views}},
+        "milestones": {"24h": {"age_minutes": 1440, "views": views}},
         "stats": {"views": views},
     }
 
 
-# The account-calibrated early projections must stay close to observed 24h
-# growth, never return to the old x5/x3.2/x2 inflation.
+# Early views must never be promoted into an observed 24h learning sample.
 early = {"published_at": NOW.isoformat(), "milestones": {"30m": {"views": 100}}}
-assert _metric(early, NOW) == 125.0
+assert _metric(early, NOW) is None
 
 posts = {}
 for i in range(35):
@@ -121,7 +120,7 @@ generic = editorial_reach_adjustment(
 )
 assert specific.score > generic.score, (specific, generic)
 
-# Recovery compares projected current reach with mature 24h daily buckets.
+# Sparse recovery cohorts stay inconclusive; early feedback cannot fill them.
 baseline_posts = {}
 for day in range(1, 5):
     for j in range(3):
@@ -135,7 +134,7 @@ weak["milestones"] = {"30m": {"views": 20}}
 baseline_posts["current"] = weak
 with patch("performance_store.load_store", return_value={"posts": baseline_posts}):
     enabled, current, baseline = reach_recovery_state(now=NOW)
-assert enabled and current == 25.0 and baseline == 300.0, (enabled, current, baseline)
+assert not enabled and current == 100.0 and baseline == 0.0, (enabled, current, baseline)
 
 # Outcome truth may refresh before the market scan, but publication must remain
 # queued until the fresh TRADE/EVENT pipeline has had a chance to use the slot.
@@ -158,6 +157,6 @@ assert published is False and mocked_publish.call_count == 0
 assert pending_trade["pending_followup"] is not None
 
 print(
-    "REACH ENGINE: OK | early projection calibrated | format lift affects author budget | "
+    "REACH ENGINE: OK | early feedback never replaces 24h evidence | format lift affects author budget | "
     "specific copy wins | recovery baseline uses mature buckets | outcomes cannot steal fresh slots"
 )

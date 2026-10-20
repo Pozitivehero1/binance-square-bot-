@@ -61,10 +61,16 @@ def _reach_groups(now: datetime) -> dict:
                 last_24h.append(post)
             if age_h >= 6.0:
                 mature.append(_views(post))
+        from evidence_metrics import measured_views
+        observed = [v for post in rows if (v := measured_views(post)) is not None]
         writers = Counter(str(row.get("writer_source") or "UNKNOWN") for row in rows)
         values = [_views(row) for row in rows]
         result[version] = {
             "posts_total": len(rows),
+            "observed_24h_samples": len(observed),
+            "median_views_24h_observed": float(median(observed)) if observed else None,
+            "rate_100_plus_24h_pct": round(100*sum(v>=100 for v in observed)/len(observed),1) if observed else None,
+            "legacy_note": "6h+ and breakout counters below are lifetime totals, not age-matched version comparisons",
             "posts_24h": len(last_24h),
             "views_on_24h_posts": sum(_views(row) for row in last_24h),
             "mature_6h_posts": len(mature),

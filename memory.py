@@ -261,6 +261,7 @@ class PostMemory:
         lane: str = "",
         levels: dict | None = None,
         market_price: float | None = None,
+        story_kind: str = "",
     ) -> None:
         lines = [line.strip() for line in text.splitlines() if line.strip()]
         title = lines[0] if lines else ""
@@ -285,6 +286,7 @@ class PostMemory:
                 "post_style": str(post_style or ""),
                 "signal_type": str(signal_type or ""),
                 "content_format": str(content_format or ""),
+                "story_kind": str(story_kind or ""),
                 "visual_style": str(visual_style or ""),
                 "direction": str(direction or ""),
                 "lane": str(lane or "").upper(),

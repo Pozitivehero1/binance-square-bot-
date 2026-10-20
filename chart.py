@@ -10,6 +10,7 @@ import logging
 import os
 import re
 import tempfile
+import textwrap
 from typing import Optional
 
 import matplotlib.dates as mdates
@@ -149,7 +150,7 @@ def generate_chart(
     frame = _to_df(raw_data)
     if frame is None:
         return None
-    frame = frame.tail(90).copy()
+    frame = frame.copy()
 
     styles = {
         "minimal_chart", "event_chart", "trade_map", "scenario_chart",
@@ -159,7 +160,8 @@ def generate_chart(
 
     frame["EMA20"] = frame["close"].ewm(span=20, adjust=False).mean()
     typical = (frame["high"] + frame["low"] + frame["close"]) / 3.0
-    frame["VWAP"] = (typical * frame["volume"]).cumsum() / frame["volume"].cumsum().replace(0, np.nan)
+    frame["VWAP"] = (typical * frame["volume"]).rolling(50, min_periods=10).sum() / frame["volume"].rolling(50, min_periods=10).sum().replace(0, np.nan)
+    frame = frame.tail(90).copy()
 
     temp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
     path = temp.name
@@ -296,8 +298,7 @@ def generate_chart(
 
         title = headline.strip() or f"${basic.upper()} · {'LONG' if direction == 'long' else 'SHORT'}"
         title = re.sub(r"[\U0001F300-\U0001FAFF\u2600-\u27BF]", "", title).strip()
-        if len(title) > 88:
-            title = title[:85].rstrip() + "…"
+        title = "\n".join(textwrap.wrap(title, width=58, max_lines=2, placeholder="…"))
         price_axis.set_title(title, color=TEXT, fontsize=12.2, fontweight="bold", pad=14, loc="left")
 
         if signal_label and style in {"event_chart", "context_chart"}:
@@ -306,6 +307,7 @@ def generate_chart(
                 color=ORANGE, fontsize=8.0, fontweight="bold", ha="right", va="top",
             )
 
+        volume_axis.set_xlabel("15-минутные закрытые свечи · время UTC", color=MUTED, fontsize=9)
         price_axis.set_ylabel("Цена (USDT)", color="#c8ccd4", fontsize=9)
         volume_axis.set_ylabel("Объём", color="#c8ccd4", fontsize=8)
         handles, _ = price_axis.get_legend_handles_labels()
@@ -322,7 +324,7 @@ def generate_chart(
             0.45, 0.50, WATERMARK, color="gray", alpha=0.055,
             fontsize=32, ha="center", va="center", rotation=28,
         )
-        figure.subplots_adjust(left=0.09, right=right_margin, top=0.91, bottom=0.09)
+        figure.subplots_adjust(left=0.09, right=right_margin, top=0.86, bottom=0.12)
         figure.savefig(path, dpi=165, facecolor=BG, bbox_inches="tight")
         plt.close(figure)
         return path
