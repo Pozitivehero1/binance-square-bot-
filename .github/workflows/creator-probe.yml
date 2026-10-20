@@ -1,0 +1,80 @@
+name: Square Creator Read-only Probe
+
+on:
+  push:
+    paths:
+      - ".github/workflows/creator-probe.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Probe public Binance Square profile and read-only APIs
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import re
+          import urllib.request
+          import urllib.error
+          import time
+
+          root = "https://www.binance.com"
+          headers = {
+              "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
+              "Accept": "application/json, text/plain, */*",
+              "Accept-Language": "en-US,en;q=0.9",
+              "Referer": root + "/en/square/profile/cryptonexus_btc",
+              "clienttype": "web",
+              "Content-Type": "application/json",
+          }
+          opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor())
+          def call(label, path, body=None):
+              req = urllib.request.Request(root+path, headers=headers,
+                        data=json.dumps(body).encode() if body is not None else None)
+              try:
+                  with opener.open(req, timeout=12) as response:
+                      raw=response.read(1200000)
+                      text=raw.decode("utf-8", errors="replace")
+                      try: data=json.loads(text)
+                      except ValueError: data=None
+                      info={"status":response.status,"bytes":len(raw),"url_path":response.url.split("binance.com")[-1][:100]}
+                      if isinstance(data,dict):
+                          info.update(code=data.get("code"), success=data.get("success"),
+                                      data_keys=list(data.get("data",{}).keys())[:22] if isinstance(data.get("data"),dict) else [])
+                      else:
+                          info.update(post_link_occurrences=text.count("/square/post/"),
+                                      article_tags=text.count("<article"),
+                                      username_occurrences=text.lower().count("cryptonexus_btc"),
+                                      body_occurrences=text.count("bodyTextOnly"),
+                                      known_post_occurrences=text.count("POWER Short Setup"))
+                      print(label, json.dumps(info))
+                      return data
+              except urllib.error.HTTPError as e:
+                  print(label,"HTTP",e.code,"path",e.url.split("binance.com")[-1][:100])
+              except Exception as e:
+                  print(label,"ERROR",type(e).__name__,str(e)[:140])
+              return None
+          call("HTML","/en/square/profile/cryptonexus_btc")
+          profile=call("PROFILE_API","/bapi/composite/v3/friendly/pgc/user/client",{"username":"cryptonexus_btc","getFollowCount":False,"queryFollowersInfo":False,"queryRelationTokens":False})
+          uid=(profile or {}).get("data",{}).get("squareUid","") if isinstance(profile,dict) and isinstance(profile.get("data"),dict) else ""
+          print("PROFILE_UID_PRESENT",bool(uid))
+          if uid:
+              from urllib.parse import urlencode
+              d=call("POSTS_API","/bapi/composite/v2/friendly/pgc/content/queryUserProfilePageContentsWithFilter?"+
+                 urlencode({"targetSquareUid":uid,"timeOffset":int(time.time()*1000),"filterType":"ALL"}))
+              if isinstance(d,dict):
+                  p=d.get("data",{})
+                  posts=p.get("contents",[]) if isinstance(p,dict) else []
+                  print("POSTS_RESULT",json.dumps({"count":len(posts),
+                        "sample_keys":list(posts[0].keys())[:25] if posts else [],
+                        "sample_body_text_chars":len(str(posts[0].get("bodyTextOnly") or "")) if posts else 0}))
+          PY
