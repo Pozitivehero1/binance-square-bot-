@@ -135,7 +135,7 @@ class CreatorTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             creator._request_data(
                 type("Resp", (), {"raise_for_status": lambda self: None,
-                                  "json": lambda self: {"code": "000000", "data": {}}})(),
+                                  "json": lambda self: {"code": "BAD_CODE", "data": {}}})(),
                 "profile")
 
 
