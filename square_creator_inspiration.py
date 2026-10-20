@@ -147,7 +147,7 @@ def _fetch_creator(handle: str, now_ms: int) -> list[dict]:
 def recent_creator_topics(limit=8):
     """Retrieve latest public topics; safe empty fallback when the API is blocked."""
     limit = max(1, min(int(limit), 12))
-    if time.monotonic() - _CACHE["at"] < 900:
+    if _CACHE["at"] > 0 and 0 <= time.monotonic() - _CACHE["at"] < 900:
         return _CACHE["topics"][:limit]
     result = []
     now_ms = int(time.time() * 1000)
