@@ -73,7 +73,10 @@ def main() -> None:
             levels, attention, micro, opportunity, monetization = _context(symbol, mtf, frames, score, index)
             assert levels["plan_valid"]
 
-            with patch.dict(os.environ, {"CONTENT_MODE": "deterministic"}, clear=False):
+            # Match production's advisory editorial scores. Their new scale is
+            # not a probability threshold; factual and duplicate gates remain
+            # hard and are asserted for every accepted post below.
+            with patch.dict(os.environ, {"CONTENT_MODE": "deterministic", "RELAX_EDITORIAL_FILTERS": "1"}, clear=False):
                 selected = _best_post_variant(
                     symbol=symbol, basic=basic, mtf=mtf, score=score,
                     levels=levels, memory=memory, btc=None, attention=attention,
