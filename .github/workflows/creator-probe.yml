@@ -77,4 +77,16 @@ jobs:
                   print("POSTS_RESULT",json.dumps({"count":len(posts),
                         "sample_keys":list(posts[0].keys())[:25] if posts else [],
                         "sample_body_text_chars":len(str(posts[0].get("bodyTextOnly") or "")) if posts else 0}))
+                  for p in posts[:5]:
+                      body=str(p.get("bodyTextOnly") or "")
+                      print("POST_SAMPLE",json.dumps({
+                          "id":str(p.get("id",""))[:35],
+                          "createTime":p.get("createTime"),
+                          "firstReleaseTime":p.get("firstReleaseTime"),
+                          "title_chars":len(str(p.get("title") or "")),
+                          "text_chars":len(body),
+                          "text_prefix":body[:135],
+                          "contentType":p.get("contentType"),
+                          "isTop":p.get("isTop")
+                      },ensure_ascii=False))
           PY
