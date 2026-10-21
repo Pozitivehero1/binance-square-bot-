@@ -11,7 +11,7 @@ def activate_release() -> None:
     # writer/fact-lock stack. Deterministic templates are disabled whenever an
     # AI token is configured.
     configure_environment()
-    os.environ["BOT_VERSION"] = "v12.7"
+    os.environ["BOT_VERSION"] = "v12.8"
 
     from production_guard import final_text_reasons
     from semantic_quality import semantic_quality_reasons
@@ -24,7 +24,7 @@ def activate_release() -> None:
         raise RuntimeError("malformed-language guard is incomplete")
     if not final_text_reasons("$ZEC — цена увеличилась на +++ за пять минут. The市场目前显示出动能."):
         raise RuntimeError("v11.13 multilingual/broken-sign guard is incomplete")
-    if os.environ.get("BOT_VERSION") != "v12.7":
+    if os.environ.get("BOT_VERSION") != "v12.8":
         raise RuntimeError("v12.6 version defaults were not activated")
     if os.environ.get("ADAPTIVE_HOUR_MAX") != "5":
         raise RuntimeError("conservative ranking bounds were not preserved")
@@ -36,7 +36,7 @@ def activate_release() -> None:
         raise RuntimeError("AI-only author policy was not activated")
     if os.environ.get("ORCAROUTER_RETRIES") != "1":
         raise RuntimeError("Orca capacity retry guard was not activated")
-    print("[v12.7] evidence-led stories, factual relations and age-matched learning; publishing cadence unchanged")
+    print("[v12.8] evidence-led stories, factual relations and age-matched learning; publishing cadence unchanged")
 
 
 if __name__ == "__main__":

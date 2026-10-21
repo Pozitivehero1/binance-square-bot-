@@ -1,10 +1,10 @@
-# Binance Square Bot — v12.7 Evidence-led Publishing
+# Binance Square Bot — v12.8 Measured Market Context
 
 Production bot for `PozitiveHero`: evidence-led TRADE/EVENT stories, grounded
 news, full public-plan checks and age-matched performance learning. The existing
 20-minute publishing schedule and pacing settings are preserved. See
-[the v12.7 changes](CHANGES_V12_7.md) for factual checks, measurement definitions,
-reader experiments and validation.
+[the v12.8 changes](CHANGES_V12_8.md) for measured candle research, chronological
+fact checks, reader experiments and validation.
 
 No bot can guarantee views or a fixed W2E payout. v11.17 improves the parts the
 bot controls—candidate quality, copy selection, repetition, timing and feedback—
@@ -17,11 +17,11 @@ checks.
   bounded corrections; it cannot manufacture a setup or bypass safety gates.
 - Recent performance uses a 7-day lookback and 3-day half-life.
 - Draft ranking learns from lane, format, writer, event class and direction.
-- Early 30m/2h/6h views are projected with account-calibrated factors
-  `1.25/1.12/1.04`; mature 24h views take precedence.
-- Recovery mode compares projected rolling reach with mature daily baselines,
-  tightens weak candidates and weak historical hours, and never forces cadence.
-- Target copy length is 220–430 characters. The AI writes the narrative; Python appends one canonical plan. Specific live facts beat generic
+- Learning uses measured 23–25h views; early snapshots are shown separately,
+  without fixed extrapolation or lifetime-view substitutions.
+- Recovery compares per-post medians with sample minima; more publications
+  alone cannot establish recovery. Existing pacing is preserved.
+- Production copy limits are 185–520 characters. The AI writes the narrative; Python appends one canonical plan. Specific live facts beat generic
   prose; repetition and structural similarity remain hard constraints.
 - The configured DeepSeek proxy is the primary author. The existing
   Gemini/Groq, GPT-OSS, Mistral, OrcaRouter and OpenRouter providers retain

@@ -486,7 +486,7 @@ def _choose_market_candidate(
         from story_editor import market_story_adjustment
         adjusted_score += market_story_adjustment(attention, micro, opportunity,
             recent_story_kinds=[item.get("story_kind", "") for item in memory.items],
-            market={"current_price": mtf.tf_15m.price,"support": mtf.tf_15m.support,"resistance": mtf.tf_15m.resistance})
+            market={"current_price": mtf.tf_15m.price,"support": mtf.tf_15m.support,"resistance": mtf.tf_15m.resistance,"observed_context": attention.research})
         eligible.append((
             adjusted_score, mtf, score, funding, best_angle.id, attention, micro, monetization, opportunity, levels, adaptive
         ))
@@ -720,7 +720,7 @@ def _choose_event_candidate(
         from story_editor import market_story_adjustment
         selection_score += market_story_adjustment(attention, micro, opportunity,
             recent_story_kinds=[item.get("story_kind", "") for item in memory.items],
-            market={"current_price": mtf.tf_15m.price,"support": mtf.tf_15m.support,"resistance": mtf.tf_15m.resistance})
+            market={"current_price": mtf.tf_15m.price,"support": mtf.tf_15m.support,"resistance": mtf.tf_15m.resistance,"observed_context": attention.research})
         eligible.append((
             selection_score, mtf, score, attention, micro, monetization, opportunity, levels, adaptive
         ))

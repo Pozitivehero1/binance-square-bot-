@@ -11,7 +11,7 @@ def author_fact_package(package: dict, *, focus_story=False) -> dict:
     allowed = {'ticker','current_price','key_level','support','resistance','vwap',
                'vwap_definition','volume_definition','change_5m','change_15m','change_45m',
                'relative_volume_5m','relative_volume_15m','turnover_1h','price_vs_vwap',
-               'btc_context','higher_timeframes'}
+               'btc_context','higher_timeframes','observed_context','change_1h','previous_change_15m'}
     clean = deepcopy(package)
     for key in ('market', 'market_event'):
         if isinstance(clean.get(key),dict):
@@ -22,7 +22,7 @@ def author_fact_package(package: dict, *, focus_story=False) -> dict:
         # A price/volume event need not become another arbitrary-level post.
         # Keep range boundaries only when the observed story is a range break.
         fields=['vwap','vwap_definition','price_vs_vwap','key_level']
-        if clean.get('editorial_brief',{}).get('kind') not in {'above_range','below_range'}:
+        if clean['market_event'].get('observed_context') or clean.get('editorial_brief',{}).get('kind') not in {'above_range','below_range'}:
             fields += ['support','resistance']
         for name in fields:
             clean['market_event'].pop(name,None)
@@ -39,16 +39,19 @@ def story_brief(market: dict) -> dict:
     d5, d15, d45 = (_n(market.get("change_"+frame)) for frame in ("5m", "15m", "45m"))
     v5, v15 = (_n(market.get("relative_volume_"+frame),1) for frame in ("5m", "15m"))
     price, support, resistance = (_n(market.get(k)) for k in ("current_price","support","resistance"))
+    context = market.get('observed_context') or {}
+    support = _n(context.get('prior_1h_low')) or support
+    resistance = _n(context.get('prior_1h_high')) or resistance
     if support and price < support:
         kind, question = "below_range", "Что изменилось после закрытия ниже нижней границы наблюдаемого диапазона?"
     elif resistance and price > resistance:
         kind, question = "above_range", "Что показывает закрытие выше верхней границы наблюдаемого диапазона?"
     elif d5*d15 < 0 and abs(d5)>=0.3:
         kind, question = "counter_move", "Какая часть движения уже откатилась на коротком отрезке? Не называй это разворотом."
-    elif max(v5,v15)>=2.8:
-        kind, question = "volume_shock", "Что произошло с ценой на фоне необычного объёма? Не приписывай объёму число сделок или покупателей."
     elif abs(d15)>=1.5 or abs(d45)>=3:
-        kind, question = "price_displacement", "Насколько заметно изменился рынок и какой риск создаёт уже пройденное движение?"
+        kind, question = "price_displacement", "Как изменилось движение по сравнению с предыдущей свечой того же периода и полным часом?"
+    elif max(v5,v15)>=2.8:
+        kind, question = "volume_shock", "Где цена относительно предыдущего часа при повышенном объёме? Не превращай сравнение разных окон в историю затухания."
     else:
         kind, question = "market_context", "Какой проверяемый контекст делает это небольшое движение полезным читателю? Не преувеличивай."
     keys = {
@@ -59,6 +62,8 @@ def story_brief(market: dict) -> dict:
         "price_displacement": ["change_15m","change_45m","relative_volume_15m"],
         "market_context": ["change_15m","relative_volume_15m","current_price"],
     }[kind]
+    if context:
+        keys += ['change_1h','previous_change_15m','observed_context']
     return {"kind":kind,"reader_question":question,
             "evidence":{k:market[k] for k in keys if k in market},
             "instruction":"Выбери одну мысль и объясни её конкретное значение. Не перечисляй все метрики и не добавляй пустой финал о наблюдении. Отсутствие торгового плана не нужно объявлять в каждом посте."}
@@ -78,8 +83,12 @@ def market_story_adjustment(attention, micro, opportunity, *, recent_story_kinds
     facts = dict(market or {}, change_5m=micro.change_5m, change_15m=attention.change_15m,
                  change_45m=attention.change_45m, relative_volume_5m=v5,relative_volume_15m=v15)
     kind = story_brief(facts)['kind']
-    repetition = min(6,list(recent_story_kinds)[-8:].count(kind)*1.5)
-    return round(max(-9,min(12,evidence+demand-3-repetition)),2)
+    repetition = min(12,list(recent_story_kinds)[-8:].count(kind)*2.5)
+    # Large isolated relative-volume ratios used to win despite almost no motion.
+    # These are ranking corrections, never a new publication veto or quota.
+    movement = min(8,d15*3) + min(4,abs(float(attention.change_45m)))
+    volume_only = 12 if max(v5,v15)>=2.8 and max(d5,d15)<.5 else 0
+    return round(max(-24,min(20,evidence+demand+movement-3-repetition-volume_only)),2)
 
 
 def _shape(text):
@@ -117,10 +126,14 @@ def copy_adjustment(text: str, recent_texts=()) -> tuple[float, str]:
         r"смотреть.{0,15}пока не на что|рынок решает",
         r"важнее сам\w* движен|есть повод открыть тикер",
         r"свежий сигнал отсутствует|чистого сигнала нет",
+        r"снимок.{0,25}(?:не объясняет|не говорит|не раскрывает|фиксирует)",
+        r"(?:причин\w* движени|кто и зачем|прохождени\w* монет)",
+        r"(?:стоит|полезно).{0,15}(?:открыть тикер|посмотреть|смотреть)|польза простая",
+        r"скромн\w* масштаб|небольш\w* масштаб",
     ))
     # Reward explanation rather than ticker/keyword presence. These are
     # editorial diagnostics, explicitly not probabilities of reach/conversion.
     evidence = len(re.findall(r"[-+]?\d+(?:[.,]\d+)?\s*%|[xх]\s*\d",value))
     explanation = bool(re.search(r"означает|показывает|поэтому|при этом|однако|но\b|огранич|риск|разниц",value))
-    score = min(4,evidence)+ (3 if explanation else -3) -generic*4-min(12,similar*4)
-    return float(max(-24,min(7,score))), f"evidence={evidence} explanation={int(explanation)} generic={generic} semantic_repeats={similar}"
+    score = min(4,evidence)+ (3 if explanation else -3) -generic*4-min(18,similar*6)
+    return float(max(-32,min(7,score))), f"evidence={evidence} explanation={int(explanation)} generic={generic} semantic_repeats={similar}"

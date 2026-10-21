@@ -149,7 +149,7 @@ class Editorial(unittest.TestCase):
         micro=SimpleNamespace(change_5m=.8,volume_spike_5m=4,phase='fresh')
         opportunity=SimpleNamespace(audience_demand=60)
         fresh=market_story_adjustment(attention,micro,opportunity)
-        repeated=market_story_adjustment(attention,micro,opportunity,recent_story_kinds=['volume_shock']*8)
+        repeated=market_story_adjustment(attention,micro,opportunity,recent_story_kinds=['price_displacement']*8)
         self.assertLess(repeated,fresh)
 
     def test_format_follows_actual_event_without_duplicate_requests(self):
