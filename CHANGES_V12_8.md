@@ -21,6 +21,10 @@ The preceding release improved factual checks without resolving this weakness.
   prove that a company or regulator withheld information.
 * Start reader experiment v6, so the changed research treatment is not pooled
   with v5. Retain the same two arms and observed age windows.
+* Fix the missing production `story_kind` write: the argument was mistakenly
+  passed to card rendering rather than publication memory. Restore exact-text
+  matches from retained publication evidence; do not infer unknown old stories.
+  Observation charts now anchor the range boundary used by the research brief.
 
 The publishing workflow, cron, daily limits and ticker/news/outcome cooldowns
 are unchanged. Account profile metadata is unchanged. Views and account reach

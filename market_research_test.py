@@ -112,6 +112,40 @@ class Research(unittest.TestCase):
         self.assertIn('unsupported-claim-of-nondisclosure',draft_reasons('Условия запуска не раскрываются.',item['summary'],item))
         self.assertNotIn('unsupported-claim-of-nondisclosure',draft_reasons('FINMA одобрила фонд.',item['summary'],item))
 
+    def test_production_records_story_kind_without_breaking_card_signature(self):
+        import ast,inspect
+        from pathlib import Path
+        from card import generate_card
+        tree=ast.parse((Path(__file__).parent/'main.py').read_text(encoding='utf-8'))
+        memory_calls=[n for n in ast.walk(tree) if isinstance(n,ast.Call) and isinstance(n.func,ast.Attribute) and n.func.attr=='add_post']
+        self.assertTrue(memory_calls)
+        self.assertTrue(all('story_kind' in {k.arg for k in n.keywords} for n in memory_calls))
+        for call in (n for n in ast.walk(tree) if isinstance(n,ast.Call) and isinstance(n.func,ast.Name) and n.func.id=='generate_card'):
+            self.assertLessEqual({k.arg for k in call.keywords},set(inspect.signature(generate_card).parameters))
+
+    def test_story_history_restores_only_exact_known_publications(self):
+        from story_editor import restore_story_kinds
+        items=[{'text':'same'},{'text':'different'},{'text':'same','story_kind':'kept'}]
+        restore_story_kinds(items,{'1':{'text':'same','fact_package':{'editorial_brief':{'kind':'volume_shock'}}},'2':{'text':'different','fact_package':[]}})
+        self.assertEqual([r['story_kind'] for r in items],['volume_shock','','kept'])
+
+    def test_story_kind_survives_disk_reload(self):
+        import tempfile
+        from pathlib import Path
+        from memory import PostMemory
+        with tempfile.TemporaryDirectory() as directory:
+            path=Path(directory)/'memory.json'
+            memory=PostMemory(path=path)
+            memory.add_post('ALTUSDT','$ALT — measured story',story_kind='below_range')
+            self.assertEqual(PostMemory(path=path).items[-1]['story_kind'],'below_range')
+
+    def test_chart_anchor_matches_researched_range(self):
+        from event_writer import event_decision_level
+        indicator=SimpleNamespace(price=106,support=98,resistance=130,vwap=106.1,ema20=106.2)
+        package={'market_event':{'observed_context':{'prior_1h_high':'105','prior_1h_low':'99'}},'editorial_brief':{'kind':'above_range'}}
+        self.assertEqual(event_decision_level(indicator,package),105)
+        self.assertNotEqual(event_decision_level(indicator),105)
+
 
 if __name__=='__main__':
     unittest.main()

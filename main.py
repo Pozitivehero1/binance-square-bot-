@@ -1068,6 +1068,9 @@ def _run_once() -> int:
     scan_started = time.monotonic()
     cleanup_history()
     memory = PostMemory()
+    from story_editor import restore_story_kinds
+    from performance_store import load_store
+    restore_story_kinds(memory.items, load_store().get("posts", {}))
     guard = PublicationGuard(memory.items)
     recovery_mode, rolling_reach, reach_baseline = reach_recovery_state()
     logger.info(
@@ -1491,7 +1494,6 @@ def _run_once() -> int:
                             confidence=best_score.total,
                             change_1h=indicator.change_1h,
                             post_style=selected_post.style_id,
-                story_kind=getattr(selected_post, "fact_package", {}).get("editorial_brief", {}).get("kind", ""),
                             signal_label=selected_post.angle_title,
                             content_format=selected_post.content_format,
                             visual_style=selected_post.visual_style,
@@ -1526,7 +1528,7 @@ def _run_once() -> int:
                             support=indicator.support,
                             resistance=indicator.resistance,
                             decision_level=(
-                                levels.get("decision") if plan_valid else event_decision_level(indicator)
+                                levels.get("decision") if plan_valid else event_decision_level(indicator, selected_post.fact_package)
                             ),
                             decision_mode=str(levels.get("decision_mode", "at_level")) if plan_valid else "at_level",
                             vol_rel=attention.volume_spike,
@@ -1660,6 +1662,7 @@ def _run_once() -> int:
             memory.add_post(
                 symbol,
                 post_text,
+                story_kind=getattr(selected_post, "fact_package", {}).get("editorial_brief", {}).get("kind", ""),
                 post_style=selected_post.style_id,
                 signal_type=selected_post.signal_type,
                 content_format=selected_post.content_format,
