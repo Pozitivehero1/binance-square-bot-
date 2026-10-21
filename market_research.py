@@ -1,7 +1,13 @@
 """Reproducible research facts from consecutive closed 15m candles."""
 from __future__ import annotations
 import math
+from decimal import Decimal
 import pandas as pd
+
+
+def precise_price(value):
+    """Keep exchange tick distinctions without float tails or exponent notation."""
+    return format(Decimal(f'{float(value):.12g}'), 'f')
 
 
 def candle_research(data) -> dict:
@@ -17,7 +23,7 @@ def candle_research(data) -> dict:
         if not all(math.isfinite(v) for v in [*close,*high,*low,*volume]) or (close <= 0).any() or (volume < 0).any():
             return {}
         pct = lambda a,b: f'{(a/b-1)*100:+.2f}%'
-        price = lambda n: f'{n:.10f}'.rstrip('0').rstrip('.')
+        price = precise_price
         return {
             'change_1h': pct(close.iloc[-1], close.iloc[-5]),
             'previous_change_15m': pct(close.iloc[-2], close.iloc[-3]),

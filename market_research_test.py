@@ -146,6 +146,24 @@ class Research(unittest.TestCase):
         self.assertEqual(event_decision_level(indicator,package),105)
         self.assertNotEqual(event_decision_level(indicator),105)
 
+    def test_exchange_tick_distinctions_are_not_rounded_away(self):
+        from market_research import precise_price
+        self.assertEqual(precise_price(.30073),'0.30073')
+        self.assertEqual(precise_price(.000000012345),'0.000000012345')
+        self.assertNotEqual(precise_price(.30073),precise_price(.30072))
+
+    def test_published_gtc_headline_checks_implicit_range_relation(self):
+        package={'market_event':{'current_price':'0.3007','observed_context':{'prior_1h_high':'0.30072'}}}
+        text='$GTC — 0.3007 чуть выше верхней границы предыдущего диапазона'
+        self.assertIn('price-range-boundary-contradiction',fact_consistency_reasons(text,package))
+        self.assertIn('price-range-boundary-contradiction',fact_consistency_reasons(text+'\nЕсли цена вырастет, проверим заново.',package))
+        package['market_event']['current_price']='0.30073'
+        self.assertFalse(fact_consistency_reasons('Цена сейчас 0.30073, выше верхней границы предыдущего диапазона.',package))
+
+    def test_current_price_literal_cannot_borrow_another_allowed_number(self):
+        package={'market_event':{'current_price':'0.30073','support':'0.3007'}}
+        self.assertIn('current-price-literal-mismatch',fact_consistency_reasons('Сейчас 0.3007, выше прежнего уровня.',package))
+
 
 if __name__=='__main__':
     unittest.main()
