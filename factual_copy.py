@@ -47,7 +47,8 @@ def market_narrative(*, ticker, move5, move15, volume5, volume15, price, level,
         evidence = f"Объём за 15 минут {volume} обычного: близко к норме."
 
     relation = "выше" if price >= level else "ниже"
-    close = _fmt_price(price)
+    from market_research import precise_price
+    close = precise_price(price)
     vol5 = _fmt_x(volume5) if volume5 is not None else None
     # Distinct factual angles, not interchangeable motivational introductions.
     # Each angle selects a different subset of the actual snapshot.

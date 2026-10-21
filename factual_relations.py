@@ -36,6 +36,21 @@ def relation_reasons(text: str, market: dict) -> tuple[str, ...]:
     if re.search(r"данн\w*.{0,35}(?:помечен|устарел|устарев)|(?:алгоритм|модель).{0,20}(?:счита|помет|оцен)",value):
         reasons.append("internal-diagnostic-is-not-market-fact")
     price = _float(market.get("current_price"))
+    context = market.get('observed_context') or {}
+    if price is not None:
+        for clause in re.split(r'[!?;\n]|(?<!\d)\.|\.(?!\d)',value):
+            if re.search(r'\b(?:если|может|будет|была|раньше)\b',clause):
+                continue
+            for relation, side in re.findall(r'(выше|ниже).{0,25}(верхн\w*|нижн\w*).{0,15}границ',clause):
+                boundary = _float(context.get('prior_1h_high' if side.startswith('верхн') else 'prior_1h_low'))
+                if boundary is not None and ((relation=='выше' and price<=boundary) or (relation=='ниже' and price>=boundary)):
+                    reasons.append('price-range-boundary-contradiction')
+            for match in re.finditer(rf'\b(?:сейчас|цен[аы](?:\s+сейчас)?)\s*({NUM})',clause):
+                if re.match(r'\s*(?:%|мин|час)',clause[match.end():]):
+                    continue
+                claimed = _float(match.group(1))
+                if claimed is not None and abs(claimed-price)>max(abs(price)*1e-10,1e-14):
+                    reasons.append('current-price-literal-mismatch')
     # A snapshot cannot establish a historical crossing. Conditional/future
     # clauses are excluded so an honest scenario does not become a false fact.
     clauses = re.split(r"[!?;\n]|(?<!\d)\.|\.(?!\d)", value)

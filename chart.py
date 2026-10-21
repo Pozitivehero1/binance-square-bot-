@@ -18,6 +18,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 import numpy as np
 import pandas as pd
+from market_research import precise_price
 
 logger = logging.getLogger(__name__)
 WATERMARK = os.getenv("CHART_WATERMARK", "PozitiveHero")
@@ -263,7 +264,7 @@ def generate_chart(
             right_margin = 0.94
 
         price_axis.text(
-            0.012, 0.965, f"СЕЙЧАС {_fmt_price(current_price)}",
+            0.012, 0.965, f"СЕЙЧАС {precise_price(current_price)}",
             transform=price_axis.transAxes, color="white", fontsize=9,
             fontweight="bold", ha="left", va="top",
             bbox={"boxstyle": "round,pad=0.25", "facecolor": "#080b10", "alpha": 0.78, "edgecolor": "none"},

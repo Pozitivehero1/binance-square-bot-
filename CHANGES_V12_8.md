@@ -25,6 +25,11 @@ The preceding release improved factual checks without resolving this weakness.
   passed to card rendering rather than publication memory. Restore exact-text
   matches from retained publication evidence; do not infer unknown old stories.
   Observation charts now anchor the range boundary used by the research brief.
+* Retain tick-level current-price precision. The first regular GTC post exposed
+  a rounded 0.3007 being described as above an unrounded 0.30072 boundary. Use
+  consistent precision for observed prices/ranges and check named range claims
+  even when the headline omits the word “price”. Bind current-price literals to
+  their own field rather than any allowed level elsewhere in the package.
 
 The publishing workflow, cron, daily limits and ticker/news/outcome cooldowns
 are unchanged. Account profile metadata is unchanged. Views and account reach

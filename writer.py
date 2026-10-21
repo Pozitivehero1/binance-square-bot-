@@ -28,6 +28,7 @@ from attention import AttentionSnapshot, MicroAttentionSnapshot, format_turnover
 from ai_provider import has_ai_provider, request_candidates
 from content_variation import SignalAngle, detect_signal_angles
 from memory import PostMemory
+from market_research import precise_price
 from trade_plan import build_public_trade_plan
 from adaptive import score_format_performance
 
@@ -353,7 +354,7 @@ def _semantic_package(
 
     market: Dict[str, Any] = {
         "ticker": ticker,
-        "current_price": _fmt_price(ind.price),
+        "current_price": precise_price(ind.price),
         "change_15m": _fmt_pct(attention.change_15m) if attention else "нет измерения",
         "change_45m": _fmt_pct(attention.change_45m) if attention else "нет измерения",
         "relative_volume_15m": _fmt_x(attention.volume_spike) if attention else _fmt_x(ind.volume_relative),

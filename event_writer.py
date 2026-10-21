@@ -20,6 +20,7 @@ from attention import AttentionSnapshot, MicroAttentionSnapshot, format_turnover
 from ai_provider import has_ai_provider, request_candidates
 from engagement import FeedAppealEvaluator
 from memory import PostMemory
+from market_research import precise_price
 from quality import QualityReport
 from writer import GeneratedPost, _enforce_full_plan_block, _fmt_pct, _fmt_price, _fmt_x, phrase_family_penalty
 from adaptive import score_content_performance, score_format_performance
@@ -207,7 +208,7 @@ def _semantic_package(
     key_level = event_decision_level(ind)
     market: Dict[str, Any] = {
         "ticker": _ticker(basic),
-        "current_price": _fmt_price(ind.price),
+        "current_price": precise_price(ind.price),
         "key_level": _fmt_price(key_level),
         "support": _fmt_price(ind.support) if getattr(ind, "support", None) else None,
         "resistance": _fmt_price(ind.resistance) if getattr(ind, "resistance", None) else None,
