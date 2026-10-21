@@ -58,6 +58,20 @@ class Research(unittest.TestCase):
         self.assertNotIn('support',public)
         self.assertIn('support',package['market_event'])
 
+    def test_hidden_levels_cannot_leak_through_editorial_evidence(self):
+        package={'market_event':{'ticker':'$ALT','support':'1','observed_context':candle_research(candles())},'optional_trade_plan':{'available':False},'editorial_brief':{'kind':'below_range','evidence':{'support':'1','observed_context':candle_research(candles())}}}
+        clean=author_fact_package(package,focus_story=True)
+        self.assertNotIn('support',clean['editorial_brief']['evidence'])
+        self.assertIn('observed_context',clean['editorial_brief']['evidence'])
+
+    def test_sequential_returns_can_name_previous_period_as_first(self):
+        package={'market_event':{'change_15m':'-1.9%','previous_change_15m':'-1.46%'}}
+        self.assertFalse(fact_consistency_reasons('Сначала 15 минут дали -1.46%, затем следующие -1.9%.',package))
+
+    def test_range_break_does_not_prove_persistence(self):
+        package={'market_event':{'observed_context':candle_research(candles())}}
+        self.assertIn('range-snapshot-is-not-persistence-history',fact_consistency_reasons('Ниже этой отметки цена не первый отрезок.',package))
+
     def test_isolated_volume_noise_loses_soft_rank_to_price_event(self):
         opportunity=SimpleNamespace(audience_demand=60)
         flat=market_story_adjustment(SimpleNamespace(change_15m=.1,change_45m=.2,volume_spike=8),SimpleNamespace(change_5m=.05,volume_spike_5m=8,phase='fresh'),opportunity)

@@ -23,7 +23,7 @@ def candle_research(data) -> dict:
             'previous_change_15m': pct(close.iloc[-2], close.iloc[-3]),
             'prior_1h_high': price(high.iloc[-5:-1].max()),
             'prior_1h_low': price(low.iloc[-5:-1].min()),
-            'window_definition': 'Границы предыдущего полного часа без последней свечи; previous_change_15m — непосредственно предыдущая закрытая свеча того же периода.',
+            'window_definition': 'Скользящий диапазон четырех свечей непосредственно перед последней, не календарный час и не отметка час назад. История не доказывает удержание цены за его границей. previous_change_15m — непосредственно предыдущая закрытая свеча того же периода.',
             **({'volume_vs_previous_15m': f'x{volume.iloc[-1]/volume.iloc[-2]:.2f}'} if volume.iloc[-2]>0 else {}),
         }
     except (ValueError, TypeError, KeyError, ZeroDivisionError):

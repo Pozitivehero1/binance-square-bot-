@@ -26,6 +26,10 @@ def author_fact_package(package: dict, *, focus_story=False) -> dict:
             fields += ['support','resistance']
         for name in fields:
             clean['market_event'].pop(name,None)
+        # A hidden support could otherwise leak back via the editorial brief.
+        brief = clean.get('editorial_brief')
+        if isinstance(brief, dict) and isinstance(brief.get('evidence'), dict):
+            brief['evidence'] = {k:v for k,v in brief['evidence'].items() if k in clean['market_event']}
     return clean
 
 

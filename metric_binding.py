@@ -49,7 +49,7 @@ def metric_binding_reasons(text, market):
             key = ("change_" if percent else "relative_volume_") + frame + "m"
             if frame == '60':
                 key = ('change_' if percent else 'relative_volume_') + '1h'
-            previous = bool(re.search(r'предыдущ\w*', clause))
+            previous = bool(re.search(r'предыдущ\w*|\bсначала\b', clause))
             if frame == '15' and previous and percent:
                 key = 'previous_change_15m'
             # "снизилась на 4%" expresses -4%; the unsigned magnitude is

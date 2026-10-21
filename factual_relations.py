@@ -18,6 +18,8 @@ def _float(value):
 def relation_reasons(text: str, market: dict) -> tuple[str, ...]:
     value = str(text).lower().replace("ё", "е")
     reasons = []
+    if market.get('observed_context') and re.search(r'час назад.{0,20}(?:заканчивал|был\w* границ)|ниже.{0,30}не первый отрезок|выше.{0,30}не первый отрезок', value):
+        reasons.append('range-snapshot-is-not-persistence-history')
     # Concurrent windows do not demonstrate temporal persistence or reversal.
     for clause in re.split(r'[!?;\n]|(?<!\d)\.|\.(?!\d)', value):
         if re.search(r'\b(?:если|может|проверить|покажет|будет)\b', clause):
