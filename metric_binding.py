@@ -2,7 +2,7 @@
 import re
 
 NUMBER = r"[-+−]?\d+(?:[.,]\d+)?"
-FRAME = r"(?<!\d)(5|15|45)\s*[-–]?\s*(?:мин(?:ут\w*)?|[мm](?!\w))"
+FRAME = r"(?<!\d)(5|15|45|60)\s*[-–]?\s*(?:мин(?:ут\w*)?|[мm](?!\w))"
 
 
 def _float(value):
@@ -12,6 +12,7 @@ def _float(value):
 
 def metric_binding_reasons(text, market):
     reasons = []
+    text = re.sub(r'\bза\s+(?:последний\s+)?час\b', 'за 60 минут', text, flags=re.I)
     # Written timeframes have the same contract as digit timeframes.
     for word, digit in (("пять", "5"), ("пятнадцать", "15"), ("сорок пять", "45")):
         text = re.sub(r"\bза\s+" + word + r"\s+минут\b", "за " + digit + " минут", text, flags=re.I)
@@ -46,6 +47,11 @@ def metric_binding_reasons(text, market):
                 continue
             frame = chosen.group(1)
             key = ("change_" if percent else "relative_volume_") + frame + "m"
+            if frame == '60':
+                key = ('change_' if percent else 'relative_volume_') + '1h'
+            previous = bool(re.search(r'предыдущ\w*|\bсначала\b', clause))
+            if frame == '15' and previous and percent:
+                key = 'previous_change_15m'
             # "снизилась на 4%" expresses -4%; the unsigned magnitude is
             # normal Russian prose, not a changed factual number.
             if percent:
@@ -61,6 +67,8 @@ def metric_binding_reasons(text, market):
                 elif (falling and observed > 0) or (rising and observed < 0):
                     reasons.append('direction-word-sign-contradiction:' + key)
             expected = _float(market.get(key))
+            if frame == '15' and previous and not percent:
+                expected = _float((market.get('observed_context') or {}).get('volume_vs_previous_15m'))
             if expected is None or abs(observed - expected) > 0.051:
                 reasons.append("metric-timeframe-mismatch:" + key)
             prefix = re.sub(FRAME, "", clause[:metric.start()])

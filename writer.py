@@ -406,6 +406,8 @@ def _semantic_package(
         "risk_pct": f"{float(levels.get('public_risk_pct', 0.0)):.2f}%",
         "state_rule": _state_instruction(levels, direction),
     }
+    from market_research import attach_research
+    attach_research(market, attention)
     from story_editor import story_brief
     return {"market": market, "trade_plan": trade, "editorial_brief": story_brief(market)}
 

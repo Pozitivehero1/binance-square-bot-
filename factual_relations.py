@@ -18,6 +18,16 @@ def _float(value):
 def relation_reasons(text: str, market: dict) -> tuple[str, ...]:
     value = str(text).lower().replace("ё", "е")
     reasons = []
+    if market.get('observed_context') and re.search(r'час назад.{0,20}(?:заканчивал|был\w* границ)|ниже.{0,30}не первый отрезок|выше.{0,30}не первый отрезок', value):
+        reasons.append('range-snapshot-is-not-persistence-history')
+    # Concurrent windows do not demonstrate temporal persistence or reversal.
+    for clause in re.split(r'[!?;\n]|(?<!\d)\.|\.(?!\d)', value):
+        if re.search(r'\b(?:если|может|проверить|покажет|будет)\b', clause):
+            continue
+        if re.search(r'не переш[её]л.{0,35}(?:длинн|окно)|через (?:15|пятнадцать) минут.{0,30}объем|всплеск.{0,35}(?:быстро спал|оказался коротким)', clause):
+            reasons.append('different-windows-are-not-event-sequence')
+        if re.search(r'(?:оборот.{0,55}(?:скромн|небольш\w* масштаб|низк\w* ликвид)|(?:низк\w* ликвид|малоликвид))', clause):
+            reasons.append('turnover-is-not-orderbook-liquidity')
     # Model prose must retain the supplied numeric literals. Spelling a value
     # out (especially "полтора" for 1.6) must not evade the numeric whitelist.
     written = r"(?:нул\w*|один|одного|одна|дв[аеу]|двух|три|трех|четыр\w*|пят[ьи]|шест[ьи]|сем[ьи]|восем[ьи]|девят[ьи]|десят\w*|полтор\w*|половин\w*)"

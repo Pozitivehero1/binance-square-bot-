@@ -17,6 +17,10 @@ def draft_reasons(body: str, quote: str, item: dict) -> tuple[str, ...]:
     source = " ".join((str(item.get("title", ""))+" "+str(item.get("summary", ""))).split()).lower()
     normalized = " ".join(str(quote).split()).lower()
     reasons=[]
+    if re.search(r'(?i)(?:детал\w*|услови\w*|срок\w*|структур\w*).{0,55}не (?:раскрыв\w*|сообща\w*|привод\w*)', body) and not re.search(r'not disclos|did not disclos|undisclosed|не раскрыв', source):
+        reasons.append('unsupported-claim-of-nondisclosure')
+    if re.search(r"(?i)во входных данных|входн\w* данн\w*|предоставленн\w* (?:описании|данных)|мне предостав", body):
+        reasons.append("internal-source-instructions-in-public-copy")
     if not source_has_event(item):
         reasons.append("source-has-no-specific-event")
     if len(normalized)<25 or normalized not in source or not _EVENT.search(normalized):

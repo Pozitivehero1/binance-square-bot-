@@ -7,7 +7,7 @@ candles ago?"  This helps avoid over-ranking stale x20 volume spikes.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import math
 from typing import Optional
 
@@ -25,6 +25,7 @@ class AttentionSnapshot:
     distance_atr: float
     label: str
     overextended: bool
+    research: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -103,7 +104,8 @@ def compute_attention(frame: Optional[pd.DataFrame], indicator, direction: str) 
     previous_range = float(ranges.iloc[-21:-1].median())
     range_expansion = _safe_ratio(float(ranges.iloc[-1]), previous_range)
 
-    turnover_1h = float((close.tail(4) * volume.tail(4)).sum())
+    quote = pd.to_numeric(data['quote_volume'], errors='coerce') if 'quote_volume' in data else None
+    turnover_1h = float(quote.tail(4).sum()) if quote is not None and quote.tail(4).notna().all() else float((close.tail(4) * volume.tail(4)).sum())
     turnover_component = _clamp((math.log10(max(turnover_1h, 1.0)) - 4.5) * 28.0)
 
     motion_component = _clamp(abs(change_15m) * 45.0 + abs(change_45m) * 18.0)
@@ -136,6 +138,7 @@ def compute_attention(frame: Optional[pd.DataFrame], indicator, direction: str) 
         - overextension_penalty
     )
     score = _clamp(score)
+    from market_research import candle_research
     return AttentionSnapshot(
         score=score,
         change_15m=change_15m,
@@ -146,6 +149,7 @@ def compute_attention(frame: Optional[pd.DataFrame], indicator, direction: str) 
         distance_atr=distance_atr,
         label=_label(score, volume_spike, change_15m),
         overextended=overextended,
+        research=candle_research(data),
     )
 
 
@@ -173,6 +177,7 @@ def compute_event_attention(frame: Optional[pd.DataFrame], indicator) -> Attenti
         distance_atr=long_view.distance_atr,
         label=_label(score, long_view.volume_spike, long_view.change_15m),
         overextended=bool(long_view.overextended or short_view.overextended),
+        research=long_view.research,
     )
 
 def compute_micro_attention(frame_5m: Optional[pd.DataFrame]) -> MicroAttentionSnapshot:

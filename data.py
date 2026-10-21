@@ -133,8 +133,11 @@ def _normalize_ohlcv(df: pd.DataFrame) -> Optional[pd.DataFrame]:
     for column in required:
         out[column] = pd.to_numeric(out[column], errors="coerce")
 
-    out = out[list(required)]
-    out = out.replace([float("inf"), float("-inf")], pd.NA).dropna()
+    optional = [name for name in ('quote_volume',) if name in out]
+    for name in optional:
+        out[name] = pd.to_numeric(out[name], errors='coerce')
+    out = out[list(required) + optional]
+    out = out.replace([float("inf"), float("-inf")], pd.NA).dropna(subset=list(required))
     out = out[~out.index.duplicated(keep="last")].sort_index()
     out = out[(out["high"] >= out[["open", "close"]].max(axis=1))]
     out = out[(out["low"] <= out[["open", "close"]].min(axis=1))]
@@ -201,6 +204,7 @@ class DataFetcher:
         frame = frame[frame["close_time"] < now_ms]
         frame["timestamp"] = pd.to_datetime(frame["timestamp"], unit="ms", utc=True)
         frame.set_index("timestamp", inplace=True)
+        frame['quote_volume'] = frame['quote_asset_volume']
         normalized = _normalize_ohlcv(frame)
         if normalized is None:
             return None
@@ -253,6 +257,7 @@ class DataFetcher:
         if interval_minutes:
             candle_close = frame.index + pd.Timedelta(minutes=interval_minutes)
             frame = frame[candle_close <= pd.Timestamp.now(tz="UTC")]
+        frame['quote_volume'] = frame['turnover']
         normalized = _normalize_ohlcv(frame)
         return normalized.tail(limit).copy() if normalized is not None else None
 
