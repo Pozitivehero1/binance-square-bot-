@@ -155,9 +155,19 @@ def _allowed_numeric_values(package: Dict[str, Any]) -> set[str]:
     return values
 
 
-def event_decision_level(indicator) -> float:
+def event_decision_level(indicator, package=None) -> float:
     """Choose one truthful nearby chart level for observation posts."""
     price = float(indicator.price)
+    if package:
+        market = package.get('market_event') or package.get('market') or {}
+        context = market.get('observed_context') or {}
+        kind = package.get('editorial_brief',{}).get('kind')
+        anchor = context.get('prior_1h_high' if kind == 'above_range' else 'prior_1h_low') if kind in {'above_range','below_range'} else None
+        try:
+            if anchor is not None and float(anchor)>0:
+                return float(anchor)
+        except (TypeError,ValueError):
+            pass
     candidates = []
     for value in (
         getattr(indicator, "support", None),

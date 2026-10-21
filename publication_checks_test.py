@@ -135,7 +135,7 @@ class Checks(unittest.TestCase):
             draft=NS(text='Наблюдение',source='test',content_format='test',visual_style='test',signal_type='test')
             generated=[None] * main.PUBLICATION_CANDIDATE_ATTEMPTS if fail_all else [None,(draft,NS(score=80))]
             patches={'DRY_RUN':not send_fails,'PUBLISH_IMAGES':False,'cleanup_history':Mock(),
-                     'PostMemory':Mock(return_value=Mock(get_last_lanes=lambda n:[])),
+                     'PostMemory':Mock(return_value=Mock(items=[],get_last_lanes=lambda n:[])),
                      'PublicationGuard':Mock(return_value=Mock(evaluate_candidate=lambda **k:NS(reason='ok',score=80,allowed=True))),
                      'reach_recovery_state':Mock(return_value=(False,0,0)), 'process_outcomes':Mock(),
                      'get_trending_market':Mock(return_value=candidates),'get_recently_published':Mock(return_value=[]),

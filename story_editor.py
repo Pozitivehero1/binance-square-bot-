@@ -6,6 +6,21 @@ import re
 from copy import deepcopy
 
 
+def restore_story_kinds(items, published_posts):
+    """Recover only exact published text matches with retained fact packages."""
+    known = {}
+    for post in published_posts.values():
+        if isinstance(post, dict):
+            package = post.get('fact_package')
+            brief = package.get('editorial_brief') if isinstance(package,dict) else None
+            kind = brief.get('kind') if isinstance(brief,dict) else None
+            if kind and post.get('text'):
+                known[post['text'].strip()] = kind
+    for item in items:
+        if not item.get('story_kind'):
+            item['story_kind'] = known.get(str(item.get('text','')).strip(), '')
+
+
 def author_fact_package(package: dict, *, focus_story=False) -> dict:
     """Expose observed market facts, not ranking/phase labels, to prose authors."""
     allowed = {'ticker','current_price','key_level','support','resistance','vwap',
