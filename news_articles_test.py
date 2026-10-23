@@ -49,6 +49,29 @@ class NewsTests(unittest.TestCase):
             self.assertFalse(news.maybe_publish_news())
             self.assertEqual(draft.call_count, 1)
 
+    def test_news_provider_failure_backoff_persists_across_runs(self):
+        state = {"seen": {}, "last_news_at": ""}
+        with patch.dict(os.environ, {"ENABLE_NEWS_ARTICLES": "1"}), \
+             patch.object(news, "configured", return_value=True), \
+             patch.object(news, "_load", return_value=state), \
+             patch.object(news, "_fetch", return_value=[news_item()]) as fetch, \
+             patch.object(news, "_cover", return_value="/tmp/cover.jpg"), \
+             patch.object(news, "_draft", side_effect=RuntimeError("provider unavailable")) as draft, \
+             patch.object(news, "atomic_write_json") as save:
+            self.assertFalse(news.maybe_publish_news())
+            self.assertIn("provider_retry_at", state)
+            self.assertEqual(save.call_count, 1)
+            # A separate cron invocation must skip the broken news provider,
+            # while market publication remains available to the caller.
+            self.assertFalse(news.maybe_publish_news())
+            self.assertEqual(draft.call_count, 1)
+            self.assertEqual(fetch.call_count, 1)
+            # Expired cooldown retries normally instead of disabling news forever.
+            state["provider_retry_at"] = "2000-01-01T00:00:00+00:00"
+            self.assertFalse(news.maybe_publish_news())
+            self.assertEqual(draft.call_count, 2)
+            self.assertEqual(fetch.call_count, 2)
+
     def test_article_rejection_continues_to_next_story(self):
         title, body = sample_article()
         items = [news_item("https://example.org/one"), news_item("https://example.org/two")]

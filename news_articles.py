@@ -8,7 +8,7 @@ import os
 import re
 import tempfile
 import xml.etree.ElementTree as ET
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 from urllib.parse import urlparse
@@ -159,6 +159,18 @@ def maybe_publish_news():
             return False
     except (ValueError, TypeError):
         pass
+    # DeepSeek's in-process cooldown resets on every scheduled run.
+    # Persist a short retry delay after a provider failure to avoid repeatedly
+    # spending requests on the same outage. Market posts still use their own
+    # independent fallback providers.
+    provider_retry_at = state.get("provider_retry_at", "")
+    if provider_retry_at:
+        try:
+            if now < datetime.fromisoformat(provider_retry_at):
+                log.info("News lane DeepSeek retry backoff active until %s", provider_retry_at)
+                return False
+        except (ValueError, TypeError):
+            pass
     items = _fetch()
     log.info("News lane RSS entries=%d", len(items))
     rejected = {"seen": 0, "ticker": 0, "image": 0, "draft": 0, "cover": 0}
@@ -187,7 +199,14 @@ def maybe_publish_news():
                     rejected["cover"] += 1
                     continue
                 attempts += 1
-                draft = _draft(item, tickers)
+                try:
+                    draft = _draft(item, tickers)
+                except RuntimeError:
+                    # DeepSeek reports HTTP/provider failures as RuntimeError.
+                    # Avoid retrying the same broken proxy every 20 minutes.
+                    state["provider_retry_at"] = (now + timedelta(minutes=60)).isoformat()
+                    atomic_write_json(resolve_state_file("NEWS_STATE_FILE", "news_articles.json"), state)
+                    raise
                 if not draft:
                     rejected["draft"] += 1
                     continue
@@ -202,6 +221,7 @@ def maybe_publish_news():
             seen[key] = now.isoformat()
             state["seen"] = dict(list(seen.items())[-500:])
             state["last_news_at"] = now.isoformat()
+            state.pop("provider_retry_at", None)
             atomic_write_json(resolve_state_file("NEWS_STATE_FILE", "news_articles.json"), state)
             # Successful news publication must be visible to run telemetry and
             # the same 2h/6h/24h performance tracking as ordinary posts.
