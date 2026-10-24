@@ -3,6 +3,8 @@ import json
 import os
 import time
 from types import SimpleNamespace
+from tempfile import TemporaryDirectory
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 import ai_provider
@@ -35,7 +37,8 @@ def main():
     kwargs = dict(system_prompt="Верни candidates", user_payload={"task": "test"},
                   temperature=0.4, max_tokens=1000, timeout=60)
     chain.install_groq_primary()
-    with patch.dict(os.environ, env):
+    with patch.dict(os.environ, env), patch("deepseek_primary.check_cooldown"), \
+         patch("deepseek_primary.remember_transient_failure"):
         deepseek._COOLDOWN_UNTIL = 0
         with patch("deepseek_primary.requests.post", return_value=response()) as post:
             result = ai_provider.request_candidates(**kwargs)
@@ -115,7 +118,36 @@ def main():
                     raise AssertionError("Unsafe URL accepted")
         with patch.dict(os.environ, {"DEEPSEEK_API_KEY": ""}):
             assert ai_provider.preferred_provider_name() == "groq"
-    print("DEEPSEEK PRIMARY: OK | fallback, cooldown, budget and source attribution")
+
+    # The cache is restored between scheduled runs: a real connection outage
+    # must not generate a new proxy request every 20 minutes.
+    with TemporaryDirectory() as folder, patch.dict(os.environ, {**env, "STATE_DIR": folder}), \
+         patch("deepseek_primary.requests.post",
+               side_effect=[requests.ConnectionError("offline"), response()]) as post:
+        deepseek._COOLDOWN_UNTIL = 0
+        try:
+            deepseek.request_candidates(**kwargs)
+        except requests.ConnectionError:
+            pass
+        else:
+            raise AssertionError("Expected a failed DeepSeek connection")
+        assert post.call_count == 1
+        deepseek._COOLDOWN_UNTIL = 0  # Simulate a new Python process.
+        try:
+            deepseek.request_candidates(**kwargs)
+        except requests.RequestException as exc:
+            assert "cooldown" in str(exc)
+        else:
+            raise AssertionError("Persistent cooldown was ignored")
+        assert post.call_count == 1
+        state_file = Path(folder) / "provider_health.json"
+        state = json.loads(state_file.read_text())
+        state = {name: 0 for name in state}
+        state_file.write_text(json.dumps(state))
+        deepseek._COOLDOWN_UNTIL = 0
+        assert deepseek.request_candidates(**kwargs).provider == "deepseek_local"
+        assert post.call_count == 2
+    print("DEEPSEEK PRIMARY: OK | fallback, persistent cooldown, budget and source attribution")
 
 
 if __name__ == "__main__":

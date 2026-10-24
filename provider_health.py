@@ -85,3 +85,14 @@ def remember_failure(url: str, key: str, model: str, response) -> None:
     data = {k: v for k, v in data.items() if isinstance(v, (int, float)) and v > now}
     data[name] = until
     atomic_write_json(resolve_state_file("PROVIDER_HEALTH_FILE", "provider_health.json"), data)
+
+
+def remember_transient_failure(url: str, key: str, model: str, *, seconds: float) -> None:
+    """Back off a failing model across cron runs without persisting credentials."""
+    now = time.time()
+    name = f"{_identity(url, key)}:{model}"
+    data = _read()
+    data = {k: v for k, v in data.items() if isinstance(v, (int, float)) and v > now}
+    until = now + max(60.0, min(float(seconds), 3600.0))
+    data[name] = max(float(data.get(name, 0)), until)
+    atomic_write_json(resolve_state_file("PROVIDER_HEALTH_FILE", "provider_health.json"), data)
