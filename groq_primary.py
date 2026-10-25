@@ -398,9 +398,12 @@ def _request_candidates_groq_first(
             _LAST_PROVIDER = result.provider
             return result
         except (requests.RequestException, ValueError, KeyError, TypeError, RuntimeError) as exc:
-            # Diagnostics never include request headers, response bodies or credentials.
+            # Expose only the status from our own bounded HTTP error message.
+            # Never log arbitrary exception text, response bodies or credentials.
             failures.append(f"deepseek_local:{type(exc).__name__}")
-            logger.warning("DeepSeek unavailable/unusable (%s); trying existing model chain", type(exc).__name__)
+            match = re.fullmatch(r"DeepSeek HTTP ([1-5]\d{2}); use existing fallback chain", str(exc))
+            safe_reason = f"HTTP {match.group(1)}" if match else type(exc).__name__
+            logger.warning("DeepSeek unavailable/unusable (%s); trying existing model chain", safe_reason)
 
     del presence_penalty, frequency_penalty  # Groq models do not support these reliably.
 

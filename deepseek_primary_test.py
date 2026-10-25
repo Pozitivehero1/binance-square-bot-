@@ -67,6 +67,18 @@ def main():
                 assert "groq.com" in post.call_args.args[0]
                 assert deepseek._COOLDOWN_UNTIL > time.monotonic()
 
+        # Distinguish proxy HTTP errors from local budget/cooldown failures,
+        # without ever logging response bodies or credentials.
+        deepseek._COOLDOWN_UNTIL = 0
+        with patch("deepseek_primary.requests.post", side_effect=[response(400), response()]):
+            with patch("groq_primary.logger.warning") as warning:
+                assert ai_provider.request_candidates(**kwargs).provider == "groq"
+                deepseek_warnings = [call.args for call in warning.call_args_list
+                                     if call.args and "DeepSeek unavailable" in call.args[0]]
+                assert len(deepseek_warnings) == 1
+                assert deepseek_warnings[0][1] == "HTTP 400"
+                assert "deepseek-test-key" not in str(deepseek_warnings)
+
         deepseek._COOLDOWN_UNTIL = 0
         with patch("deepseek_primary.requests.post", side_effect=[response(429), response(), response()]) as post:
             start = time.monotonic()
