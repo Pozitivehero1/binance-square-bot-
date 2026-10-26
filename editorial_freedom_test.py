@@ -8,7 +8,10 @@ from reach_editorial import editorial_reach_adjustment
 
 
 def main():
-    assert EXPERIMENT_VERSION == "v6"
+    assert EXPERIMENT_VERSION == "v7"
+    from reader_experiment import writing_brief
+    assert "не придумывай" in writing_brief("what_changed", "EVENT").lower()
+    assert "не выдумывай" in writing_brief("risk_map", "EVENT").lower()
     jobs = (
         (writer, {"market":{"ticker":"$BTC"}}, "TRADE", ["hot_take", "market_story"]),
         (event_writer, {"market_event":{"ticker":"$BTC"}, "optional_trade_plan":{"available":False}},
