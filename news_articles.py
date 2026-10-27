@@ -16,7 +16,13 @@ import requests
 from runtime import resolve_state_file, atomic_write_json, write_status
 from publisher import publish
 from news_evidence import source_has_event, draft_reasons
-from deepseek_primary import configured, request_candidates
+from deepseek_primary import configured
+import ai_provider
+
+
+def request_candidates(**kwargs):
+    """Use the production DeepSeek-first chain, including configured free AI fallbacks."""
+    return ai_provider.request_candidates(**kwargs)
 
 log = logging.getLogger(__name__)
 FEEDS = (
@@ -74,7 +80,7 @@ def _ticker(item):
     return list(dict.fromkeys(found))[:3]
 
 def _draft(item, tickers):
-    """Use the proven DeepSeek candidate protocol, not a separate fragile JSON shape."""
+    """Use the production AI chain while retaining strict news evidence validation."""
     if not source_has_event(item):
         log.info("News skipped: RSS item has no specific event")
         return None
@@ -111,6 +117,7 @@ def _draft(item, tickers):
         source_name = urlparse(item["link"]).hostname or "источник"
         body += "\n\nИсточник: " + source_name
         item["verified_evidence_quote"] = row["evidence_quote"]
+        item["writer_source"] = str(result.provider or "unknown")
         log.info("News AI draft valid provider=%s chars=%d", result.provider, len(body))
         return title, body
     log.info("News AI returned candidates without eligible title/body")
@@ -144,8 +151,8 @@ def maybe_publish_news():
     if os.getenv("ENABLE_NEWS_ARTICLES", "0") != "1":
         log.info("News lane disabled")
         return False
-    if not configured():
-        log.warning("News lane unavailable: DeepSeek not configured")
+    if not (configured() or ai_provider.has_ai_provider()):
+        log.warning("News lane unavailable: no AI author configured")
         return False
     # Always inspect the news lane when enabled; cooldown and deduplication
     # decide eligibility rather than a silent random 75% skip.
@@ -159,7 +166,7 @@ def maybe_publish_news():
             return False
     except (ValueError, TypeError):
         pass
-    # DeepSeek's in-process cooldown resets on every scheduled run.
+    # The AI chain can fail across all providers; avoid repeated attempts on outages.
     # Persist a short retry delay after a provider failure to avoid repeatedly
     # spending requests on the same outage. Market posts still use their own
     # independent fallback providers.
@@ -167,7 +174,7 @@ def maybe_publish_news():
     if provider_retry_at:
         try:
             if now < datetime.fromisoformat(provider_retry_at):
-                log.info("News lane DeepSeek retry backoff active until %s", provider_retry_at)
+                log.info("News lane provider retry backoff active until %s", provider_retry_at)
                 return False
         except (ValueError, TypeError):
             pass
@@ -202,8 +209,7 @@ def maybe_publish_news():
                 try:
                     draft = _draft(item, tickers)
                 except RuntimeError:
-                    # DeepSeek reports HTTP/provider failures as RuntimeError.
-                    # Avoid retrying the same broken proxy every 20 minutes.
+                    # All configured AI providers failed. Avoid retrying the same chain every 20 minutes.
                     state["provider_retry_at"] = (now + timedelta(minutes=60)).isoformat()
                     atomic_write_json(resolve_state_file("NEWS_STATE_FILE", "news_articles.json"), state)
                     raise
@@ -234,7 +240,7 @@ def maybe_publish_news():
                     market_symbol=tickers[0] + "USDT", text=draft[1],
                     lane="NEWS", direction="observation",
                     content_format="news_article", visual_style="rss_cover",
-                    event_class="news", writer_source="deepseek_local",
+                    event_class="news", writer_source=item.get("writer_source", "unknown"),
                     fact_package={"source_url": item["link"], "headline": item["title"],
                                   "description": item["summary"], "evidence_quote": item.get("verified_evidence_quote", "")},
                 )
