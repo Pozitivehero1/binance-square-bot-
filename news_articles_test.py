@@ -31,6 +31,29 @@ class NewsTests(unittest.TestCase):
             self.assertEqual(news._draft(news_item(), ["BTC"]), (title, body.strip()+"\n\nИсточник: example.org"))
             self.assertEqual(req.call_count, 1)
 
+    def test_news_uses_configured_groq_when_deepseek_unavailable(self):
+        title, body = sample_article()
+        item = news_item()
+        response = SimpleNamespace(
+            candidates=[{"title": title, "text": body, "evidence_quote": item["summary"]}],
+            provider="groq", model="test-model",
+        )
+        with patch.dict(os.environ, {"ENABLE_NEWS_ARTICLES": "1"}), \
+             patch.object(news, "configured", return_value=False), \
+             patch.object(news.ai_provider, "has_ai_provider", return_value=True), \
+             patch.object(news.ai_provider, "request_candidates", return_value=response) as routed, \
+             patch.object(news, "_load", return_value={"seen": {}, "last_news_at": ""}), \
+             patch.object(news, "_fetch", return_value=[item]), \
+             patch.object(news, "_cover", return_value="/tmp/cover.jpg"), \
+             patch.object(news, "publish", return_value=PublishResult(True, post_id="456")), \
+             patch.object(news, "atomic_write_json"), \
+             patch.object(news, "write_status"), \
+             patch("performance_store.record_publication") as tracking:
+            self.assertTrue(news.maybe_publish_news())
+            self.assertEqual(routed.call_count, 1)
+            self.assertEqual(tracking.call_args.kwargs["writer_source"], "groq")
+            self.assertEqual(tracking.call_args.kwargs["fact_package"]["evidence_quote"], item["summary"])
+
     def test_draft_rejects_missing_cashtag(self):
         title, body = sample_article()
         response = SimpleNamespace(candidates=[{"title": title, "text": body.replace("$BTC", "BTC")}],
