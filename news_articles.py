@@ -102,16 +102,21 @@ def _draft(item, tickers):
                       "output_schema": {"candidates": [{"title": "Заголовок", "text": "Статья", "evidence_quote": "Exact source event"}]}},
         temperature=0.5, max_tokens=1200, timeout=25,
     )
+    rejected = {"length": 0, "cashtag": 0, "unsafe": 0, "evidence": 0}
     for row in result.candidates:
         title, body = str(row.get("title", "")).strip(), str(row.get("text", "")).strip()
         if not 15 <= len(title) <= 130 or not 180 <= len(body) <= 1200:
+            rejected["length"] += 1
             continue
         if not any("$" + ticker in body.upper() for ticker in tickers):
+            rejected["cashtag"] += 1
             continue
         if re.search(r"https?://|(?:гарантированн|точно вырастет|без риска)", body, re.I):
+            rejected["unsafe"] += 1
             continue
         reasons = draft_reasons(body, str(row.get("evidence_quote") or ""), item)
         if reasons:
+            rejected["evidence"] += 1
             log.info("News evidence rejected: %s", ", ".join(reasons))
             continue
         source_name = urlparse(item["link"]).hostname or "источник"
@@ -120,7 +125,10 @@ def _draft(item, tickers):
         item["writer_source"] = str(result.provider or "unknown")
         log.info("News AI draft valid provider=%s chars=%d", result.provider, len(body))
         return title, body
-    log.info("News AI returned candidates without eligible title/body")
+    log.info(
+        "News AI returned no eligible draft: provider=%s candidates=%d rejected=%s",
+        result.provider, len(result.candidates), rejected,
+    )
     return None
 
 def _cover(url, directory):
