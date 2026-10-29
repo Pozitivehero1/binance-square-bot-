@@ -108,9 +108,13 @@ def _draft(item, tickers):
         if not 15 <= len(title) <= 130 or not 180 <= len(body) <= 1200:
             rejected["length"] += 1
             continue
-        if not any("$" + ticker in body.upper() for ticker in tickers):
-            rejected["cashtag"] += 1
-            continue
+        if not any(re.search(r"(?<![A-Za-z0-9])\\$" + re.escape(ticker) + r"(?![A-Za-z0-9])", body, re.I) for ticker in tickers):
+            # The ticker was extracted from the RSS headline/description, not
+            # inferred by the model. Restore its cashtag without inventing news.
+            if not tickers or not re.fullmatch(r"[A-Z][A-Z0-9]{1,14}", tickers[0]):
+                rejected["cashtag"] += 1
+                continue
+            body = f"${tickers[0]} — {body}"
         if re.search(r"https?://|(?:гарантированн|точно вырастет|без риска)", body, re.I):
             rejected["unsafe"] += 1
             continue
