@@ -108,7 +108,7 @@ def _draft(item, tickers):
         if not 15 <= len(title) <= 130 or not 180 <= len(body) <= 1200:
             rejected["length"] += 1
             continue
-        if not any(re.search(r"(?<![A-Za-z0-9])\\$" + re.escape(ticker) + r"(?![A-Za-z0-9])", body, re.I) for ticker in tickers):
+        if not any(re.search(r"(?<![A-Za-z0-9])\$" + re.escape(ticker) + r"(?![A-Za-z0-9])", body, re.I) for ticker in tickers):
             # The ticker was extracted from the RSS headline/description, not
             # inferred by the model. Restore its cashtag without inventing news.
             if not tickers or not re.fullmatch(r"[A-Z][A-Z0-9]{1,14}", tickers[0]):
