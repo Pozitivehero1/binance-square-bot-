@@ -54,10 +54,27 @@ class NewsTests(unittest.TestCase):
             self.assertEqual(tracking.call_args.kwargs["writer_source"], "groq")
             self.assertEqual(tracking.call_args.kwargs["fact_package"]["evidence_quote"], item["summary"])
 
-    def test_draft_rejects_missing_cashtag(self):
+    def test_draft_repairs_missing_cashtag_from_verified_rss_ticker(self):
         title, body = sample_article()
-        response = SimpleNamespace(candidates=[{"title": title, "text": body.replace("$BTC", "BTC")}],
-                                   provider="deepseek_local")
+        response = SimpleNamespace(
+            candidates=[{"title": title, "text": body.replace("$BTC", "BTC"),
+                         "evidence_quote": news_item()["summary"]}],
+            provider="groq",
+        )
+        with patch.object(news, "request_candidates", return_value=response):
+            article = news._draft(news_item(), ["BTC"])
+        self.assertIsNotNone(article)
+        self.assertEqual(article[0], title)
+        self.assertTrue(article[1].startswith("$BTC — "))
+        self.assertIn("Источник: example.org", article[1])
+
+    def test_draft_does_not_bypass_event_evidence_for_missing_cashtag(self):
+        title, body = sample_article()
+        response = SimpleNamespace(
+            candidates=[{"title": title, "text": body.replace("$BTC", "BTC"),
+                         "evidence_quote": "Not a quote from the actual RSS event"}],
+            provider="groq",
+        )
         with patch.object(news, "request_candidates", return_value=response):
             self.assertIsNone(news._draft(news_item(), ["BTC"]))
 
