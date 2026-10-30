@@ -177,10 +177,14 @@ class Editorial(unittest.TestCase):
         self.assertLess(weak,60)
         self.assertGreater(strong,weak+20)
 
-    def test_cadence_is_unchanged(self):
+    def test_external_cron_is_the_only_scheduler(self):
         workflow=(Path(__file__).parent/'.github/workflows/run.yml').read_text(encoding='utf-8')
-        for expected in ('cron: "*/20 * * * *"','ENABLE_PACING_LIMITS: "0"','MIN_GLOBAL_INTERVAL_MIN: "0"','MAX_POSTS_PER_DAY: "100"','COOLDOWN_MIN: "240"'):
-            self.assertIn(expected,workflow)
+        # External workflow_dispatch already fires every 20 minutes. A native
+        # schedule at the same minute creates duplicate scans and API usage.
+        self.assertIn('workflow_dispatch:', workflow)
+        self.assertNotIn('  schedule:', workflow)
+        for expected in ('ENABLE_PACING_LIMITS: "0"','MIN_GLOBAL_INTERVAL_MIN: "0"','MAX_POSTS_PER_DAY: "100"','COOLDOWN_MIN: "240"'):
+            self.assertIn(expected, workflow)
 
 
 if __name__=='__main__':
