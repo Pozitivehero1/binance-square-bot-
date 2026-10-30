@@ -2,9 +2,6 @@ name: Binance Square Bot
 
 on:
   workflow_dispatch:
-  schedule:
-    # Native fallback cadence: external cron is no longer a single point of failure.
-    - cron: "*/20 * * * *"
 
 permissions:
   contents: read
