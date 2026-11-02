@@ -77,10 +77,13 @@ def _request_gemini_model(*, system_prompt: str, user_payload: Dict[str, Any],
         json=body,
         timeout=ai_provider._budget_timeout(max(8, min(int(timeout), 35))),
     )
-    if response.status_code in {429, 503}:
+    if response.status_code in {404, 429, 503}:
         retry_after = _retry_after_seconds(response)
-        # Do not waste remaining candidate attempts on a quota-exhausted model.
-        _GEMINI_COOLDOWN_UNTIL = time.monotonic() + max(30.0, min(float(retry_after or 180.0), 3600.0))
+        # A missing model/endpoint (404) will not recover within this scan.
+        # Avoid repeated failed calls while allowing a fresh check after 5 minutes.
+        cooldown = (300.0 if response.status_code == 404 else
+                    max(30.0, min(float(retry_after or 180.0), 3600.0)))
+        _GEMINI_COOLDOWN_UNTIL = time.monotonic() + cooldown
     response.raise_for_status()
     rows = ai_provider._parse_candidates(response.json())
     ai_provider._annotate(rows, "gemini", model)
