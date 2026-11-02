@@ -40,8 +40,45 @@ def main() -> None:
         assert requests_made[0][0].startswith("https://generativelanguage.googleapis.com/")
         assert requests_made[0][2]["model"] == "gemini-2.5-flash-lite"
         assert "response_format" in requests_made[0][2]
+
+        # A confirmed 404 must not consume another Gemini request in the
+        # same scan. A later scan may retry after the short cooldown.
+        class MissingModelResponse:
+            status_code = 404
+            headers = {}
+            def raise_for_status(self):
+                raise requests.HTTPError("404 model not found")
+
+        def missing_model_post(url, *, headers, json, timeout):
+            requests_made.append((url, headers, json, timeout))
+            return MissingModelResponse()
+
+        import requests
+        provider._GEMINI_COOLDOWN_UNTIL = 0.0
+        provider.requests.post = missing_model_post
+        before = len(requests_made)
+        try:
+            provider._request_gemini_model(
+                system_prompt="Return JSON", user_payload={"topic": "BTC"},
+                temperature=0.4, max_tokens=800, timeout=12,
+            )
+            assert False, "Expected HTTP 404"
+        except requests.HTTPError:
+            pass
+        assert len(requests_made) == before + 1
+        assert provider._GEMINI_COOLDOWN_UNTIL > provider.time.monotonic()
+        try:
+            provider._request_gemini_model(
+                system_prompt="Return JSON", user_payload={"topic": "BTC"},
+                temperature=0.4, max_tokens=800, timeout=12,
+            )
+            assert False, "Expected Gemini cooldown"
+        except RuntimeError as exc:
+            assert "cooldown" in str(exc).lower()
+        assert len(requests_made) == before + 1
         print("gemini_provider_test: OK")
     finally:
+        provider._GEMINI_COOLDOWN_UNTIL = 0.0
         provider.requests.post = old_post
         ai_provider._budget_timeout = old_budget
         if old_key is None:
