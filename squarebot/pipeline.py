@@ -150,7 +150,8 @@ def editorial_pass(settings):
                     continue
                 text, reasons = validate(draft, story, recent)
                 if reasons:
-                    row = {"story_id": draft.story_id, "provider": draft.provider, "reasons": list(reasons)}
+                    row = {"story_id": draft.story_id, "provider": draft.provider, "reasons": list(reasons),
+                           "text": draft.text[:1800], "evidence_quote": draft.evidence_quote[:600]}
                     report["rejected"].append(row)
                     feedback.append(row)
                     LOG.info("Draft factual/repetition rejection story=%s reasons=%s", story.id, ", ".join(reasons))

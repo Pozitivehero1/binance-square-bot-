@@ -42,3 +42,19 @@ sends, crash recovery, dry runs and age-matched metrics. The existing full
 regression suite is retained; its runtime-entry test now checks the new path.
 Live provider availability and actual reach must be assessed from subsequent
 Actions runs and measured posts, not inferred from offline tests.
+
+## Production verification and final copy contract
+
+Run 41849906884 confirmed post 384663873016205 after scanning 40/40 markets
+and all three news feeds. Reviewing the actual report exposed awkward inline
+fact-clause substitution, despite numeric correctness. The author now writes
+free prose; a separate grounding module binds percentage measurements to their
+asset, period, unit and direction. Broken substitution punctuation is rejected.
+An exact source news quote no longer depends on a legacy English verb whitelist.
+The report retains rejected draft text so these defects can be reviewed directly.
+
+The old Gemini 2.5 model returned HTTP 404. The existing Gemini key now tries
+the documented stable gemini-3.5-flash-lite model; a GitHub variable can override
+it. Production-code pushes run the same existing workflow so a release is
+verified without waiting for the next external cron tick. No second scheduled
+publishing workflow was introduced.

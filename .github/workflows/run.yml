@@ -1,6 +1,11 @@
 name: Binance Square Bot
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "squarebot/**"
+      - "run_bot.py"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -30,7 +35,7 @@ jobs:
       DEEPSEEK_BASE_URL: ${{ vars.DEEPSEEK_BASE_URL }}
       DEEPSEEK_MODEL: ${{ vars.DEEPSEEK_MODEL || 'deepseek-chat' }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-      GEMINI_MODEL: "gemini-2.5-flash-lite"
+      GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-3.5-flash-lite' }}
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
       GROQ_MODELS: "qwen/qwen3.8-27b,openai/gpt-oss-120b"
       MISTRAL_API: ${{ secrets.MISTRAL_API }}

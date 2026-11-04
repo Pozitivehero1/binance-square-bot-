@@ -15,18 +15,11 @@ def validate(draft, story, recent):
     title = draft.title.strip()
     used = TOKEN.findall(raw)
     if story.kind != "news":
-        if not used:
-            reasons.append("missing-measured-fact: use one or more [[fN]] facts")
         if len(used) != len(set(used)):
             reasons.append("repeated-fact")
         if any(key not in story.facts for key in used):
             reasons.append("unknown-fact-token")
-        # Python owns the entire measured clause: direction, unit and timeframe
-        # cannot drift independently as they did in the old numeric whitelist.
         prose = TOKEN.sub("", raw)
-        prose_without_tickers = re.sub(r"\$[A-Za-z0-9]+", "", prose + " " + title)
-        if re.search(r"\d|[%‰]", prose_without_tickers):
-            reasons.append("raw-market-number: put measured clauses in [[fN]] tokens")
         for sentence in re.split(r"[.!?\n]", prose):
             participant_claim = re.search(r"(?i)\b(?:спрос|покупател\w*|продавц\w*|накоплен\w*|распределени\w*|кит\w*|ликвидац\w*|институционал\w*)\b", sentence)
             cautious = re.search(r"(?i)не (?:доказыва\w*|подтвержда\w*|показыва\w*|означа\w*)|нельзя судить|ничего не говорит", sentence)
@@ -35,6 +28,8 @@ def validate(draft, story, recent):
         if re.search(r"(?i)\b(?:RSI|ADX|VWAP|ATR|EMA|MACD)\b", prose):
             reasons.append("indicator-not-in-evidence")
         text = TOKEN.sub(lambda m: story.facts.get(m[1], m[0]), raw)
+        from .grounding import market_reasons
+        reasons.extend(market_reasons(text + "\n" + title, story))
     else:
         text = raw
         source = " ".join(story.source_text.split())
@@ -43,8 +38,12 @@ def validate(draft, story, recent):
             reasons.append("missing-verbatim-source-evidence")
         from news_evidence import draft_reasons
         # Retain source event/number checks, with the full RSS content when available.
-        reasons.extend(draft_reasons(text + " " + title, quote,
-                                     {"title": story.headline, "summary": story.source_text}))
+        checks = draft_reasons(text + " " + title, quote,
+                               {"title": story.headline, "summary": story.source_text})
+        # Exact source evidence was already checked above. A verb whitelist
+        # must not reject an authentic quote just because it says "moves" or
+        # "routes" rather than one of the legacy news verbs.
+        reasons.extend(r for r in checks if r != "missing-exact-event-evidence")
         if TOKEN.search(text):
             reasons.append("unexpected-fact-token-in-news")
     if not 140 <= len(text) <= (1600 if story.kind == "news" else 1100):

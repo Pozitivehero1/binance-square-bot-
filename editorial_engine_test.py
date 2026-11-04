@@ -105,11 +105,31 @@ class ValidationTests(unittest.TestCase):
         self.assertNotIn('[[', text)
 
     def test_raw_numbers_unknown_facts_and_participant_fabrication(self):
-        for suffix, expected in [(' Цена 50000.', 'raw-market-number'),
+        for suffix, expected in [(' Цена 50000.', 'unsupported-market-number'),
                                  (' [[f9]]', 'unknown-fact-token'),
                                  (' Киты покупают монету.', 'unsupported-market-participant-claim')]:
             d = good_draft(); d.text += suffix
             self.assertTrue(any(expected in r for r in validate(d, story(), [])[1]))
+
+    def test_free_prose_keeps_measurements_bound(self):
+        d=Draft('s1', '$BTC прибавил за час 1.50%, хотя за четыре часа потерял 2.00%. '
+                'Короткий отскок пока не отменил более широкое снижение. Здесь важна разница '
+                'между локальным восстановлением и направлением за несколько часов.')
+        self.assertFalse(validate(d,story(),[])[1])
+        d.text=d.text.replace('за час 1.50%', 'за четыре часа 1.50%')
+        self.assertIn('measurement-not-bound-to-asset-unit-and-timeframe',validate(d,story(),[])[1])
+
+    def test_wrong_sign_and_broken_substitution_are_rejected(self):
+        d=Draft('s1', '$BTC потерял за час 1.50%. За четыре часа цена потеряла 2.00%. '
+                'Короткий отскок пока не отменил более широкое снижение. Здесь важна разница '
+                'между локальным восстановлением и направлением за несколько часов.')
+        self.assertIn('measurement-direction-contradicts-evidence',validate(d,story(),[])[1])
+        d=good_draft();d.text=d.text.replace('[[f1]]', '[[f1]];')
+        self.assertIn('broken-measurement-punctuation',validate(d,story(),[])[1])
+
+    def test_truthful_caution_is_not_a_participant_claim(self):
+        d=good_draft();d.text+=' Это не доказывает накопление позиций.'
+        self.assertNotIn('unsupported-market-participant-claim',validate(d,story(),[])[1])
 
     def test_changing_numbers_and_tickers_does_not_hide_template(self):
         a = '$BTC вырос на 2%. За коротким отскоком пока нет изменения более широкой картины рынка.'
