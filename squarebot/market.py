@@ -117,19 +117,22 @@ def build_stories(measurements, now=None):
                  f"${base}: цена закрытия пятиминутной свечи {price(m['price'])} USDT."]
         liquid_bonus = min(12, max(0, math.log10(m["volume"])-6)*3)
         if abs(m["c1h"]) >= .15 or abs(m["c4h"]) >= .5:
-            add("mover", [base], "Движение цены в контексте последних часов", facts,
+            add("mover", [base], "Движение цены в контексте последних часов", facts[:2],
                 30+min(28, abs(m["c1h"])*4)+liquid_bonus+(6 if base in CORE else 0), m,
                 "up" if m["c1h"] > 0 else "down")
         if m["price"] > m["prior_high"] or m["price"] < m["prior_low"]:
             up = m["price"] > m["prior_high"]
             bound = m["prior_high"] if up else m["prior_low"]
-            facts += [f"${base}: последняя пятиминутная свеча закрылась {'выше максимума' if up else 'ниже минимума'}"
-                      f" предыдущих двадцати четырёх часов ({price(bound)} USDT)."]
+            breakout = f"${base}: последняя пятиминутная свеча закрылась {'выше максимума' if up else 'ниже минимума'} предыдущих двадцати четырёх часов ({price(bound)} USDT)."
             add("range_break", [base], "Закрытие за пределами предыдущего суточного диапазона",
-                facts, 52+liquid_bonus+min(15, abs(m["c1h"])*3), m, "up" if up else "down")
+                [facts[0], breakout], 52+liquid_bonus+min(15, abs(m["c1h"])*3), m, "up" if up else "down")
         if m["c1h"] * m["previous_hour"] < 0 and min(abs(m["c1h"]), abs(m["previous_hour"])) >= .6:
-            add("reversal", [base], "Последний час изменил направление движения", facts+[
-                f"${base}: за предшествующий час изменение составляло {pct(m['previous_hour'])}."],
+            if m["c1h"] * m["c4h"] < 0:
+                focused = facts[:2] + ["Направления последнего часа и четырёхчасового итога различаются; локальное движение пока не сменило знак более длинного окна."]
+            else:
+                focused = [facts[0], f"${base}: за предшествующий час изменение составляло {pct(m['previous_hour'])}.",
+                           "Два соседних часа закрылись в противоположных направлениях; это наблюдение о произошедшем, а не подтверждение будущего тренда."]
+            add("reversal", [base], "Последний час изменил направление движения", focused,
                 48+liquid_bonus+min(15, abs(m["c1h"])*3), m, "up" if m["c1h"] > 0 else "down")
     if "BTC" in by_base and "ETH" in by_base:
         btc, eth = by_base["BTC"], by_base["ETH"]

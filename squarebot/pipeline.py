@@ -50,7 +50,7 @@ def shortlist(stories, store, recent, performance):
             continue
         counts[story.kind] = counts.get(story.kind, 0)+1
         chosen.append(story)
-        if len(chosen) == 8:
+        if len(chosen) == 6:
             break
     return chosen
 
@@ -134,6 +134,9 @@ def editorial_pass(settings):
     report["candidates"] = [s.brief() for s in selected]
     if not selected:
         return finish("skipped", "All source events are already covered or have unresolved sends")
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        selected = list(pool.map(news.enrich, selected))
+    report["candidates"] = [s.brief() for s in selected]
     by_id = {s.id: s for s in selected}
     author = Author(settings, providers)
     generator = author.drafts(selected, recent)

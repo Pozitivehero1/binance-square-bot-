@@ -230,7 +230,7 @@ class Author:
     def drafts(self, stories, recent):
         """Each provider is visited once; at most one factual repair per response."""
         payload = {"stories": [s.brief() for s in stories],
-                   "recent": [str(p.get("text", ""))[:1000] for p in recent[:12]]}
+                   "recent": [str(p.get("text", ""))[:400] for p in recent[:8]]}
         for provider in self.providers:
             if not self.budget():
                 return

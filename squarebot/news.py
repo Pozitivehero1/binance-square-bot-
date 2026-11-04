@@ -5,6 +5,7 @@ import hashlib
 import html
 from html.parser import HTMLParser
 import ipaddress
+import json
 import logging
 import re
 import socket
@@ -24,6 +25,20 @@ FEEDS = ("https://cointelegraph.com/rss", "https://decrypt.co/feed",
 NAMES = {"bitcoin": "BTC", "btc": "BTC", "ethereum": "ETH", "ether": "ETH", "solana": "SOL",
          "xrp": "XRP", "ripple": "XRP", "bnb": "BNB", "dogecoin": "DOGE", "cardano": "ADA",
          "chainlink": "LINK", "avalanche": "AVAX", "tron": "TRX", "sui": "SUI", "toncoin": "TON"}
+NAMES.update({"thorchain":"RUNE", "rune":"RUNE", "monero":"XMR", "zcash":"ZEC",
+              "pepe":"PEPE", "litecoin":"LTC", "uniswap":"UNI", "aave":"AAVE",
+              "arbitrum":"ARB", "optimism":"OP", "near protocol":"NEAR", "hyperliquid":"HYPE"})
+
+
+def tickers(title, source):
+    def mentions(text):
+        found = []
+        for name, symbol in NAMES.items():
+            for match in re.finditer(r"(?<![a-z])"+re.escape(name)+r"(?![a-z])", text.lower()):
+                found.append((match.start(), symbol))
+        return [symbol for _,symbol in sorted(found)]
+    # The headline subject must not be displaced by BTC/ETH in a long article.
+    return list(dict.fromkeys(mentions(title)+mentions(source)))[:3]
 
 
 def public_url(url):
@@ -114,8 +129,7 @@ def parse_feed(data, now=None):
             summary = {"title": title, "summary": source[len(title):].strip()}
             if not source_has_event(summary):
                 continue
-            symbols = list(dict.fromkeys(v for k, v in NAMES.items()
-                                        if re.search(r"(?<![a-z])"+re.escape(k)+r"(?![a-z])", source.lower())))[:3]
+            symbols = tickers(title, source)
             if not symbols:
                 continue
             image_url = ""
@@ -148,6 +162,63 @@ def scan():
     rows = {s.id: s for batch in results for s in batch}
     LOG.info("News scan stories=%s feeds_available=%s/%s", len(rows), sum(bool(r) for r in results), len(FEEDS))
     return list(rows.values())
+
+
+def article_text(page):
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(page, "html.parser")
+    def bodies(obj):
+        if isinstance(obj, dict):
+            if isinstance(obj.get("articleBody"), str):
+                yield plain(obj["articleBody"])
+            for child in obj.values():
+                yield from bodies(child)
+        elif isinstance(obj, list):
+            for child in obj:
+                yield from bodies(child)
+    for tag in soup.find_all("script", attrs={"type":"application/ld+json"}):
+        try:
+            for body in bodies(json.loads(tag.get_text())):
+                if len(body) >= 300:
+                    return body[:4500]
+        except (ValueError, TypeError):
+            pass
+    for selector in ('[itemprop="articleBody"]', '.post__content', '.article-content', '.article-body', '.post-content', 'article'):
+        section = soup.select_one(selector)
+        if section is None:
+            continue
+        for unwanted in section.select('script,style,nav,aside,[class*="related"],[class*="newsletter"],[class*="share"]'):
+            unwanted.decompose()
+        paragraphs = []
+        for paragraph in section.find_all("p"):
+            text = " ".join(paragraph.get_text(" ", strip=True).split())
+            if re.match(r"(?i)^(?:disclaimer|read more|related:|advertisement|subscribe|sign up)", text):
+                continue
+            if len(text) >= 45:
+                paragraphs.append(text)
+        body = "\n".join(dict.fromkeys(paragraphs))
+        if len(body) >= 300:
+            return body[:4500]
+    return ""
+
+
+def enrich(story):
+    """Supply reporting detail before asking the author to write an article."""
+    if story.kind != "news" or len(story.source_text) >= 2000:
+        return story
+    try:
+        page = download(story.source_url)
+        body = article_text(page)
+        if len(body) > len(story.source_text):
+            story.source_text = story.headline+"\n"+body
+            LOG.info("News source expanded story=%s chars=%s", story.id, len(story.source_text))
+        parser = Text()
+        parser.feed(page.decode("utf-8", errors="replace"))
+        if not story.image_url:
+            story.image_url = parser.meta.get("og:image", "")
+    except (requests.RequestException, ValueError, OSError):
+        LOG.info("Full article unavailable; retaining RSS facts story=%s", story.id)
+    return story
 
 
 def cover(story, directory):

@@ -65,3 +65,11 @@ added to a short political-news summary. Final publication now requires a
 separate source-only editorial pass, within the same call/time budget, followed
 by the deterministic factual checks. This is source validation and language
 editing; it does not reintroduce an interestingness score or a view threshold.
+
+Further live review showed that RSS-only summaries and five competing market
+measurements encouraged padded news and dry metric lists. News discovery now
+loads the selected article body (JSON-LD or article paragraphs) before authoring;
+headline assets take cashtag priority. Each market topic supplies only its
+relevant measurements and an evidence-backed relation between their windows.
+The source editor remains mandatory. Full-source retrieval is bounded and
+fails back to the original RSS evidence when unavailable.

@@ -18,7 +18,7 @@ from squarebot import market
 from squarebot.author import Author, Provider, parse_candidates, configured_providers
 from squarebot.metrics import summarize
 from squarebot.models import Draft, Settings, Story, utcnow
-from squarebot.news import parse_feed, public_url
+from squarebot.news import parse_feed, public_url, article_text, tickers, enrich
 from squarebot.pipeline import editorial_pass, shortlist
 from squarebot.store import Store, similarity
 from squarebot.validation import validate
@@ -92,7 +92,7 @@ class MarketTests(unittest.TestCase):
         stories = market.build_stories([m])
         self.assertIn('range_break', [s.kind for s in stories])
         breakout = next(s for s in stories if s.kind == 'range_break')
-        self.assertIn('двадцати четырёх часов', breakout.facts['f5'])
+        self.assertIn('двадцати четырёх часов', breakout.facts['f2'])
         self.assertNotEqual(m['prior_high'], rows[-1][2])
 
 
@@ -154,6 +154,26 @@ class ValidationTests(unittest.TestCase):
 
 
 class NewsTests(unittest.TestCase):
+    def test_full_article_extraction_excludes_navigation(self):
+        body='The company announced a Bitcoin fund for corporate investors. '*8
+        page=('<nav>Related news and advertisements</nav><script type="application/ld+json">'+
+              json.dumps({'@type':'NewsArticle','articleBody':body})+'</script>').encode()
+        self.assertEqual(article_text(page),body.strip())
+        self.assertNotIn('advertisements',article_text(page))
+
+    def test_headline_asset_has_priority_over_other_coins(self):
+        self.assertEqual(tickers('THORChain RUNE rises', 'Bitcoin Ethereum Tron Solana'),['RUNE','BTC','ETH'])
+
+    def test_enrichment_keeps_full_source_available_to_editor(self):
+        s=Story('n','news',['BTC'],'Bitcoin fund announced',{},utcnow().isoformat(),
+                source_url='https://example.com/news',source_text='A short RSS summary')
+        body='The company announced a Bitcoin fund for corporate investors. '*8
+        page=('<article><p>'+body+'</p></article>').encode()
+        with patch('squarebot.news.download',return_value=page):
+            result=enrich(s)
+        self.assertIn('corporate investors',result.source_text)
+        self.assertGreater(len(result.source_text),300)
+
     def test_feed_without_cover_is_still_a_story_and_old_items_rejected(self):
         now = utcnow()
         def xml(date):
