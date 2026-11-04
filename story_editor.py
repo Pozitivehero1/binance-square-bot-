@@ -106,8 +106,21 @@ def market_story_adjustment(attention, micro, opportunity, *, recent_story_kinds
     # Large isolated relative-volume ratios used to win despite almost no motion.
     # These are ranking corrections, never a new publication veto or quota.
     movement = min(8,d15*3) + min(4,abs(float(attention.change_45m)))
-    volume_only = 12 if max(v5,v15)>=2.8 and max(d5,d15)<.5 else 0
-    return round(max(-24,min(20,evidence+demand+movement-3-repetition-volume_only)),2)
+    # A volume spike without price discovery has repeatedly produced near-identical
+    # low-value posts. Prefer a verified range break or meaningful displacement
+    # over a louder version of the same volume-ratio observation.
+    context = (market or {}).get("observed_context") or {}
+    price = _n((market or {}).get("current_price"))
+    prior_high = _n(context.get("prior_1h_high"))
+    prior_low = _n(context.get("prior_1h_low"))
+    range_break = bool(price and ((prior_high and price > prior_high) or
+                                  (prior_low and price < prior_low)))
+    meaningful_move = d15 >= 1.5 or abs(float(attention.change_45m)) >= 3
+    volume_only = 22 if max(v5,v15) >= 2.8 and max(d5,d15) < .5 else 0
+    range_bonus = 9 if range_break else 0
+    displacement_bonus = 6 if meaningful_move else 0
+    return round(max(-36,min(32,evidence+demand+movement-3-repetition-volume_only
+                             +range_bonus+displacement_bonus)),2)
 
 
 def _shape(text):
