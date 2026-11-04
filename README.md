@@ -1,292 +1,108 @@
-# Binance Square Bot — v12.8 Measured Market Context
+# Binance Square Bot — v13.0
 
-Production bot for `PozitiveHero`: evidence-led TRADE/EVENT stories, grounded
-news, full public-plan checks and age-matched performance learning. The existing
-20-minute publishing schedule and pacing settings are preserved. See
-[the v12.8 changes](CHANGES_V12_8.md) for measured candle research, chronological
-fact checks, reader experiments and validation.
+Бот PozitiveHero: новости и самостоятельные рыночные заметки на русском.
+Production entry point: `python run_bot.py`. Один внешний cron вызывает один
+workflow `.github/workflows/run.yml`, как и раньше.
 
-No bot can guarantee views or a fixed W2E payout. v11.17 improves the parts the
-bot controls—candidate quality, copy selection, repetition, timing and feedback—
-and keeps the 20-minute trigger while preserving factual and publication-safety
-checks.
+## Что изменилось
 
-## Reach policy
+Основной цикл переписан в пакете `squarebot/`. При запуске больше нет подмен
+функций из релизов v11/v12, вложенных цепочек авторов и скрытого изменения env.
+Старые модули сохранены для истории, аналитики и регрессионных проверок;
+`main.py`, `writer.py`, `event_writer.py` и `runtime_release.py` не запускаются
+production entry point.
 
-- Live market facts remain the primary signal. Historical performance supplies
-  bounded corrections; it cannot manufacture a setup or bypass safety gates.
-- Recent performance uses a 7-day lookback and 3-day half-life.
-- Draft ranking learns from lane, format, writer, event class and direction.
-- Learning uses measured 23–25h views; early snapshots are shown separately,
-  without fixed extrapolation or lifetime-view substitutions.
-- Recovery compares per-post medians with sample minima; more publications
-  alone cannot establish recovery. Existing pacing is preserved.
-- Production copy limits are 185–520 characters. The AI writes the narrative; Python appends one canonical plan. Specific live facts beat generic
-  prose; repetition and structural similarity remain hard constraints.
-- The configured DeepSeek proxy is the primary author. The existing
-  Gemini/Groq, GPT-OSS, Mistral, OrcaRouter and OpenRouter providers retain
-  their fallback ordering. Production does not silently replace a
-  configured AI author with deterministic copy.
-- Lane and format learning uses confidence-shrunk observed reach lift. Recent
-  format use remains a diversity penalty, but weak formats are no longer forced
-  into the three-slot AI request merely because they were used less often.
-- W2E-oriented trade ranking learns from verified outcomes by public decision
-  mode (`at_level`, retest, breakout) and ticker. A bounded feed-mix rule keeps
-  actionable plans present without discarding a materially stronger live event.
-- TP3 completions and verified stops are refreshed every run but publish
-  only as a fallback when no fresh candidate wins and reach recovery is inactive.
+1. Параллельно собираются новости и данные ликвидных Binance Spot пар.
+2. Из одной непрерывной последовательности закрытых пятиминутных свечей
+   рассчитываются точные изменения за пятнадцать минут, час, четыре часа и сутки.
+3. Выбираются разные темы: общая картина рынка, относительная сила BTC/ETH,
+   выход за предыдущий суточный диапазон, смена направления и отдельные движения.
+   Объём сам по себе больше не является поводом для однотипного поста.
+4. Автор получает до восьми тем и последние публикации, выбирает две разные темы
+   и пишет свободно. Нет обязательного хука, вопроса, прогноза или торгового плана.
+5. Проверяются факты, язык и повторы. Ошибочный черновик возвращается на
+   исправление с конкретными причинами. При отказе автора используется следующий
+   подключённый провайдер; шаблонные посты вместо ИИ не публикуются.
+6. За один запуск отправляется максимум одна выбранная публикация.
+   Подтверждением считается ID от Square, а не код завершения процесса.
 
-## Integrity contract
+Частотой управляет внешний cron: глобальный интервал, лимит постов в день,
+таймер на тикер и порог «интересности» в новом цикле отсутствуют. Проверки
+повторной темы, похожего текста, незавершённой отправки и свежести фактов остаются.
+Низкие старые просмотры не блокируют публикацию новой версии.
 
-Every `plan_valid=true` TRADE or EVENT post must expose LONG/SHORT, entry or
-entry zone, stop, TP1, TP2 and TP3 in its public text. Observation-only EVENT
-posts may omit a plan but cannot invent one.
+## Факты и оформление
 
-Trade outcomes are tied to the exact source post ID and text fingerprint.
-Closed Binance 1-minute candles verify entry and target order. Ambiguous
-target-and-stop candles never produce an automatic claim. Public follow-ups
-report only verified complete targets or stops, never interim TP1/TP2.
+ИИ сам пишет повествование. Численные рыночные фразы он выбирает токенами
+`[[f1]]`, `[[f2]]` и т. д.; Python подставляет всю измеренную фразу вместе со знаком,
+периодом и единицей. Это устраняет прежнее смешение пяти минут с часом и
+несовместимых измерений объёма. Данные цены не доказывают накопление, покупки
+китов или ликвидации: такие утверждения не допускаются без источника.
 
-## v12.6 — publish real market updates, not subjective interest scores
+Новость — оригинальный пересказ доступного RSS текста Cointelegraph, Decrypt
+или CoinDesk. Внутри отчёта сохраняется исходник, URL и дословный фрагмент
+события; в публичный пост ссылка автоматически не дописывается. Если в RSS
+мало сведений, текст не растягивается. С исходной обложкой содержательная новость
+может публиковаться как статья; без доступной обложки — как короткая заметка.
+Изображения скачиваются с ограничением размера и проверкой публичных HTTPS
+адресов/редиректов. Рыночные графики показывают реальные закрытия без придуманных
+уровней входа, стопов и целей. Новая версия не выпускает автоматические торговые
+сигналы и шаблонные отчёты о сделках; старый журнал сделок остаётся в аналитике.
 
-- A 20-minute scan now accepts a measurable price or unusual-volume event
-  without requiring predicted virality, W2E-interest or editorial-keyword
-  thresholds. Truly stale and zero-move markets still do not qualify.
-- Subjective copy quality, appeal and conversion scores rank acceptable
-  candidates but do not veto fact-valid, genuinely distinct DeepSeek prose.
-  The previous two-arm writing experiment is paused to stop enforcing a
-  specific hook or conclusion; author format selection remains varied.
-- Factual validation, numeric/timeframe binding, canonical entry/stop/TPs,
-  semantic integrity, deduplication and live trade preflight remain hard.
-  Unavailable AI leads to a skipped post, never a mechanical market template.
-- Cadence target is **no more than 28 posts/day** with a 45-minute global
-  minimum gap; these are limits, not mandatory publishing quotas. An empty
-  20-minute scan still skips. Outcomes remain verified and may be published
-  when fresh posts lose selection.
-- This is an experiment on aggregate views and interaction, not a promise that
-  increasing posts automatically improves recommendation reach or payout.
-  Compare observed 6h/24h posts and content-type source mixes before expanding.
+## Модели и ключи
 
-## 15 October audit — avoid template fallback and unverified claims
+Используются существующие GitHub Secrets, переносить их не требуется:
 
-- **Observed:** v12.5 first 13 posts reached median 15 views (10 mature
-  at six hours); 7 of 13 drafts came from deterministic fallback/outcome
-  writers, despite DeepSeek being connected. Both figures are early,
-  not evidence that DeepSeek lowers reach.
-- **Change:** disable `ENABLE_PROVIDER_OUTAGE_COPY` in production. The
-  multi-provider AI chain is still intact; when all AI drafts fail fact
-  validation, skip a weak post instead of filling the feed with mechanical
-  templates. Deterministic *verified trade outcomes* remain available:
-  these are retrospective fact-based reports, not generic market filler.
-- Block unsupported inferences about traders' actual cost basis and unverified
-  historical superlatives (e.g. "first time in recent history"). Values from
-  hourly averages do not reveal individual trade entry prices.
-- Keep honesty above cadence: a green Actions run can mean a valid skip.
-  Success is tracked using real mature views and engagement, not post volume.
+`DEEPSEEK_API_KEY` → `GEMINI_API_KEY` → `GROQ_API_KEY` → `MISTRAL_API` →
+`ORCAROUTER_API_KEY` → `OPENROUTER_API_KEY` → `OPENAI_API_KEY`.
 
-## v12.5 — clear language without amateur market conclusions
+Пустые ключи пропускаются. Каждый настроенный список моделей обходится явно.
+`DEEPSEEK_BASE_URL` и `DEEPSEEK_MODEL` берутся из прежних GitHub Variables;
+при отсутствии URL поддерживается официальный endpoint DeepSeek.
+Список Groq/OpenRouter и текущие имена моделей сохранены в workflow.
 
-- **Audience:** understandable to a curious first-time investor, defensible to
-  an experienced trader. Explains *what happened and why it matters*, without
-  talking down or promising a profitable outcome.
-- DeepSeek remains primary and keeps editorial freedom. System prompts request
-  plain Russian prose and normally no RSI/ADX/VWAP/ATR/EMA/MACD in the authored
-  narrative. One genuinely necessary indicator may be explained briefly and
-  carefully; there is no mandatory glossary or formulaic tutorial.
-- Reader-voice preference lowers the rank of unexplained abbreviation clusters
-  and unsupported metaphors. It excludes the canonical, Python-owned
-  LONG/SHORT/TP1–TP3 block from evaluation. No new editorial hard blocker.
-- Original numeric fact lock, trade geometry, no fake-news rules and
-  publication safety remain authoritative. An indicator alone never proves
-  trader intention or an inevitable market reversal.
-- New A/B cohort `v4` prevents misleading comparisons between the previous
-  more technical prompts and the reader-friendly copy.
-- These changes target clarity and trust, not guaranteed reach.
+Общий бюджет: `EDITOR_MAX_AI_CALLS=8`, `EDITOR_AI_SECONDS=160`. Любой запрос,
+включая исправление и повтор без JSON mode, расходует тот же бюджет. После
+ошибки HTTP, лимита или сетевого сбоя сохраняется пауза конкретного провайдера
+и модели. Причина и статус видны в отчёте. Отсутствие работающего автора —
+ошибка запуска, а не успешная публикация. Никакие значения ключей не выводятся.
 
-## DeepSeek 15:20 incident: reject the right things
+Для локального запуска задайте переменные из `env.example`, затем:
 
-- A verified `$PUMP` 5m -0.84% / x4.49 volume, with reach score 78.6
-  and an already validated DeepSeek draft, was rejected solely by the
-  *second* legacy editorial selection score gate (60.6 < 71.5).
-- The recovery gate now accepts a **measured fresh shock** only when price,
-  relative 5m volume, audience demand, novelty and the existing independent
-  reach/fact-quality checks all pass. It is not a forced cadence exemption;
-  ordinary and stale markets remain blocked.
-- Genuine level-centric headlines count as reader insight. The statement
-  `не вход` is allowed for observation-only drafts; an actual proposed
-  entry is still forbidden without a valid Python-owned plan.
-- Fixed number validation for outcome reports on tickers starting with digits
-  and log a safe, precise warning when deterministic outcome copy cannot pass.
-  No invalid outcome is published.
-- DeepSeek's JSON `candidates` response is expected; one rejected AI draft
-  does not mean the API failed. New authored posts remain subject to all hard
-  market and publication preflight checks.
-
-## v12.4 — DeepSeek editorial freedom
-
-- DeepSeek is still primary. It now chooses story angle, length, paragraph
-  count, opening and conclusion; requested format IDs are metadata with
-  optional inspiration rather than rigid prose templates.
-- Actual trade entry/stop/TP1–TP3 figures, fact locking, ticker,
-  semantic review, duplicate protection and no invented catalysts remain strict.
-- Live body limits are broadened to 185–520 characters (including any public
-  trade plan). Reader-value scoring no longer rewards RSI/VWAP/ADX keyword
-  density and penalizes multi-indicator dumps.
-- Increase API temperature moderately for variation, with conservative output
-  validation and Groq fallback unchanged. A/B author-cohort version increments
-  to v3 to prevent apples-to-oranges reach comparisons after the prompt change.
-- This is an editorial experiment, not evidence or a guarantee of more views.
-
-## v12.3 — Verified outcomes during distribution recovery
-
-- Production startup now preserves the workflow's `OUTCOME_POST_STOPS=1`.
-  Previously, an older release configurator silently overwrote it with `0`,
-  which disabled honest stop-loss reviews.
-- `OUTCOME_IN_RECOVERY=1` allows *verified* outcomes when the rolling
-  distribution-recovery flag is active. They are still a fallback after live
-  scanning and limited to one public post every six hours (globally).
-  Original published levels, candle order, ambiguous-case quarantine and
-  idempotent publisher receipts are unchanged.
-- Low-demand obscure tickers now need a truly exceptional measured market
-  event instead of a routine volume spike to enter the author pipeline.
-  Scanning is still every 20 minutes; no forced quota.
-- DeepSeek remains the first prose author. Prompt rules reject internal
-  ranking scores, urge plain-language value, and do not invent catalysts.
-  Final text validation blocks visible internal 0–100 scoring leaks.
-- Reach must be measured using comparable, matured posting cohorts; no
-  claim that these changes guarantee 100+ views is implied.
-
-## v12.2 — accountable analysis and honest experiments
-
-- Corrected the A/B author assignment for TRADE: the real `market.ticker`
-  is used in both generation and dashboard attribution. Separate v2 cohorts
-  exclude the previously misclassified observations.
-- Only genuine TP3-complete and **stopped** outcomes may produce public
-  follow-ups, sourced from the original post and closed 1-minute candles.
-  Same-candle target/stop ambiguity is still quarantined. Both positive and
-  negative outcomes are reported transparently without invented PnL.
-- At most one outcome follow-up per six hours, and only as a fallback when
-  there is no suitable live trade/event. Interim TP1/TP2 remain internal.
-- Verified outcomes use deterministic factual wording to avoid AI inventing
-  performance; ordinary market posts still use the existing AI author chain.
-- Reduced the arbitrary TRADE-lane rotation bonus, so the real market story
-  has greater precedence over writing another speculative plan.
-- Expanded final semantic integrity checks for unsupported buyer counts, fake
-  order-book absorption, invalidation in the wrong trade direction, and
-  contradictory VWAP explanations.
-
-## Semantic accuracy control (12 October)
-
-- Final publication guard rejects explicit RSI interpretation inversions,
-  e.g. calling RSI 63.2 "oversold" or RSI 27 "overbought".
-- Writer instructions reinforce technical accuracy; the existing market-data
-  fact lock and Entry/SL/TP validation remain unchanged.
-- This is a conservative semantic safeguard, not a guarantee of engagement.
-  Observe post-quality and 24h reach before modifying editorial experiments.
-
-## Reader-value experiment: October 2026
-
-- **Novelty before AI:** a ticker normally needs a 12-hour gap before another
-  story. A genuinely exceptional **new** 5m/15m movement may qualify after
-  four hours; repetitive minor observations do not.
-- **Measured two-arm experiment:** deterministic day/ticker assignment chooses
-  **what_changed** (explain the verified move) or **risk_map** (explain an
-  observed contradiction). Both obey the same price/number integrity checks.
-  Group assignment is logged and persisted with each AI post.
-- **Fair comparison:** `dashboard/summary.json` now includes
-  `reader_experiment` with separate 24h medians and 100+ hit rates for each
-  arm. Only actual 24-hour milestones enter the comparison; wait for at least
-  20 matured posts per arm before making a decision. Different market events
-  still mean this is directional evidence, not a guarantee of causation.
-- **Safety:** publisher does not retry an ambiguous send, preserving protection
-  against duplicate posts. Market scans still run every 20 minutes; no
-  artificial daily publication quota or paid AI dependency.
-
-## Reader-first editorial controls
-
-Production runs with `ENABLE_EDITORIAL_STORY_GATE=1` and
-`ENABLE_EDITORIAL_COPY_FILTER=1`. A publication needs an actual measured
-price/volume anomaly or high-interest confirmed setup rather than a high score
-on generic indicators alone. Both EVENT and TRADE lanes scan continuously;
-quiet cycles are reported as deliberate skips, not fake successful posts.
-
-With `EVENT_OBSERVATION_PREFERRED=1`, EVENT posts provide readable,
-observation-only market context **without unsolicited Entry/SL/TP blocks**.
-TRADE posts still use the complete, Python-owned and verified public trade
-plan. The original hard facts, profile de-duplication, and API safety checks
-remain mandatory. These controls can be temporarily turned off by setting
-the corresponding env variable to `0`. Changes in organic reach are not
-guaranteed; measure comparable cohorts at 2h, 6h, and 24h.
-
-## v12.0 improvements
-
-- **Honest run results**: `operations.py` writes `state/run_telemetry.json`,
-  a concise Actions run summary, and warnings after 6 hours without a
-  confirmed post. A successful market scan is *not* a confirmed publication.
-- **Stronger headlines**: `editorial_repair.py` reflows oversized AI headlines
-  into the body without removing original words or numbers; downstream
-  fact-consistency and trade-plan validators remain mandatory.
-- **Adaptive lane mix**: `content_strategy.py` gives EVENT a bounded
-  +/-4 point preference only when sufficient, mature, recent EVENT and TRADE
-  results exist. Live market gates always override historic popularity.
-- **Safe pre-send failure recovery**: if the Node.js process cannot be started,
-  its pending publication intent is cleared; ambiguous network sends remain
-  quarantined to prevent duplicates.
-- **Visibility**: one verified Square post ID, a known no-post status, or
-  a failed run. Hard 100-view thresholds remain diagnostics, not guarantees.
-- **Compatibility**: existing charts, attribution, trade math, publication
-  deduplication, and offline test suite remain in place.
-
-## Gemini API (no credentials committed)
-
-Create a new API key in Google AI Studio and add it in GitHub repository
-**Settings → Secrets and variables → Actions → New repository secret**
-with the exact name `GEMINI_API_KEY`. Never paste API keys into repository
-files, workflow YAML, issue comments, or chat messages. Rotate a key if exposed.
-The bot uses `gemini-2.5-flash-lite` first and retains Groq/Mistral/Orca/OpenRouter
-as fallback providers. Gemini usage remains subject to Google's region/quota limits.
-
-GitHub workflow opts into `ENABLE_PROVIDER_OUTAGE_COPY=1` to allow the existing
-fact-validated, market-data-derived templates only when no valid AI draft
-survives. No invented market data or bypass of the public trade-plan contract.
-`VIEW_TARGET_HARD_GATE=0` keeps the 100-view estimate for analysis without
-blocking every post in a low-reach period; no view target can be guaranteed.
-Every run writes its reason to the Actions job summary.
-
-## Production settings
-
-DeepSeek uses repository secret `DEEPSEEK_API_KEY` and variables
-`DEEPSEEK_BASE_URL`/`DEEPSEEK_MODEL`. One bounded request is tried before the
-existing chain; outages, 401/403/429 and unusable JSON fall back without
-immediate repeated DeepSeek requests. The Windows API host must be awake and
-online. See [DEEPSEEK_ACTIONS.md](DEEPSEEK_ACTIONS.md).
-
-See [CHANGES_V11_15.md](CHANGES_V11_15.md) for the latest evidence and changes.
-
-The active configuration is in `.github/workflows/run.yml`; `env.example`
-contains safe local defaults (`DRY_RUN=1`). Required GitHub secrets are:
-
-- `SQUARE_API`
-- `GROQ_API_KEY`
-- `ORCAROUTER_API_KEY`
-- `MISTRAL_API`
-- `OPENROUTER_API_KEY` (optional independent fallback)
-
-The publishing workflow is externally dispatched approximately every 20
-minutes. The analytics dashboard refreshes hourly through
-`.github/workflows/dashboard.yml`.
-
-Startup is cumulative: `run_bot.py` calls one read-only verifier,
-`runtime_release.py`. It does not apply a chain of source-rewriting hotfixes.
-
-## Local validation
-
-```bash
-python -m pip install -r requirements.txt
-python config_check.py
-python run_tests.py
-RUN_STRESS_TESTS=1 python run_tests.py
+```sh
+pip install -r requirements.txt
+python run_bot.py --check
+python run_bot.py --scan-only  # реальные факты, без ИИ и отправки
+python run_bot.py --dry-run    # реальная генерация, без отправки
+DRY_RUN=0 python run_bot.py    # публикация
 ```
 
-All offline tests avoid market, AI-author and publishing network calls unless a
-test explicitly mocks them. See `CHANGES_V11_10.md` for this release.
+В GitHub Actions доступен ручной запуск с флажком `dry_run`.
+Внешний cron без inputs продолжает публиковать в обычном режиме.
+
+## Надёжность и результат
+
+Состояние хранится в прежнем Actions cache. Новый журнал резервирует не только
+текст, но и тему до отправки. После неопределённого результата та же тема не
+отправляется повторно даже с новым текстом. После падения между ответом Square
+и записью аналитики следующий запуск восстанавливает подтверждённый пост.
+Повреждённый журнал не сбрасывается автоматически.
+
+Каждый запуск сохраняет `state/editorial_report.json` (темы, отклонения,
+провайдеры, число запросов, выбранный текст, результат) и `state/status.json`.
+Оба файла доступны в Actions artifact `editorial-decision-<run id>`.
+
+`dashboard/data.json` и `dashboard/summary.json` содержат раздел `editorial_v13`:
+медиана просмотров, доля постов со ста просмотрами, взаимодействия и размер
+выборки для новой и прежней версии. Используются реальные замеры одинакового
+возраста, без экстраполяции. Сравнение помечается готовым после двадцати
+суточных замеров в каждой группе. Увеличение количества постов само по себе
+не считается восстановлением охватов. Гарантии просмотров нет.
+
+```sh
+python editorial_engine_test.py
+DRY_RUN=1 RUN_STRESS_TESTS=1 python run_tests.py
+```
+
+Production workflow сначала выполняет проверки нового цикла. Полный offline
+suite запускается при push. История причин переписывания: [CHANGES_V13.md](CHANGES_V13.md).

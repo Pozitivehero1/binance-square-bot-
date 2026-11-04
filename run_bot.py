@@ -1,70 +1,51 @@
-"""Cron entry point. Safe to call from any working directory."""
+"""Cron entry point for the v13 editorial engine, independent of the working directory."""
 from __future__ import annotations
 
+import argparse
+from dataclasses import replace
 import os
 
-from runtime import PROJECT_DIR, load_project_env
+from runtime import PROJECT_DIR, load_project_env, setup_logging
 
-load_project_env()
-os.chdir(PROJECT_DIR)
 
-# Activate release defaults before importing writer/orchestrator modules.
-from runtime_release import activate_release
-
-activate_release()
-
-# Install every runtime policy before main imports writer functions by name.
-from openrouter_fallback_chain import install_openrouter_fallback_chain, verify_openrouter_fallback_chain
-from groq_primary import install_groq_primary, install_provider_source_tracking, verify_groq_primary
-from reach_recovery_v11_8 import activate_reach_recovery
-from author_pool_policy import install_author_pool_policy, verify_author_policy
-from reach_recovery_live_exit import activate_live_recovery_exit
-from v11_9_writer_policy import install_v119_writer_policy, verify_v119_writer_policy
-
-# OpenRouter patches the low-level HTTP request used by the legacy fallback
-# chain. Groq then wraps request_candidates before writer/event_writer import the
-# provider functions by name, trying configured DeepSeek before the existing
-# Gemini/Groq chain without touching trade
-# math or the fact-lock stack.
-install_openrouter_fallback_chain()
-install_groq_primary()
-activate_reach_recovery()
-install_author_pool_policy()
-install_v119_writer_policy()
-activate_live_recovery_exit()
-install_provider_source_tracking()
-
-# Fail before an expensive market scan if patch ordering silently broke a core
-# production invariant. A workflow failure is diagnosable; a silent no-post loop
-# is not.
-verify_openrouter_fallback_chain()
-verify_groq_primary()
-verify_author_policy()
-verify_v119_writer_policy()
-
-import recovery_guard
-import writer
-
-if not getattr(recovery_guard.evaluate_recovery_candidate, "_v118_live_recovery_exit", False):
-    raise RuntimeError("live recovery exit was not installed")
-if writer._build_generated.__module__ != "reach_recovery_v11_8":
-    raise RuntimeError("v11.8 TRADE AI handoff was not installed")
-
-from main import main
+def main(argv=None):
+    load_project_env()
+    os.chdir(PROJECT_DIR)
+    setup_logging()
+    from squarebot import VERSION
+    from squarebot.author import configured_providers
+    from squarebot.models import Settings
+    os.environ["BOT_VERSION"] = VERSION
+    parser = argparse.ArgumentParser(description="Binance Square editorial engine")
+    parser.add_argument("--check", action="store_true", help="Check provider/publisher configuration; no network or send")
+    parser.add_argument("--dry-run", action="store_true", help="Discover, author and validate without sending")
+    parser.add_argument("--scan-only", action="store_true", help="Discover facts without calling an AI or publisher")
+    args = parser.parse_args(argv)
+    settings = Settings.from_env()
+    if args.dry_run:
+        settings = replace(settings, dry_run=True)
+    if args.check:
+        from publisher import find_skill_dir
+        providers = configured_providers()
+        print(f"Engine={VERSION} dry_run={settings.dry_run} AI providers={len(providers)}")
+        print("Author chain="+" -> ".join(p.name+"/"+p.model for p in providers))
+        square_ready = bool(find_skill_dir() and (os.getenv("SQUARE_API") or os.getenv("BINANCE_SQUARE_OPENAPI_KEY")))
+        print(f"Square publisher ready={square_ready}")
+        return 0 if providers and (settings.dry_run or square_ready) else 1
+    if args.scan_only:
+        from squarebot import market, news
+        from runtime import atomic_write_json, resolve_state_file
+        stories = market.scan(settings)
+        if settings.enable_news:
+            stories += news.scan()
+        path = resolve_state_file("EDITOR_SCAN_FILE", "editorial_scan.json")
+        atomic_write_json(path, {"version": VERSION, "stories": [s.brief() for s in stories]})
+        print(f"Measured stories={len(stories)}; AI calls=0; sends=0")
+        return 0 if stories else 1
+    from operations import run_entrypoint
+    from squarebot.pipeline import run
+    return run_entrypoint(lambda: run(settings))
 
 
 if __name__ == "__main__":
-    from operations import run_entrypoint
-    def run_news_or_market():
-        # Same cron invocation, same process. A failed/unavailable news slot
-        # never prevents the existing market pipeline from running.
-        try:
-            from news_articles import maybe_publish_news
-            if maybe_publish_news():
-                return 0
-        except Exception:
-            import logging
-            logging.getLogger(__name__).exception("News lane failed; continuing market scan")
-        return main()
-
-    raise SystemExit(run_entrypoint(run_news_or_market))
+    raise SystemExit(main())

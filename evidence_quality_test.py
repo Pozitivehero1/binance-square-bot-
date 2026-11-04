@@ -183,8 +183,11 @@ class Editorial(unittest.TestCase):
         # schedule at the same minute creates duplicate scans and API usage.
         self.assertIn('workflow_dispatch:', workflow)
         self.assertNotIn('  schedule:', workflow)
-        for expected in ('ENABLE_PACING_LIMITS: "0"','MIN_GLOBAL_INTERVAL_MIN: "0"','MAX_POSTS_PER_DAY: "100"','COOLDOWN_MIN: "240"'):
-            self.assertIn(expected, workflow)
+        self.assertIn('ENABLE_PACING_LIMITS: "0"', workflow)
+        # v13 removed global/day/symbol pacing from the production engine;
+        # stale legacy cooldown variables should not be reintroduced here.
+        for removed in ('MIN_GLOBAL_INTERVAL_MIN:', 'MAX_POSTS_PER_DAY:', 'COOLDOWN_MIN:'):
+            self.assertNotIn(removed, workflow)
 
 
 if __name__=='__main__':

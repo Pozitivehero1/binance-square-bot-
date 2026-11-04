@@ -1,54 +1,24 @@
-"""Verify the actual run_bot import order installs every production policy."""
-from __future__ import annotations
-
+"""The production entry point must use the new engine without import-time patches."""
 import os
+import subprocess
+import sys
+from pathlib import Path
+from unittest.mock import patch
 
 
-def main() -> int:
-    os.environ["DRY_RUN"] = "1"
-    # Startup must NOT silently undo the workflow's verified stop policy.
-    os.environ["OUTCOME_POST_STOPS"] = "1"
-    os.environ["OUTCOME_POST_PARTIAL_TARGETS"] = "0"
-
-    # Importing run_bot activates policies but does not execute main().
-    import run_bot  # noqa: F401
-    import ai_provider
-    import event_writer
-    import recovery_guard
-    import writer
-
-    assert os.environ.get("BOT_VERSION") == "v12.8"
-    assert os.environ.get("AI_RETRIES") == "2"
-    assert os.environ.get("EVENT_AI_RETRIES") == "2"
-    assert os.environ.get("ORCAROUTER_RETRIES") == "1"
-    assert os.environ.get("MISTRAL_MODEL") == "mistral-small-2603"
-    assert os.environ.get("MISTRAL_RETRIES") == "1"
-    assert os.environ.get("AI_VARIANTS") == "3"
-    assert os.environ.get("EVENT_AI_VARIANTS") == "3"
-    assert os.environ.get("AI_MAX_TOKENS") == "1400"
-    assert os.environ.get("AI_AUTHOR_REQUIRED") == "1"
-
-    assert getattr(ai_provider._request, "_openrouter_multi_model_fallback", False)
-    assert getattr(ai_provider.request_candidates, "_groq_primary", False)
-    assert getattr(event_writer._request_ai_candidates, "_event_resilience", False)
-    assert getattr(writer.generate_post_candidates, "_ai_authoritative_pool", False)
-    assert getattr(event_writer.generate_event_candidates, "_ai_authoritative_pool", False)
-    assert getattr(recovery_guard.evaluate_recovery_candidate, "_v118_live_recovery_exit", False)
-    assert writer._build_generated.__module__ == "reach_recovery_v11_8"
-
-    assert writer.MIN_VALID_AI_DRAFTS == 1
-    assert event_writer.EVENT_MIN_VALID_AI_DRAFTS == 1
-    assert writer.DETERMINISTIC_COMPARE_SLOTS == 0
-    assert event_writer.EVENT_DETERMINISTIC_COMPARE_SLOTS == 0
-
-    import main
-    import outcome_engine
-    assert outcome_engine.POST_STOPS is True
-    assert outcome_engine.POST_PARTIAL_TARGETS is False
-    assert main.PUBLICATION_CANDIDATE_ATTEMPTS == 6
-    assert main.AI_SCAN_MAX_REQUESTS == 14
-
-    print("RUNTIME POLICY: OK | v12.8 factual active-market publishing + soft rankings")
+def main():
+    with patch.dict(os.environ, {"BOT_VERSION": "untouched", "DRY_RUN": "1"}):
+        import run_bot
+        assert os.environ["BOT_VERSION"] == "untouched"
+        assert "groq_primary" not in sys.modules
+        assert "reach_recovery_v11_8" not in sys.modules
+        assert callable(run_bot.main)
+    source = Path("run_bot.py").read_text()
+    assert "from squarebot.pipeline import run" in source
+    assert "install_" not in source
+    result = subprocess.run([sys.executable, "run_bot.py", "--help"], capture_output=True, text=True)
+    assert result.returncode == 0 and "--dry-run" in result.stdout and "--scan-only" in result.stdout
+    print("RUNTIME POLICY: OK | v13 explicit pipeline | imports do not patch legacy modules")
     return 0
 
 

@@ -9,6 +9,7 @@ import subprocess
 import sys
 
 STANDARD_TESTS = [
+    "editorial_engine_test.py",
     "publication_checks_test.py",
     "stability_test.py",
     "attention_test.py",

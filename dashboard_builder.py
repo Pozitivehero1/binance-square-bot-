@@ -11,6 +11,7 @@ from performance_store import build_learning_summary, load_store
 from trade_journal import summarize_journal
 from runtime import PROJECT_DIR, atomic_write_json
 from evidence_metrics import observation
+from squarebot.metrics import summarize as summarize_editorial
 
 DASHBOARD_DIR = PROJECT_DIR / "dashboard"
 SUMMARY_POST_LIMIT = 20
@@ -192,6 +193,7 @@ def build_dashboard_payload() -> dict:
     reader_experiment = summarize_arms(store.get("posts") or {}, now=now)
     return {
         "reader_experiment": reader_experiment,
+        "editorial_v13": summarize_editorial(items, now=now),
         "meta": {
             "generated_at": now.isoformat(),
             "last_public_stats_at": max((str(item.get("last_stats_at") or "") for item in items), default=""),
@@ -249,6 +251,7 @@ def build_summary_payload(payload: dict) -> dict:
             "note": "Compact analytics snapshot for external readers; the web dashboard still uses data.json.",
         },
         "content_metrics": payload.get("content_metrics", {}),
+        "editorial_v13": payload.get("editorial_v13", {}),
         "reader_experiment": payload.get("reader_experiment", {}),
         "overview": overview,
         "recent_posts": [

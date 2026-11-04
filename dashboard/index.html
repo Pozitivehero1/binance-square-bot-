@@ -29,6 +29,7 @@
 
       <section class="tab active" id="overview">
         <div class="kpis" id="kpis"></div>
+        <article class="panel"><div class="panel-head"><h2>Новый бот · v13</h2><span>сравнение измеренных охватов</span></div><div id="editorMetrics" class="table-wrap"></div></article>
         <div class="grid two">
           <article class="panel"><div class="panel-head"><h2>Последние публикации</h2><span>реальные данные Square</span></div><div id="recentPosts" class="post-list"></div></article>
           <article class="panel"><div class="panel-head"><h2>Сильные тикеры</h2><span>adaptive ticker affinity</span></div><div id="topSymbols" class="bar-list"></div></article>
@@ -54,7 +55,7 @@
 
       <section class="tab" id="outcomes">
         <div class="kpis" id="outcomeKpis"></div>
-        <article class="panel"><div class="panel-head"><h2>Trade Outcome Engine</h2><span>закрытые 1m свечи · source post ID · только полный Entry/SL/TP1/TP2/TP3</span></div><div class="table-wrap"><table><thead><tr><th>Сетап</th><th>Статус</th><th>Публичные цели</th><th>TP1</th><th>TP2</th><th>TP3</th><th>Stop</th><th>Follow-ups</th></tr></thead><tbody id="outcomesBody"></tbody></table></div></article>
+        <article class="panel"><div class="panel-head"><h2>История торговых планов</h2><span>v13 публикует новости и рыночные заметки; прежний журнал сохранён</span></div><div class="table-wrap"><table><thead><tr><th>Сетап</th><th>Статус</th><th>Публичные цели</th><th>TP1</th><th>TP2</th><th>TP3</th><th>Stop</th><th>Follow-ups</th></tr></thead><tbody id="outcomesBody"></tbody></table></div></article>
         <article class="panel"><div class="panel-head"><h2>Принцип</h2><span>без подгонки результата задним числом</span></div><div class="feature-grid"><div><b>Public only</b><span>трекер включается только если цель была видна в исходном тексте или plan-картинке</span></div><div><b>1m verify</b><span>цель/стоп подтверждается по закрытым свечам Binance</span></div><div><b>Ambiguity guard</b><span>TP и stop в одной 1m свече → без автопоста</span></div><div><b>No PnL fiction</b><span>карточка показывает движение и R, но не выдумывает USDT-прибыль</span></div></div></article>
       </section>
 
