@@ -180,6 +180,16 @@ class ValidationTests(unittest.TestCase):
         d.evidence_quote = 'invented quote'
         self.assertIn('missing-verbatim-source-evidence',validate(d,s,[])[1])
 
+    def test_percent_word_and_numeric_day_window(self):
+        s=story();s.kind='range_break';s.symbols=['NEAR']
+        s.facts={'f1':'$NEAR: изменение за час +6.79%.',
+                 'f2':'$NEAR: последняя пятиминутная свеча закрылась выше максимума предыдущих двадцати четырёх часов (4.245 USDT).'}
+        for text in [
+            'Токен $NEAR показал изменение за последний час на плюс 6.79 процента. Последняя пятиминутная свеча закрылась выше максимума предыдущих двадцати четырех часов, который составлял 4.245 USDT.',
+            'Токен $NEAR прибавил 6.79% за последний час. При этом последняя пятиминутная свеча закрылась выше максимума предыдущих 24 часов на уровне 4.245 USDT.'
+        ]:
+            self.assertFalse(validate(Draft('s1',text),s,[])[1])
+
 
 class NewsTests(unittest.TestCase):
     def test_full_article_extraction_excludes_navigation(self):

@@ -187,6 +187,8 @@ def editorial_pass(settings):
     report["ai_calls"] = author.calls
     report["providers"] = author.events
     report["chosen"] = {"story": story.brief(), "draft": asdict(draft)}
+    LOG.info("Reviewed post topic=%s provider=%s model=%s\n%s",
+             story.kind, draft.provider, draft.model, draft.text)
     if settings.dry_run:
         LOG.info("DRY RUN provider=%s story=%s\n%s", draft.provider, story.kind, draft.text)
         return finish("dry_run", "Draft validated; no send attempted", story_id=story.id, symbol=story.symbols[0])

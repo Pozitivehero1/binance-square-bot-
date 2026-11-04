@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 
 NUMBER = r"[+−–-]?\d+(?:[.,]\d+)?"
-MEASURE = re.compile(rf"({NUMBER})\s*(%|процентн\w*\s+пункт\w*)", re.I)
+MEASURE = re.compile(rf"({NUMBER})\s*(%|процентн\w*\s+пункт\w*|процент(?:а|ов)?)", re.I)
 TIME = (
     ("previous_1h", re.compile(r"(?:предшествующ\w*|предыдущ\w*)\s+час\w*|час\s+назад", re.I)),
     ("15m", re.compile(r"(?:15|пятнадцат\w*)[\s‑-]*(?:минут\w*)|четверть\s+часа", re.I)),
@@ -59,7 +59,7 @@ def market_reasons(text, story):
         asset = re.findall(r"\$([A-Z0-9]+)", fact)
         clock = periods(fact)
         for m in MEASURE.finditer(fact):
-            records.append((value(m[1]), "%" if m[2] == "%" else "pp", asset,
+            records.append((value(m[1]), "pp" if "пункт" in m[2].lower() else "%", asset,
                             clock[0][0] if clock else None, "предшествующ" in fact))
         source_numbers.update(value(n) for n in re.findall(NUMBER, re.sub(r"\$[A-Za-z0-9]+", "", fact)))
     reasons, matched = [], 0
@@ -70,7 +70,7 @@ def market_reasons(text, story):
         asset_spans = list(re.finditer(r"\$([A-Z0-9]+)", clause))
         for measurement in matches:
             number = value(measurement[1])
-            unit = "%" if measurement[2] == "%" else "pp"
+            unit = "pp" if "пункт" in measurement[2].lower() else "%"
             # Each clause must say its measurement window; a number appearing
             # somewhere in the source is not enough to make a claim true.
             preceding_clocks = [t for t in clock if t[2] <= measurement.start()]
@@ -98,8 +98,8 @@ def market_reasons(text, story):
         # No invented prices, counts, dates or durations. Percentage values
         # are checked above together with their units and periods.
         rest = MEASURE.sub("", re.sub(r"\$[A-Za-z0-9]+", "", clause))
-        for _, pattern in TIME:
-            rest = pattern.sub("", rest)
+        for _, start, end in reversed(periods(rest)):
+            rest = rest[:start]+" "+rest[end:]
         for raw in re.findall(NUMBER, rest):
             if not any(abs(value(raw)-n) <= .00000001 for n in source_numbers):
                 reasons.append("unsupported-market-number")
