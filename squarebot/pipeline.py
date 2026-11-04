@@ -156,11 +156,22 @@ def editorial_pass(settings):
                     row = {"story_id": draft.story_id, "provider": draft.provider, "reasons": list(reasons),
                            "text": draft.text[:1800], "evidence_quote": draft.evidence_quote[:600]}
                     report["rejected"].append(row)
-                    feedback.append(row)
                     LOG.info("Draft factual/repetition rejection story=%s reasons=%s", story.id, ", ".join(reasons))
+                else:
+                    draft.text = text
+                # Let the source editor repair an initial factual/language defect
+                # before spending another complete topic-generation request.
+                # Only its fully revalidated result can reach the publisher.
+                revised = author.review(story, draft, recent)
+                if revised is None:
+                    feedback.append({"story_id": draft.story_id, "reasons": list(reasons) or ["final-source-edit-unavailable"]})
                     continue
-                draft.text = text
-                best = (story, draft)
+                final_text, final_reasons = validate(revised, story, recent)
+                if final_reasons:
+                    feedback.append({"story_id": draft.story_id, "reasons": list(final_reasons)})
+                    continue
+                revised.text = final_text
+                best = (story, revised)
                 break
             if best:
                 break
@@ -173,11 +184,8 @@ def editorial_pass(settings):
     if not best:
         return finish("failed", "AI chain exhausted without a factual, distinct draft; inspect editorial_report.json", 1)
     story, draft = best
-    draft = author.review(story, draft, recent)
     report["ai_calls"] = author.calls
     report["providers"] = author.events
-    if draft is None:
-        return finish("failed", "Source edit could not produce a verified final text; no send attempted", 1)
     report["chosen"] = {"story": story.brief(), "draft": asdict(draft)}
     if settings.dry_run:
         LOG.info("DRY RUN provider=%s story=%s\n%s", draft.provider, story.kind, draft.text)
@@ -198,7 +206,7 @@ def editorial_pass(settings):
         # rather than silently suppressing every text-only RSS story.
         article_title = draft.title if story.kind == "news" and image else ""
         store.reserve(story, draft)
-        result = publish(draft.text, image_path=image, article_title=article_title)
+        result = publish(draft.text, image_path=image, article_title=article_title, news=story.kind == "news")
         if not result:
             return finish("failed", "Publication unconfirmed; story reserved to prevent a rewritten resend", 1,
                           story_id=story.id, symbol=story.symbols[0])

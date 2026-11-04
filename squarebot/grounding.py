@@ -6,6 +6,7 @@ import re
 NUMBER = r"[+−–-]?\d+(?:[.,]\d+)?"
 MEASURE = re.compile(rf"({NUMBER})\s*(%|процентн\w*\s+пункт\w*)", re.I)
 TIME = (
+    ("previous_1h", re.compile(r"(?:предшествующ\w*|предыдущ\w*)\s+час\w*|час\s+назад", re.I)),
     ("15m", re.compile(r"(?:15|пятнадцат\w*)[\s‑-]*(?:минут\w*)|четверть\s+часа", re.I)),
     ("4h", re.compile(r"(?:4|четыр[её]х?|четырёх)[\s‑-]*(?:час\w*)", re.I)),
     ("24h", re.compile(r"(?:24|двадцат\w*\s+четыр\w*)[\s‑-]*час\w*|сут\w*", re.I)),
@@ -26,13 +27,15 @@ def periods(text):
             # The generic "за час" must not steal "за четыре часа".
             if not any(a <= match.start() < b for _, a, b in spans):
                 spans.append((name, match.start(), match.end()))
-    return spans
+    return sorted(spans, key=lambda span: span[1])
 
 
 def clauses(text):
     # A decimal comma/point is not a sentence or clause boundary.
     protected = re.sub(r"(?<=\d)[.,](?=\d)", "§", text)
-    return [s.replace("§", ".") for s in re.split(r"[.!?;\n]|,(?!\d)", protected) if s.strip()]
+    pieces = re.split(r"([.!?;\n]|,(?!\d))", protected)
+    return [(pieces[i].replace("§", "."), pieces[i+1] if i+1<len(pieces) else "")
+            for i in range(0,len(pieces),2) if pieces[i].strip()]
 
 
 def market_reasons(text, story):
@@ -46,20 +49,25 @@ def market_reasons(text, story):
                             clock[0][0] if clock else None, "предшествующ" in fact))
         source_numbers.update(value(n) for n in re.findall(NUMBER, re.sub(r"\$[A-Za-z0-9]+", "", fact)))
     reasons, matched = [], 0
-    for clause in clauses(text):
+    inherited_clock, inherited_asset = None, None
+    for clause, separator in clauses(text):
         matches = list(MEASURE.finditer(clause))
         clock = periods(clause)
-        assets = re.findall(r"\$([A-Z0-9]+)", clause)
+        asset_spans = list(re.finditer(r"\$([A-Z0-9]+)", clause))
         for measurement in matches:
             number = value(measurement[1])
             unit = "%" if measurement[2] == "%" else "pp"
             # Each clause must say its measurement window; a number appearing
             # somewhere in the source is not enough to make a claim true.
-            nearest = min(clock, key=lambda t: min(abs(t[1]-measurement.end()), abs(measurement.start()-t[2]))) if clock else None
-            period = nearest[0] if nearest else None
+            preceding_clocks = [t for t in clock if t[2] <= measurement.start()]
+            nearest = (preceding_clocks[-1] if preceding_clocks else
+                       min(clock, key=lambda t: abs(t[1]-measurement.end())) if clock else None)
+            period = nearest[0] if nearest else inherited_clock
+            preceding_assets = [a for a in asset_spans if a.end() <= measurement.start()]
+            asset = (preceding_assets[-1][1] if preceding_assets else
+                     asset_spans[0][1] if asset_spans else inherited_asset)
             candidates = [r for r in records if abs(abs(r[0])-abs(number)) <= .0051 and r[1] == unit
-                          and (not assets or set(assets).issubset(set(r[2]))) and r[3] == period
-                          and r[4] == ("предшествующ" in clause or "предыдущий час" in clause)]
+                          and (not asset or asset in r[2]) and r[3] == period]
             if not candidates:
                 reasons.append("measurement-not-bound-to-asset-unit-and-timeframe")
                 continue
@@ -81,6 +89,12 @@ def market_reasons(text, story):
         for raw in re.findall(NUMBER, rest):
             if not any(abs(value(raw)-n) <= .00000001 for n in source_numbers):
                 reasons.append("unsupported-market-number")
+        if clock:
+            inherited_clock = clock[-1][0]
+        if asset_spans:
+            inherited_asset = asset_spans[-1][1]
+        if separator in {".","!","?","\n"}:
+            inherited_clock, inherited_asset = None, None
     if not matched:
         reasons.append("missing-grounded-market-measurement")
     if re.search(r"[.][,;.]|[,;][.]", text):

@@ -92,7 +92,14 @@ def _prepare_text_for_square(text: str) -> tuple[str, tuple[str, ...]]:
     return normalized, reasons
 
 
-def publish(text: str, image_path: ImageInput = None, *, article_title: str = "") -> PublishResult:
+def russian_news_with_names(text: str) -> bool:
+    cyrillic = len(re.findall(r"[А-Яа-яЁё]", text))
+    latin = len(re.findall(r"[A-Za-z]", text))
+    english_paragraph = bool(re.search(r"(?:\b[A-Za-z]{3,}\b[\s,:;–—-]+){4,}", text))
+    return cyrillic >= 100 and cyrillic >= 2*latin and not english_paragraph
+
+
+def publish(text: str, image_path: ImageInput = None, *, article_title: str = "", news: bool = False) -> PublishResult:
     if not text or not text.strip():
         logger.error("Refusing to publish an empty post")
         return PublishResult(False, stderr="empty post")
@@ -101,11 +108,8 @@ def publish(text: str, image_path: ImageInput = None, *, article_title: str = ""
     # News articles cite international projects. Proper names may trigger the
     # short-post English-density heuristic despite predominantly Russian prose.
     # Keep every other integrity check, and never permit English paragraphs.
-    if article_title and "language:unexpected-english-density" in reasons:
-        cyrillic = len(re.findall(r"[А-Яа-яЁё]", prepared))
-        latin = len(re.findall(r"[A-Za-z]", prepared))
-        english_paragraph = bool(re.search(r"(?:\b[A-Za-z]{3,}\b[\s,:;–—-]+){4,}", prepared))
-        if cyrillic >= 150 and cyrillic >= 4 * latin and not english_paragraph:
+    if (article_title or news) and "language:unexpected-english-density" in reasons:
+        if russian_news_with_names(prepared):
             reasons = tuple(r for r in reasons if r != "language:unexpected-english-density")
             logger.info("Accepted Russian news article with foreign proper names")
     if reasons:

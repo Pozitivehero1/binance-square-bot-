@@ -127,9 +127,27 @@ class ValidationTests(unittest.TestCase):
         d=good_draft();d.text=d.text.replace('[[f1]]', '[[f1]];')
         self.assertIn('broken-measurement-punctuation',validate(d,story(),[])[1])
 
+    def test_relative_comparison_inherits_hour_across_a_comma(self):
+        s=story();s.kind='relative_strength';s.symbols=['ETH','BTC']
+        s.facts={'f1':'$ETH: изменение за час +2.58%.',
+                 'f2':'$BTC: изменение за час +1.25%.',
+                 'f3':'Доходность $ETH за час выше доходности $BTC на 1.33 процентного пункта.'}
+        d=Draft('s1','За последний час $ETH показал рост +2.58% против $BTC, который прибавил лишь +1.25%. '
+                'Разница в 1.33 процентных пункта показывает преимущество Ethereum в текущем часовом окне. '
+                'Это сравнение одного периода, а не прогноз дальнейшей динамики.')
+        self.assertFalse(validate(d,s,[])[1])
+
     def test_truthful_caution_is_not_a_participant_claim(self):
         d=good_draft();d.text+=' Это не доказывает накопление позиций.'
         self.assertNotIn('unsupported-market-participant-claim',validate(d,story(),[])[1])
+
+    def test_missing_cashtag_is_repaired_without_another_ai_request(self):
+        d=Draft('s1','Биткоин прибавил за час 1.50%, хотя за четыре часа потерял 2.00%. '
+                'Короткий отскок пока не отменил более широкое снижение. Здесь важна разница '
+                'между локальным восстановлением и направлением за несколько часов.')
+        text,reasons=validate(d,story(),[])
+        self.assertFalse(reasons)
+        self.assertTrue(text.startswith('$BTC\n\n'))
 
     def test_changing_numbers_and_tickers_does_not_hide_template(self):
         a = '$BTC вырос на 2%. За коротким отскоком пока нет изменения более широкой картины рынка.'

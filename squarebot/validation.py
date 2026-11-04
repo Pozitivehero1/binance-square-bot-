@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 
-from publisher import _prepare_text_for_square
+from publisher import _prepare_text_for_square, russian_news_with_names
 from .store import similarity
 
 TOKEN = re.compile(r"\[\[([a-zA-Z][a-zA-Z0-9_]*)\]\]")
@@ -46,6 +46,10 @@ def validate(draft, story, recent):
         reasons.extend(r for r in checks if r != "missing-exact-event-evidence")
         if TOKEN.search(text):
             reasons.append("unexpected-fact-token-in-news")
+    # A known story ticker is formatting metadata, not an invented market fact.
+    # Do not spend another model call merely because the author omitted '$'.
+    if not re.search(r"\$[A-Za-z][A-Za-z0-9]{0,19}", text) and story.symbols:
+        text = "$"+story.symbols[0]+"\n\n"+text
     if not 140 <= len(text) <= (1600 if story.kind == "news" else 1100):
         reasons.append("length: aim for 140–1100 characters (news up to 1600)")
     if title and not 5 <= len(title) <= 130:
@@ -70,5 +74,7 @@ def validate(draft, story, recent):
             reasons.append("repeated-narrative: choose another topic or argument")
             break
     prepared, final_reasons = _prepare_text_for_square(text)
+    if story.kind == "news" and russian_news_with_names(prepared):
+        final_reasons = tuple(r for r in final_reasons if r != "language:unexpected-english-density")
     reasons.extend(final_reasons)
     return prepared, tuple(dict.fromkeys(reasons))
