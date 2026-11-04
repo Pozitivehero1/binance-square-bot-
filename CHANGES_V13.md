@@ -58,3 +58,10 @@ the documented stable gemini-3.5-flash-lite model; a GitHub variable can overrid
 it. Production-code pushes run the same existing workflow so a release is
 verified without waiting for the next external cron tick. No second scheduled
 publishing workflow was introduced.
+
+A second live run (41851270566) confirmed an article with the original RSS cover,
+post 384665928039499. Reviewing that text exposed an unsupported range claim
+added to a short political-news summary. Final publication now requires a
+separate source-only editorial pass, within the same call/time budget, followed
+by the deterministic factual checks. This is source validation and language
+editing; it does not reintroduce an interestingness score or a view threshold.

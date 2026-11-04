@@ -170,6 +170,11 @@ def editorial_pass(settings):
     if not best:
         return finish("failed", "AI chain exhausted without a factual, distinct draft; inspect editorial_report.json", 1)
     story, draft = best
+    draft = author.review(story, draft, recent)
+    report["ai_calls"] = author.calls
+    report["providers"] = author.events
+    if draft is None:
+        return finish("failed", "Source edit could not produce a verified final text; no send attempted", 1)
     report["chosen"] = {"story": story.brief(), "draft": asdict(draft)}
     if settings.dry_run:
         LOG.info("DRY RUN provider=%s story=%s\n%s", draft.provider, story.kind, draft.text)

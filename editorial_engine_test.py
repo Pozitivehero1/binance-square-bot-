@@ -176,6 +176,21 @@ class NewsTests(unittest.TestCase):
 
 
 class AuthorTests(Isolated):
+    def test_source_editor_uses_same_budget_and_a_separate_instruction(self):
+        p=Provider('fixture','https://example.com/v1/chat/completions','mock','secret')
+        author=Author(Settings(max_ai_calls=8),[p]);author.calls=7
+        d=good_draft();d.text=validate(d,story(),[])[0]
+        payload={'choices':[{'message':{'content':json.dumps({'candidates':[{
+            'story_id':'s1','text':d.text,'format':'context'}]})}}]}
+        response=Mock(status_code=200,headers={},json=lambda:payload)
+        with patch('squarebot.author.requests.post',return_value=response) as request:
+            self.assertIsNotNone(author.review(story(),d,[]))
+            system=request.call_args.kwargs['json']['messages'][0]['content']
+            self.assertIn('Удали КАЖДОЕ утверждение',system)
+            self.assertEqual(author.calls,8)
+            self.assertIsNone(author.review(story(),d,[]))
+            self.assertEqual(request.call_count,1)
+
     def test_provider_budget_and_cooldown_survive_next_scan(self):
         p = Provider('test','https://example.com/v1/chat/completions','m','secret')
         author = Author(Settings(max_ai_calls=1),[p])
@@ -211,7 +226,7 @@ class AuthorTests(Isolated):
 
 
 class PipelineTests(Isolated):
-    def execute(self, dry_run=False, result=None, source=None):
+    def execute(self, dry_run=False, result=None, source=None, review_ok=True):
         from publisher import PublishResult
         if result is None:
             result=PublishResult(True,post_id='123456')
@@ -225,6 +240,7 @@ class PipelineTests(Isolated):
              patch('squarebot.market.scan',return_value=source), \
              patch('squarebot.news.scan',return_value=[]), \
              patch('squarebot.author.Author.drafts',side_effect=drafts), \
+             patch('squarebot.author.Author.review',side_effect=lambda s,d,r:d if review_ok else None), \
              patch('squarebot.pipeline.visuals.chart',return_value=None), \
              patch('squarebot.pipeline.publish',return_value=result) as send:
             code=editorial_pass(Settings(dry_run=dry_run))
@@ -260,6 +276,10 @@ class PipelineTests(Isolated):
     def test_dead_sources_fail_honestly(self):
         self.assertEqual(self.execute(source=[]),(1,0))
         self.assertEqual(json.loads((self.root/'status.json').read_text())['status'],'failed')
+
+    def test_no_send_when_final_source_edit_is_unavailable(self):
+        self.assertEqual(self.execute(review_ok=False),(1,0))
+        self.assertFalse(Store().data['pending'])
 
     def test_corrupt_state_does_not_reset_send_memory(self):
         (self.root/'editorial_v13.json').write_text('{"posts":[],"pending":null}')
