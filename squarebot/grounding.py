@@ -10,7 +10,7 @@ TIME = (
     ("15m", re.compile(r"(?:15|пятнадцат\w*)[\s‑-]*(?:минут\w*)|четверть\s+часа", re.I)),
     ("4h", re.compile(r"(?:4|четыр[её]х?|четырёх)[\s‑-]*(?:час\w*)", re.I)),
     ("24h", re.compile(r"(?:24|двадцат\w*\s+четыр\w*)[\s‑-]*час\w*|сут\w*", re.I)),
-    ("1h", re.compile(r"(?:за|последн\w*|предшествующ\w*)\s+(?:(?:один|1)\s+)?час\w*|(?<![а-яё])часов(?:ой|ое|ого|ом|ая)\b", re.I)),
+    ("1h", re.compile(r"\bчас(?:а|у|ом|овой|овое|ового|овом|овая)?\b", re.I)),
 )
 DOWN = re.compile(r"пад\w*|снизи\w*|потер\w*|подешев\w*|минус|ниже|уступ\w*", re.I)
 UP = re.compile(r"рост\w*|вырос\w*|прибав\w*|подорож\w*|плюс|выше|опереж\w*", re.I)
@@ -21,13 +21,26 @@ def value(raw):
 
 
 def periods(text):
-    spans = []
+    matches = []
     for name, pattern in TIME:
         for match in pattern.finditer(text):
-            # The generic "за час" must not steal "за четыре часа".
-            if not any(a <= match.start() < b for _, a, b in spans):
-                spans.append((name, match.start(), match.end()))
+            matches.append((name, match.start(), match.end()))
+    # Longer explicit windows own their complete span: "четырёх часов"
+    # inside "двадцати четырёх часов" is not a separate four-hour claim.
+    spans = []
+    for name, start, end in sorted(matches, key=lambda t: -(t[2]-t[1])):
+        if not any(start < b and end > a for _, a, b in spans):
+            spans.append((name,start,end))
     return sorted(spans, key=lambda span: span[1])
+
+
+def canonical_numbers(text):
+    # Russian thin-space thousands and either decimal convention are ordinary
+    # typography, not new prices. Do this before splitting decimal punctuation.
+    text = re.sub(r"(?<=\d)[\s\u00a0\u202f](?=\d{3}(?:\D|$))", "", text)
+    text = re.sub(r"\d{1,3}(?:,\d{3})+\.\d+", lambda m:m[0].replace(",", ""), text)
+    text = re.sub(r"\d{1,3}(?:\.\d{3})+,\d+", lambda m:m[0].replace(".", "").replace(",", "."), text)
+    return text
 
 
 def clauses(text):
@@ -39,9 +52,10 @@ def clauses(text):
 
 
 def market_reasons(text, story):
+    text = canonical_numbers(text)
     records = []
     source_numbers = set()
-    for fact in story.facts.values():
+    for fact in map(canonical_numbers, story.facts.values()):
         asset = re.findall(r"\$([A-Z0-9]+)", fact)
         clock = periods(fact)
         for m in MEASURE.finditer(fact):

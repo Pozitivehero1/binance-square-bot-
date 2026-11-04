@@ -149,6 +149,16 @@ class ValidationTests(unittest.TestCase):
         self.assertFalse(reasons)
         self.assertTrue(text.startswith('$BTC\n\n'))
 
+    def test_past_hour_and_grouped_price_typography(self):
+        s=story();s.kind='range_break';s.symbols=['ZEC']
+        s.facts={'f1':'$ZEC: изменение за час +5.27%.',
+                 'f2':'$ZEC: последняя пятиминутная свеча закрылась выше максимума предыдущих двадцати четырёх часов (1347.01 USDT).'}
+        for price in ['1347.01','1 347,01','1,347.01']:
+            d=Draft('s1',f'Монета $ZEC за прошедший час выросла на +5.27%. Последняя пятиминутная свеча '
+                    f'закрылась выше {price} USDT — максимума предыдущих двадцати четырёх часов. '
+                    'Выход из этого диапазона уже произошёл; дальнейшее направление из этих данных не следует.')
+            self.assertFalse(validate(d,s,[])[1], price)
+
     def test_changing_numbers_and_tickers_does_not_hide_template(self):
         a = '$BTC вырос на 2%. За коротким отскоком пока нет изменения более широкой картины рынка.'
         b = '$ETH вырос на 5%. За коротким отскоком пока нет изменения более широкой картины рынка.'

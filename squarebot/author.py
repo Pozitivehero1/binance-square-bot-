@@ -219,7 +219,7 @@ class Author:
                         revised.text = text
                         LOG.info("Source edit accepted provider=%s story=%s", provider.name, story.id)
                         return revised
-                    self.events.append(dict(provider=provider.name, phase="source_edit", rejected=list(reasons)))
+                    self.events.append(dict(provider=provider.name, phase="source_edit", rejected=list(reasons), text=revised.text[:1800]))
                     payload["repair"] = list(reasons)
             except (requests.RequestException, ValueError, KeyError, TypeError, RuntimeError) as exc:
                 self.events.append(dict(provider=provider.name, phase="source_edit", error=type(exc).__name__))
