@@ -242,6 +242,9 @@ def _retry_delay(exc: Exception, attempt: int, prefix: str = "ORCAROUTER") -> tu
         return retryable, delay, diagnostic
     if isinstance(exc, (requests.Timeout, requests.ConnectionError)):
         return True, delay, f"{type(exc).__name__}: {exc}"
+    if isinstance(exc, ValueError) and "scan AI request/time budget exhausted" in str(exc):
+        # A depleted scan budget cannot recover on retry; avoid pointless waits.
+        return False, 0.0, f"{type(exc).__name__}: {exc}"
     if isinstance(exc, (ValueError, KeyError, TypeError, json.JSONDecodeError)):
         return True, delay, f"{type(exc).__name__}: {exc}"
     return False, delay, diagnostic
