@@ -6,6 +6,7 @@ import logging
 import math
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
+from statistics import median
 
 import requests
 
@@ -98,6 +99,13 @@ def price(value):
     return f"{value:.8f}".rstrip("0").rstrip(".")
 
 
+def boundary_penalty(level, outside, candles):
+    """A tiny crossing can be reported, but ranks below a clear move."""
+    typical_range = median(candle[2]-candle[3] for candle in candles)
+    reference = max(level*.003, typical_range)
+    return 28*(1-min(1, abs(outside-level)/reference))
+
+
 def build_stories(measurements, now=None):
     now = now or utcnow()
     by_base = {m["base"]: m for m in measurements}
@@ -117,6 +125,7 @@ def build_stories(measurements, now=None):
                  f"${base}: изменение за пятнадцать минут {pct(m['c15'])}.",
                  f"${base}: цена закрытия пятиминутной свечи {price(m['price'])} USDT."]
         liquid_bonus = min(12, max(0, math.log10(m["volume"])-6)*3)
+        rows = m["rows"]
         if abs(m["c1h"]) >= .15 or abs(m["c4h"]) >= .5:
             add("mover", [base], "Движение цены в контексте последних часов", facts[:2],
                 30+min(28, abs(m["c1h"])*4)+liquid_bonus+(6 if base in CORE else 0), m,
@@ -126,9 +135,9 @@ def build_stories(measurements, now=None):
             bound = m["prior_high"] if up else m["prior_low"]
             breakout = f"${base}: последняя пятиминутная свеча закрылась {'выше максимума' if up else 'ниже минимума'} предыдущих двадцати четырёх часов ({price(bound)} USDT)."
             add("range_break", [base], "Закрытие за пределами предыдущего суточного диапазона",
-                [facts[0], breakout, facts[3]], 52+liquid_bonus+min(15, abs(m["c1h"])*3),
+                [facts[0], breakout, facts[3]],
+                52+liquid_bonus+min(15, abs(m["c1h"])*3)-boundary_penalty(bound, m["price"], rows[-13:-1]),
                 m, "up" if up else "down", bound)
-        rows = m["rows"]
         if len(rows) >= 290:
             # Compare both closes to the same range, excluding both event candles.
             prior = rows[-290:-2]
@@ -142,7 +151,8 @@ def build_stories(measurements, now=None):
                     f"суточного диапазона ({price(level)} USDT), на {price(outside)} USDT.",
                     f"${base}: последняя пятиминутная свеча закрылась внутри того же диапазона, на {price(current)} USDT.",
                     facts[0],
-                ], 56+liquid_bonus+min(15, abs(m["c1h"])*3), m, "from_above" if above else "from_below", level)
+                ], 56+liquid_bonus+min(15, abs(m["c1h"])*3)-boundary_penalty(level, outside, rows[-14:-2]),
+                    m, "from_above" if above else "from_below", level)
         if m["c1h"] * m["previous_hour"] < 0 and min(abs(m["c1h"]), abs(m["previous_hour"])) >= .6:
             if m["c1h"] * m["c4h"] < 0:
                 focused = facts[:2]

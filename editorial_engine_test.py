@@ -64,6 +64,17 @@ class Isolated(unittest.TestCase):
 
 
 class MarketTests(unittest.TestCase):
+    def test_crossing_by_a_tick_has_lower_priority_but_remains_a_candidate(self):
+        rows = market.closed_candles(candles(), int(utcnow().timestamp()*1000))
+        for row in rows:
+            row[1:5] = [price/410 for price in row[1:5]]
+        data = market.measure({'base':'TRX','symbol':'TRXUSDT','volume':1e9}, rows)
+        data.update(prior_low=.3177, prior_high=.33, price=.3176, c1h=-.09, c4h=0)
+        tiny = next(s for s in market.build_stories([data]) if s.kind == 'range_break')
+        data['price'] = .316
+        clear = next(s for s in market.build_stories([data]) if s.kind == 'range_break')
+        self.assertGreater(clear.score-tiny.score, 20)
+
     def test_range_return_uses_same_boundary_for_both_closes(self):
         rows = market.closed_candles(candles(), int(utcnow().timestamp()*1000))
         boundary = max(row[2] for row in rows[-290:-2])
