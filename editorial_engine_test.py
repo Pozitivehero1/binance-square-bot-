@@ -64,6 +64,11 @@ class Isolated(unittest.TestCase):
 
 
 class MarketTests(unittest.TestCase):
+    def test_reversal_reports_whether_previous_hour_was_erased(self):
+        self.assertIn('полностью перекрыло рост', market.reversal_impact(-2.74, -1.65))
+        self.assertIn('часть роста', market.reversal_impact(-.85, .24))
+        self.assertIn('полностью перекрыл падение', market.reversal_impact(2.6, 1.1))
+
     def test_crossing_by_a_tick_has_lower_priority_but_remains_a_candidate(self):
         rows = market.closed_candles(candles(), int(utcnow().timestamp()*1000))
         for row in rows:
@@ -99,6 +104,7 @@ class MarketTests(unittest.TestCase):
         self.assertEqual(len(closed), 300)
         m = market.measure({'base':'BTC','symbol':'BTCUSDT','volume':1e9}, closed)
         self.assertAlmostEqual(m['c1h'], (closed[-1][4]/closed[-13][4]-1)*100)
+        self.assertAlmostEqual(m['c2h'], (closed[-1][4]/closed[-25][4]-1)*100)
         self.assertAlmostEqual(m['c4h'], (closed[-1][4]/closed[-49][4]-1)*100)
         self.assertAlmostEqual(m['c24h'], (closed[-1][4]/closed[-289][4]-1)*100)
         with self.assertRaisesRegex(ValueError, 'Missing'):

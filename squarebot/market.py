@@ -84,7 +84,7 @@ def closed_candles(rows, now_ms):
 def measure(meta, rows):
     def change(n):
         return (rows[-1][4] / rows[-n-1][4] - 1) * 100
-    return dict(meta, rows=rows, c15=change(3), c1h=change(12), c4h=change(48), c24h=change(288),
+    return dict(meta, rows=rows, c15=change(3), c1h=change(12), c2h=change(24), c4h=change(48), c24h=change(288),
                 previous_hour=(rows[-13][4] / rows[-25][4] - 1) * 100,
                 price=rows[-1][4], prior_high=max(r[2] for r in rows[-289:-1]),
                 prior_low=min(r[3] for r in rows[-289:-1]),
@@ -104,6 +104,17 @@ def boundary_penalty(level, outside, candles):
     typical_range = median(candle[2]-candle[3] for candle in candles)
     reference = max(level*.003, typical_range)
     return 28*(1-min(1, abs(outside-level)/reference))
+
+
+def reversal_impact(last_hour, two_hours):
+    if abs(two_hours) < 1e-9:
+        return "Цена вернулась к отметке двухчасовой давности."
+    full = last_hour*two_hours > 0
+    if last_hour > 0:
+        return ("Отскок полностью перекрыл падение предыдущего часа." if full
+                else "Отскок вернул только часть падения предыдущего часа.")
+    return ("Падение полностью перекрыло рост предыдущего часа." if full
+            else "Падение забрало только часть роста предыдущего часа.")
 
 
 def build_stories(measurements, now=None):
@@ -154,11 +165,13 @@ def build_stories(measurements, now=None):
                 ], 56+liquid_bonus+min(15, abs(m["c1h"])*3)-boundary_penalty(level, outside, rows[-14:-2]),
                     m, "from_above" if above else "from_below", level)
         if m["c1h"] * m["previous_hour"] < 0 and min(abs(m["c1h"]), abs(m["previous_hour"])) >= .6:
-            if m["c1h"] * m["c4h"] < 0:
-                focused = facts[:2]
-            else:
-                focused = [facts[0], f"${base}: за предшествующий час изменение составляло {pct(m['previous_hour'])}."]
-            add("reversal", [base], "Последний час изменил направление движения", focused,
+            impact = reversal_impact(m["c1h"], m["c2h"])
+            add("reversal", [base], impact, [
+                facts[0],
+                f"${base}: за предшествующий час изменение составляло {pct(m['previous_hour'])}.",
+                f"${base}: изменение за два часа {pct(m['c2h'])}.",
+                impact,
+            ],
                 48+liquid_bonus+min(15, abs(m["c1h"])*3), m, "up" if m["c1h"] > 0 else "down")
     if "BTC" in by_base and "ETH" in by_base:
         btc, eth = by_base["BTC"], by_base["ETH"]
