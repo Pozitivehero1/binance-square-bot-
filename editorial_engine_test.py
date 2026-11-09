@@ -64,6 +64,15 @@ class Isolated(unittest.TestCase):
 
 
 class MarketTests(unittest.TestCase):
+    def test_breadth_distinguishes_unchanged_and_falling_markets(self):
+        rows = market.closed_candles(candles(), int(utcnow().timestamp()*1000))
+        symbols = ['BTC', 'ETH'] + ['ALT'+str(i) for i in range(10)]
+        markets = [market.measure({'base':s,'symbol':s+'USDT','volume':1e9},rows) for s in symbols]
+        for i, m in enumerate(markets):
+            m.update(c1h=1 if i < 3 else -1 if i < 8 else 0)
+        overview = next(s for s in market.build_stories(markets) if s.kind == 'market_map')
+        self.assertIn('выросли 3, снизились 5, без изменения 4', overview.facts['f3'])
+
     def test_reversal_reports_whether_previous_hour_was_erased(self):
         self.assertIn('полностью перекрыло рост', market.reversal_impact(-2.74, -1.65))
         self.assertIn('часть роста', market.reversal_impact(-.85, .24))

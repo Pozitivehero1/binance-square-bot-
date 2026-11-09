@@ -179,10 +179,12 @@ def build_stories(measurements, now=None):
         aligned = [m for m in measurements if m["closed_at"] == btc["closed_at"]]
         if eth["closed_at"] == btc["closed_at"] and len(aligned) >= 12:
             gainers = sum(m["c1h"] > 0 for m in aligned)
+            losers = sum(m["c1h"] < 0 for m in aligned)
+            flat = len(aligned)-gainers-losers
             add("market_map", ["BTC", "ETH"], "Рынок целиком: лидеры и ширина движения", [
                 f"$BTC: изменение за час {pct(btc['c1h'])}.",
                 f"$ETH: изменение за час {pct(eth['c1h'])}.",
-                f"В выборке из {len(aligned)} ликвидных пар Binance за час выросли {gainers}; остальные не выросли.",
+                f"За час среди {len(aligned)} ликвидных пар Binance выросли {gainers}, снизились {losers}, без изменения {flat}.",
             ], 45+min(16, abs(btc["c1h"])*5), btc,
                 "broad_up" if gainers > len(aligned)/2 else "broad_down")
             diff = eth["c1h"] - btc["c1h"]
