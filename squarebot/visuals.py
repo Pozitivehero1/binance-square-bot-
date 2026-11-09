@@ -11,7 +11,7 @@ def chart(story, directory):
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     import matplotlib.dates as mdates
-    rows = story.candles[-289:] if story.kind == "range_break" else story.candles[-49:]
+    rows = story.candles[-289:] if story.range_level is not None else story.candles[-49:]
     dates = [datetime.fromtimestamp((r[6]+1)/1000, timezone.utc) for r in rows]
     values = [r[4] for r in rows]
     positive = values[-1] >= values[0]
@@ -26,9 +26,15 @@ def chart(story, directory):
             fig.text(.08, .82, "Цена закрытия · пятиминутные свечи", color="#aab8d0", fontsize=14)
             ax.plot(dates, values, color=color, linewidth=2.6)
             ax.scatter([dates[-1]], [values[-1]], color=color, s=40, zorder=3)
-            span = max(values)-min(values)
-            ax.set_ylim(min(values)-max(span*.18, values[-1]*.001),
-                        max(values)+max(span*.18, values[-1]*.001))
+            bounds = values.copy()
+            if story.range_level is not None:
+                bounds.append(story.range_level)
+                ax.axhline(story.range_level, color="#f3c95d", linestyle="--", linewidth=1.4)
+                ax.annotate(f"Граница суток · {story.range_level:.8f}".rstrip("0").rstrip("."),
+                            (dates[0], story.range_level), xytext=(5, 7), textcoords="offset points",
+                            color="#f3c95d", fontsize=11)
+            padding = max((max(bounds)-min(bounds))*.18, values[-1]*.001)
+            ax.set_ylim(min(bounds)-padding, max(bounds)+padding)
             ax.yaxis.tick_right()
             ax.ticklabel_format(axis="y", style="plain", useOffset=False)
             ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M", tz=timezone.utc))

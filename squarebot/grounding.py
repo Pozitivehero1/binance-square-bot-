@@ -63,6 +63,7 @@ def market_reasons(text, story):
                             clock[0][0] if clock else None, "предшествующ" in fact))
         source_numbers.update(value(n) for n in re.findall(NUMBER, re.sub(r"\$[A-Za-z0-9]+", "", fact)))
     reasons, matched = [], 0
+    range_level_used = False
     inherited_clock, inherited_asset = None, None
     for clause, separator in clauses(text):
         matches = list(MEASURE.finditer(clause))
@@ -103,13 +104,17 @@ def market_reasons(text, story):
         for raw in re.findall(NUMBER, rest):
             if not any(abs(value(raw)-n) <= .00000001 for n in source_numbers):
                 reasons.append("unsupported-market-number")
+            elif (story.range_level is not None
+                  and abs(value(raw)-story.range_level) <= .00000001
+                  and re.search(r"границ|диапазон|максимум|минимум", clause, re.I)):
+                range_level_used = True
         if clock:
             inherited_clock = clock[-1][0]
         if asset_spans:
             inherited_asset = asset_spans[-1][1]
         if separator in {".","!","?","\n"}:
             inherited_clock, inherited_asset = None, None
-    if not matched:
+    if not matched and not range_level_used:
         reasons.append("missing-grounded-market-measurement")
     if re.search(r"[.][,;.]|[,;][.]", text):
         reasons.append("broken-measurement-punctuation")

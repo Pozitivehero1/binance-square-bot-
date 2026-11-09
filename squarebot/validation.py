@@ -50,8 +50,8 @@ def validate(draft, story, recent):
     # Do not spend another model call merely because the author omitted '$'.
     if not re.search(r"\$[A-Za-z][A-Za-z0-9]{0,19}", text) and story.symbols:
         text = "$"+story.symbols[0]+"\n\n"+text
-    if not 140 <= len(text) <= (1600 if story.kind == "news" else 1100):
-        reasons.append("length: aim for 140–1100 characters (news up to 1600)")
+    if not 90 <= len(text) <= (1600 if story.kind == "news" else 1100):
+        reasons.append("length: aim for 90–1100 characters (news up to 1600)")
     if title and not 5 <= len(title) <= 130:
         reasons.append("title-length")
     if story.kind == "news" and not title:

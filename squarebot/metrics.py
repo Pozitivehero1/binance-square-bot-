@@ -1,8 +1,10 @@
 """Comparable rollout measurements; no forecasts disguised as observed reach."""
 from collections import defaultdict
+from math import log
 from statistics import median
 
 from evidence_metrics import observation, parse_time
+from . import VERSION
 from .models import utcnow
 
 
@@ -21,13 +23,13 @@ def summarize(posts, now=None):
     now = now or utcnow()
     rows = [p for p in posts if isinstance(p, dict) and p.get("learning_eligible") is not False
             and (date := parse_time(p.get("published_at"))) and 0 <= (now-date).total_seconds() <= 7*86400]
-    current = [p for p in rows if str(p.get("engine_version", "")).startswith("v13.")]
-    previous = [p for p in rows if not str(p.get("engine_version", "")).startswith("v13.")]
+    current = [p for p in rows if p.get("engine_version") == VERSION]
+    previous = [p for p in rows if p.get("engine_version") == "v13.0"]
     kinds = defaultdict(list)
     for row in current:
         kinds[row.get("event_class") or "unknown"].append(row)
     return {
-        "version": "v13.0", "window_days": 7,
+        "version": VERSION, "previous_version": "v13.0", "window_days": 7,
         "measurement": "Actual 23–25h and 5.5–6.5h observations; missing observations remain missing",
         "current": {label: cohort(current, label) for label in ("6h", "24h")},
         "previous": {label: cohort(previous, label) for label in ("6h", "24h")},
@@ -36,13 +38,32 @@ def summarize(posts, now=None):
     }
 
 
-def ranking_lift(story, posts):
-    """Only the new engine learns its topic preferences; old low reach cannot veto it."""
-    current = [p for p in posts if str(p.get("engine_version", "")).startswith("v13.")]
-    samples = [o["views"] for p in current if (o := observation(p, "24h")) is not None]
-    group = [o["views"] for p in current if p.get("event_class") == story.kind
-             and (o := observation(p, "24h")) is not None]
-    if len(samples) < 20 or len(group) < 5:
-        return 0.0
-    # Bounded, shrunk adjustment. This ranks; it never rejects a story.
-    return max(-5, min(5, (median(group)-median(samples))/max(10, median(samples))*5))*len(group)/(len(group)+10)
+def ranking_lifts(posts, now=None):
+    """Use real day-old reads, with small groups pulled back toward the account baseline."""
+    now = now or utcnow()
+    topics, tickers, samples = defaultdict(list), defaultdict(list), []
+    for post in posts:
+        date = parse_time(post.get("published_at"))
+        if (not str(post.get("engine_version", "")).startswith("v13.")
+                or post.get("learning_eligible") is False or date is None
+                or not 0 <= (now-date).total_seconds() <= 7*86400):
+            continue
+        sample = observation(post, "24h")
+        if sample is None:
+            continue
+        views = sample["views"]
+        samples.append(views)
+        kind = post.get("event_class")
+        topics[kind].append(views)
+        if kind not in {"news", "market_map", "relative_strength"}:
+            tickers[post.get("symbol")].append(views)
+    if len(samples) < 20:
+        return {}, {}
+    baseline = median(samples)
+
+    def adjustments(groups, cap):
+        return {key: max(-cap, min(cap, 20*log((median(values)+1)/(baseline+1))))
+                * len(values)/(len(values)+10)
+                for key, values in groups.items() if key and len(values) >= 5}
+
+    return adjustments(topics, 14), adjustments(tickers, 8)

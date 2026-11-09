@@ -38,7 +38,7 @@ function renderEditorMetrics(){
  if(!target)return;
  if(!e){target.textContent='Ожидается первый снимок статистики новой версии.';return;}
  const val=n=>n==null?'—':fmt(n),rate=n=>n==null?'—':fmt(n*100)+'%';
- const rows=[['v13',e.current],['Прежняя версия',e.previous]].flatMap(([name,group])=>['6h','24h'].map(label=>{
+ const rows=[[e.version||'v13',e.current],[e.previous_version||'Прежняя версия',e.previous]].flatMap(([name,group])=>['6h','24h'].map(label=>{
   const m=group?.[label]||{};
   return `<tr><td>${esc(name)}</td><td>${label==='6h'?'6 часов':'24 часа'}</td><td>${val(m.samples)}</td><td>${val(m.median_views)}</td><td>${rate(m.rate_100_plus)}</td><td>${val(m.interactions)}</td></tr>`;
  })).join('');

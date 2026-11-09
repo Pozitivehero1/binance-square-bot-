@@ -15,6 +15,7 @@ from unittest.mock import patch, Mock
 
 from runtime import atomic_write_json
 from squarebot import market
+from squarebot import VERSION
 from squarebot.author import Author, Provider, parse_candidates, configured_providers
 from squarebot.metrics import summarize
 from squarebot.models import Draft, Settings, Story, utcnow
@@ -63,6 +64,21 @@ class Isolated(unittest.TestCase):
 
 
 class MarketTests(unittest.TestCase):
+    def test_range_return_uses_same_boundary_for_both_closes(self):
+        rows = market.closed_candles(candles(), int(utcnow().timestamp()*1000))
+        boundary = max(row[2] for row in rows[-290:-2])
+        rows[-2][4] = boundary + 2
+        rows[-2][2] = boundary + 3
+        rows[-1][4] = boundary - 1
+        data = market.measure({'base':'BTC','symbol':'BTCUSDT','volume':1e9}, rows)
+        found = next(s for s in market.build_stories([data]) if s.kind == 'range_return')
+        self.assertEqual(found.range_level, boundary)
+        self.assertIn('выше максимума', found.facts['f1'])
+        self.assertIn('внутри того же диапазона', found.facts['f2'])
+        rows[-1][4] = boundary + 1
+        data = market.measure({'base':'BTC','symbol':'BTCUSDT','volume':1e9}, rows)
+        self.assertFalse(any(s.kind == 'range_return' for s in market.build_stories([data])))
+
     def test_closed_contiguous_windows(self):
         rows = candles()
         now = rows[-1][6]+1000
@@ -97,6 +113,14 @@ class MarketTests(unittest.TestCase):
 
 
 class ValidationTests(unittest.TestCase):
+    def test_range_story_can_describe_levels_without_hourly_percentages(self):
+        s = replace(story(kind='range_return'), range_level=105)
+        s.facts['f3'] = 'Граница суточного диапазона 105 USDT, последнее закрытие 103 USDT.'
+        body = ('$BTC вернулся в суточный диапазон. Верхняя граница была на 105 USDT, '
+                'а последняя свеча закрылась на 103 USDT.')
+        self.assertFalse(validate(Draft(s.id, body), s, [])[1])
+        self.assertIn('unsupported-market-number', validate(Draft(s.id, body.replace('103', '106')), s, [])[1])
+
     def test_fact_substitution_carries_sign_period_and_units(self):
         text, reasons = validate(good_draft(), story(), [])
         self.assertFalse(reasons)
@@ -239,10 +263,11 @@ class AuthorTests(Isolated):
         author=Author(Settings(max_ai_calls=8),[p]);author.calls=7
         d=good_draft();d.text=validate(d,story(),[])[0]
         payload={'choices':[{'message':{'content':json.dumps({'candidates':[{
-            'story_id':'s1','text':d.text,'format':'context'}]})}}]}
+            'story_id':'s1','approved':True,'text':d.text,'format':'different'}]})}}]}
         response=Mock(status_code=200,headers={},json=lambda:payload)
         with patch('squarebot.author.requests.post',return_value=response) as request:
-            self.assertIsNotNone(author.review(story(),d,[]))
+            self.assertIs(author.review(story(),d,[]),d)
+            self.assertEqual(d.format,'context')
             system=request.call_args.kwargs['json']['messages'][0]['content']
             self.assertIn('Удали КАЖДОЕ утверждение',system)
             self.assertEqual(author.calls,8)
@@ -310,7 +335,7 @@ class PipelineTests(Isolated):
         state=Store(); self.assertEqual(len(state.data['posts']),1)
         self.assertTrue(state.data['posts'][0]['analytics_recorded'])
         analytics=json.loads((self.root/'performance_history.json').read_text())
-        self.assertEqual(analytics['posts']['123456']['engine_version'],'v13.0')
+        self.assertEqual(analytics['posts']['123456']['engine_version'],VERSION)
         self.assertEqual(analytics['posts']['123456']['direction'],'OBSERVATION')
         self.assertEqual(self.execute(),(0,0))
 
@@ -357,11 +382,19 @@ class PipelineTests(Isolated):
         chosen=shortlist([story()],store,[],[{'engine_version':'v12.8','stats':{'views':0}}]*30)
         self.assertEqual(len(chosen),1)
 
+    def test_recent_routine_notes_move_a_breakout_and_news_up(self):
+        recent = [{'story': {'kind': 'mover'}, 'text': 'Монета $BTCA'} for _ in range(9)]
+        move = replace(story('move'), score=80)
+        breakout = replace(story('break', 'range_break'), score=62)
+        article = replace(story('article', 'news'), score=58)
+        chosen = shortlist([move, breakout, article],Store(),recent,[])
+        self.assertEqual([s.id for s in chosen], ['break', 'article'])
+
 
 class MetricsTests(unittest.TestCase):
     def test_lifetime_views_do_not_become_24h_observations(self):
         now=utcnow()
-        rows=[{'engine_version':'v13.0','published_at':(now-timedelta(hours=48)).isoformat(),
+        rows=[{'engine_version':VERSION,'published_at':(now-timedelta(hours=48)).isoformat(),
                'stats':{'views':99999},'last_stats_at':now.isoformat()}]
         report=summarize(rows,now=now)
         self.assertEqual(report['current']['24h']['samples'],0)

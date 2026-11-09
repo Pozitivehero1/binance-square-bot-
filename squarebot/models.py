@@ -22,6 +22,7 @@ class Story:
     image_url: str = ""
     event_key: str = ""
     chart_symbol: str = ""
+    range_level: float | None = None
     # Frames stay out of prompts and persisted JSON.
     candles: list = field(default_factory=list, repr=False)
 
@@ -41,6 +42,7 @@ class Draft:
     provider: str = ""
     model: str = ""
     tokens: int = 0
+    approved: bool = False
 
 
 @dataclass(frozen=True)

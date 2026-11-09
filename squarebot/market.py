@@ -102,12 +102,13 @@ def build_stories(measurements, now=None):
     now = now or utcnow()
     by_base = {m["base"]: m for m in measurements}
     stories = []
-    def add(kind, symbols, headline, facts, score, chart=None, direction=""):
+    def add(kind, symbols, headline, facts, score, chart=None, direction="", level=None):
         stamp = chart["closed_at"] if chart else max(m["closed_at"] for m in measurements)
         key = f"{kind}:{','.join(symbols)}:{direction}:{now:%Y-%m-%d-%H}"
         stories.append(Story(hashlib.sha256((key+stamp).encode()).hexdigest()[:16], kind, symbols,
                              headline, {f"f{i}": s for i, s in enumerate(facts, 1)}, stamp, score,
                              event_key=key, chart_symbol=chart["symbol"] if chart else "",
+                             range_level=level,
                              candles=chart["rows"] if chart else []))
     for m in measurements:
         base = m["base"]
@@ -125,13 +126,28 @@ def build_stories(measurements, now=None):
             bound = m["prior_high"] if up else m["prior_low"]
             breakout = f"${base}: последняя пятиминутная свеча закрылась {'выше максимума' if up else 'ниже минимума'} предыдущих двадцати четырёх часов ({price(bound)} USDT)."
             add("range_break", [base], "Закрытие за пределами предыдущего суточного диапазона",
-                [facts[0], breakout], 52+liquid_bonus+min(15, abs(m["c1h"])*3), m, "up" if up else "down")
+                [facts[0], breakout, facts[3]], 52+liquid_bonus+min(15, abs(m["c1h"])*3),
+                m, "up" if up else "down", bound)
+        rows = m["rows"]
+        if len(rows) >= 290:
+            # Compare both closes to the same range, excluding both event candles.
+            prior = rows[-290:-2]
+            high, low = max(r[2] for r in prior), min(r[3] for r in prior)
+            outside, current = rows[-2][4], rows[-1][4]
+            if low <= current <= high and not low <= outside <= high:
+                above = outside > high
+                level = high if above else low
+                add("range_return", [base], "Цена закрылась обратно внутри суточного диапазона", [
+                    f"${base}: предыдущая пятиминутная свеча закрылась {'выше максимума' if above else 'ниже минимума'} "
+                    f"суточного диапазона ({price(level)} USDT), на {price(outside)} USDT.",
+                    f"${base}: последняя пятиминутная свеча закрылась внутри того же диапазона, на {price(current)} USDT.",
+                    facts[0],
+                ], 56+liquid_bonus+min(15, abs(m["c1h"])*3), m, "from_above" if above else "from_below", level)
         if m["c1h"] * m["previous_hour"] < 0 and min(abs(m["c1h"]), abs(m["previous_hour"])) >= .6:
             if m["c1h"] * m["c4h"] < 0:
-                focused = facts[:2] + ["Направления последнего часа и четырёхчасового итога различаются; локальное движение пока не сменило знак более длинного окна."]
+                focused = facts[:2]
             else:
-                focused = [facts[0], f"${base}: за предшествующий час изменение составляло {pct(m['previous_hour'])}.",
-                           "Два соседних часа закрылись в противоположных направлениях; это наблюдение о произошедшем, а не подтверждение будущего тренда."]
+                focused = [facts[0], f"${base}: за предшествующий час изменение составляло {pct(m['previous_hour'])}."]
             add("reversal", [base], "Последний час изменил направление движения", focused,
                 48+liquid_bonus+min(15, abs(m["c1h"])*3), m, "up" if m["c1h"] > 0 else "down")
     if "BTC" in by_base and "ETH" in by_base:

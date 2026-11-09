@@ -6,6 +6,7 @@ from dataclasses import asdict
 import logging
 import os
 from pathlib import Path
+import re
 import tempfile
 
 from runtime import ProcessLock, atomic_write_json, resolve_state_file, write_status
@@ -22,7 +23,11 @@ LOG = logging.getLogger(__name__)
 
 
 def shortlist(stories, store, recent, performance):
-    from .metrics import ranking_lift
+    from .metrics import ranking_lifts
+    topic_lift, ticker_lift = ranking_lifts(performance)
+    routine = {"mover", "reversal"}
+    recent_kinds = [p.get("story", {}).get("kind") or p.get("event_class") for p in recent[:12]]
+    recent_tickers = [set(re.findall(r"\$([A-Z0-9]+)\b", p.get("text", "").upper())) for p in recent[:12]]
     ranked = []
     pending_symbols = {symbol for row in store.data["pending"].values()
                        for symbol in row.get("story", {}).get("symbols", [])}
@@ -38,20 +43,29 @@ def shortlist(stories, store, recent, performance):
             similarity(story.headline, previous.get("story", {}).get("headline", "")) >= .6
             for previous in recent):
             continue
-        kind_count = sum(p.get("story", {}).get("kind") == story.kind for p in recent[:10])
-        ticker_count = sum(any("$"+s in p.get("text", "") for s in story.symbols) for p in recent[:6])
-        score = story.score - kind_count*5 - ticker_count*3 + ranking_lift(story, performance)
+        kind_count = recent_kinds.count(story.kind)
+        routine_count = sum(kind in routine for kind in recent_kinds) if story.kind in routine else 0
+        ticker_count = sum(story.symbols[0] in tickers for tickers in recent_tickers)
+        score = story.score - kind_count*4 - routine_count*3 - ticker_count*5 + topic_lift.get(story.kind, 0)
+        if story.kind not in {"news", "market_map", "relative_strength"}:
+            score += ticker_lift.get(story.symbols[0], 0)
         ranked.append((score, story))
     ranked.sort(key=lambda item: (-item[0], item[1].id))
-    # More distinct topics in the prompt, fewer redundant drafts of one tiny move.
-    chosen, counts = [], {}
-    for _, story in ranked:
-        if counts.get(story.kind, 0) >= 2:
-            continue
-        counts[story.kind] = counts.get(story.kind, 0)+1
-        chosen.append(story)
-        if len(chosen) == 6:
-            break
+    chosen, symbols, kinds, ids = [], set(), set(), set()
+    # Choose different angles first. Fall back to other coins even on a quiet scan.
+    for distinct_kinds in (True, False):
+        for _, story in ranked:
+            if story.id in ids or (distinct_kinds and story.kind in kinds):
+                continue
+            if story.kind != "news" and story.symbols[0] in symbols:
+                continue
+            chosen.append(story)
+            ids.add(story.id)
+            if story.kind != "news":
+                symbols.add(story.symbols[0])
+            kinds.add(story.kind)
+            if len(chosen) == 6:
+                return chosen
     return chosen
 
 
@@ -138,6 +152,7 @@ def editorial_pass(settings):
         selected = list(pool.map(news.enrich, selected))
     report["candidates"] = [s.brief() for s in selected]
     by_id = {s.id: s for s in selected}
+    priority = {s.id: i for i, s in enumerate(selected)}
     author = Author(settings, providers)
     generator = author.drafts(selected, recent)
     feedback = None
@@ -146,7 +161,7 @@ def editorial_pass(settings):
         while True:
             drafts = next(generator) if feedback is None else generator.send(feedback)
             feedback = []
-            for draft in drafts:
+            for draft in sorted(drafts, key=lambda item: priority.get(item.story_id, len(priority))):
                 story = by_id.get(draft.story_id)
                 if not story:
                     feedback.append({"story_id": draft.story_id, "reasons": ["unknown-story-id"]})

@@ -27,7 +27,6 @@ jobs:
     env:
       PYTHONUNBUFFERED: "1"
       DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
-      BOT_VERSION: "v13.0"
       SQUARE_API: ${{ secrets.SQUARE_API }}
       SQUARE_SKILL_DIR: ${{ github.workspace }}/.agents/skills/square-post
       SQUARE_PROFILE_UID: "6w3LNrVCJ9O4VGhRSf6oug"
