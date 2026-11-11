@@ -22,19 +22,22 @@ SYSTEM = """Пиши для русскоязычного читателя Binanc
 но может впервые видеть это событие. Сделай отдельные черновики для lead_story_id
 и другой темы из stories. recent показывает, какие мысли и обороты уже использовались.
 
-Сразу скажи, что произошло. Сопоставь наблюдения так, чтобы читатель понял, что
-изменилось: цена вышла за границу, уже вернулась за неё, или часовой отскок
-покрыл часть или всё движение предыдущего часа. В reversal начни с этого
-проверенного итога и используй цифры как подтверждение. Для range_break и range_return назови
-проверенную границу и сторону, на которой закрылась цена. Для этих сюжетов
-можно опустить проценты, если цена и граница объясняют всё. Если новость даёт
-конкретную деталь о том, кого коснулось изменение или когда оно вступает в силу,
-выбери эту деталь. Свободно меняй структуру и ритм. Пиши короткими фразами.
+В первых двух строках читатель должен понять, что изменилось и какую конкретную
+деталь стоит знать. Для новости выбери, кого затронуло событие, когда наступит
+изменение или какой шаг ещё предстоит, если это прямо следует из source_text.
+Для рынка объясни связь между наблюдениями: где закрылась цена относительно
+проверенной границы или какую часть прошлого движения отыграл разворот.
+Укажи цену и границу для range_break и range_return. Опусти процент, если
+ориентира уже достаточно. Для относительной силы выбери либо разрыв между
+активами, либо сравнение их изменений. Пиши короткими фразами и используй
+обычные слова вместо «зафиксировано», «котировки демонстрируют» и «в часовом окне».
 В market_map начни с соотношения выросших и упавших пар, если оно объясняет
 событие лучше малых колебаний BTC и ETH. Считай пары без изменения отдельно.
 
 Используй одно или два нужных измерения из facts с исходными числом, знаком,
-единицей, тикером и периодом. Не сочиняй объяснений цены, намерений участников
+единицей, тикером и периодом. Ставь период рядом с числом в той же части
+предложения, особенно при сравнении последнего и предшествующего часа.
+Не сочиняй объяснений цены, намерений участников
 или прогнозов. Не пересказывай служебный заголовок и не добавляй вводных вроде
 «монета демонстрирует динамику». Убери последнюю фразу, если она повторяет
 факт или говорит лишь «это не подтверждает будущего тренда».
@@ -70,6 +73,9 @@ REVIEW_SYSTEM = """Ты проверяешь факты готового пос�
 Сохрани атрибуцию мнений и оговорки: largely — «в значительной степени», не
 «полностью». Не выдавай оценку экспертов за доказанный факт.
 Перепиши буквальные кальки и канцелярит простым естественным русским.
+Если переданы repair, исправь перечисленные причины. Для двух периодов явно
+укажи период рядом с каждым измерением. Убери второстепенную цифру, если
+достаточно одной, и сохрани проверяемую деталь в начале.
 Убирай вводную фразу, если она не называет событие, и концовку, если она лишь
 повторяет наблюдение или отказывается от прогноза. Не добавляй общий вывод
 ради длины. Не копируй большой фрагмент дословно.
@@ -155,8 +161,9 @@ class Author:
         except (OSError, ValueError):
             self.health = {}
 
-    def budget(self):
-        return self.calls < self.limit and time.monotonic() < self.deadline-2
+    def budget(self, call_limit=None):
+        limit = self.limit if call_limit is None else min(self.limit, call_limit)
+        return self.calls < limit and time.monotonic() < self.deadline-2
 
     def identity(self, p):
         return hashlib.sha256((p.url+p.model+p.key).encode()).hexdigest()[:24]
@@ -165,8 +172,8 @@ class Author:
         self.health[self.identity(p)] = time.time()+seconds
         atomic_write_json(self.path, {k:v for k,v in self.health.items() if isinstance(v, (float,int)) and v>time.time()})
 
-    def request(self, provider, payload, *, plain_json=False, system=SYSTEM, max_tokens=2400):
-        if not self.budget():
+    def request(self, provider, payload, *, plain_json=False, system=SYSTEM, max_tokens=2400, call_limit=None):
+        if not self.budget(call_limit):
             raise RuntimeError("Editorial AI budget exhausted")
         self.calls += 1
         body = dict(model=provider.model, messages=[{"role":"system", "content":system},
@@ -184,7 +191,8 @@ class Author:
         LOG.info("Author call=%s/%s provider=%s model=%s HTTP=%s", self.calls, self.limit,
                  provider.name, provider.model, response.status_code)
         if response.status_code == 400 and not plain_json and "response_format" in response.text[:1000]:
-            return self.request(provider, payload, plain_json=True, system=system, max_tokens=max_tokens)
+            return self.request(provider, payload, plain_json=True, system=system,
+                                max_tokens=max_tokens, call_limit=call_limit)
         if response.status_code != 200:
             delay = 3600 if response.status_code in {401,403,404} else 120 if response.status_code == 429 else 60
             try:
@@ -202,21 +210,25 @@ class Author:
                       str(r.get("format") or "freeform")[:64], str(r.get("evidence_quote") or ""),
                       provider.name, provider.model, tokens, approved=r.get("approved") is True) for r in rows]
 
-    def review(self, story, draft, recent):
+    def review(self, story, draft, recent, *, reasons=(), max_calls=2):
         """A separate source-only edit catches unsupported prose, not just numbers."""
+        call_limit = self.calls + max_calls
         preferred = [p for p in self.providers if p.name == draft.provider and p.model == draft.model]
         remaining = [p for p in self.providers if p not in preferred]
         payload = {"story": story.brief(), "draft": {"text": draft.text, "title": draft.title,
                    "format": draft.format, "evidence_quote": draft.evidence_quote},
                    "recent": [p.get("text", "")[:240] for p in recent[:2]]}
+        if reasons:
+            payload["repair"] = list(reasons)
         from .validation import validate
         for provider in preferred+remaining:
-            if not self.budget():
+            if not self.budget(call_limit):
                 return None
             if self.health.get(self.identity(provider), 0) > time.time():
                 continue
             try:
-                rows = self.request(provider, payload, system=REVIEW_SYSTEM, max_tokens=1100)
+                rows = self.request(provider, payload, system=REVIEW_SYSTEM, max_tokens=1100,
+                                    call_limit=call_limit)
                 for revised in rows:
                     if revised.story_id != story.id:
                         continue
@@ -242,6 +254,7 @@ class Author:
         """Each provider is visited once; at most one factual repair per response."""
         payload = {"lead_story_id": stories[0].id, "stories": [s.brief() for s in stories],
                    "recent": [str(p.get("text", ""))[:400] for p in recent[:8]]}
+        rejected_ids = set()
         for provider in self.providers:
             if not self.budget():
                 return
@@ -258,6 +271,9 @@ class Author:
                     if not feedback:
                         return
                     payload["repair"] = feedback
+                    rejected_ids.update(row["story_id"] for row in feedback)
+                    payload["lead_story_id"] = next((s.id for s in stories if s.id not in rejected_ids),
+                                                   stories[0].id)
                     LOG.info("Factual rewrite requested provider=%s rejected=%s", provider.name, len(feedback))
                 except (requests.RequestException, ValueError, KeyError, TypeError, RuntimeError) as exc:
                     # Never dump request/response bodies or credentials to Actions logs.
