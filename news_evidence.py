@@ -32,9 +32,12 @@ def draft_reasons(body: str, quote: str, item: dict) -> tuple[str, ...]:
         reasons.append("repeated-news-sentence")
     # Numbers must be present in RSS evidence. Do not invent amounts, dates,
     # percentages or perform unstated unit conversions during a rewrite.
-    def nums(text):
+    def nums(text, *, english=False):
         text=re.sub(r"\$[A-Za-z][A-Za-z0-9]*", "",text)
+        group = "[ ,]" if english else " "
+        text = re.sub(rf"(?<![\d.,])\d{{1,3}}(?:{group}\d{{3}})+(?!\d)",
+                      lambda match: match[0].replace(" ", "").replace(",", ""), text)
         return {float(x.replace(",",".")) for x in re.findall(r"(?<![A-Za-z0-9])\d+(?:[.,]\d+)?",text)}
-    if not nums(body)<=nums(source):
+    if not nums(" ".join(body.split())) <= nums(source, english=True):
         reasons.append("unsupported-news-number")
     return tuple(reasons)

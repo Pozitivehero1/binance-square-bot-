@@ -15,7 +15,7 @@ from unittest.mock import patch, Mock
 
 from runtime import atomic_write_json
 from squarebot import market
-from squarebot import VERSION
+from squarebot import PREVIOUS_VERSION, VERSION
 from squarebot.author import Author, Provider, parse_candidates, configured_providers
 from squarebot.metrics import summarize
 from squarebot.models import Draft, Settings, Story, utcnow
@@ -230,6 +230,16 @@ class ValidationTests(unittest.TestCase):
         d.evidence_quote = 'invented quote'
         self.assertIn('missing-verbatim-source-evidence',validate(d,s,[])[1])
 
+    def test_news_thousands_separators_preserve_the_source_amount(self):
+        s = Story('n', 'news', ['BTC'], 'Bitcoin miner announces data center plans', {}, utcnow().isoformat(),
+                  source_text='Bitcoin miner HIVE announced plans to install up to 10,000 GPUs at its data center.')
+        d = Draft('n', 'Компания HIVE, которая добывает $BTC, объявила, что планирует установить '
+                  'до 10\u202f000 графических процессоров в своём дата-центре.',
+                  title='HIVE объявила о планах для дата-центра', evidence_quote=s.source_text)
+        self.assertFalse(validate(d, s, [])[1])
+        d.text = d.text.replace('10\u202f000', '11 000')
+        self.assertIn('unsupported-news-number', validate(d, s, [])[1])
+
     def test_percent_word_and_numeric_day_window(self):
         s=story();s.kind='range_break';s.symbols=['NEAR']
         s.facts={'f1':'$NEAR: изменение за час +6.79%.',
@@ -313,6 +323,29 @@ class AuthorTests(Isolated):
             post.assert_not_called()
         self.assertNotIn('secret',self.path_text())
 
+    def test_review_attempt_limit_leaves_calls_for_other_topics(self):
+        providers = [Provider('fixture', 'https://example.com/chat/completions', str(i), 'secret')
+                     for i in range(4)]
+        author = Author(Settings(max_ai_calls=8), providers)
+        response = Mock(status_code=400, headers={}, text='unsupported response_format')
+        with patch('squarebot.author.requests.post', return_value=response) as request:
+            self.assertIsNone(author.review(story(), good_draft(), [],
+                                            reasons=('unsupported-market-number',), max_calls=1))
+        request.assert_called_once()
+        messages = request.call_args.kwargs['json']['messages']
+        self.assertEqual(json.loads(messages[-1]['content'])['repair'], ['unsupported-market-number'])
+        self.assertEqual(author.calls, 1)
+
+    def test_rewrite_moves_to_an_unrejected_story(self):
+        provider = Provider('fixture', 'https://example.com/chat/completions', 'model', 'secret')
+        author = Author(Settings(max_ai_calls=8), [provider])
+        with patch.object(author, 'request', return_value=[good_draft()]) as request:
+            gen = author.drafts([story(), story('s2')], [])
+            next(gen)
+            gen.send([{'story_id': 's1', 'reasons': ['repeated-narrative']}])
+            gen.close()
+        self.assertEqual(request.call_args.args[1]['lead_story_id'], 's2')
+
     def path_text(self):
         return (self.root/'editor_providers.json').read_text()
 
@@ -349,7 +382,7 @@ class PipelineTests(Isolated):
              patch('squarebot.market.scan',return_value=source), \
              patch('squarebot.news.scan',return_value=[]), \
              patch('squarebot.author.Author.drafts',side_effect=drafts), \
-             patch('squarebot.author.Author.review',side_effect=lambda s,d,r:d if review_ok else None), \
+             patch('squarebot.author.Author.review',side_effect=lambda s,d,r,**kwargs:d if review_ok else None), \
              patch('squarebot.pipeline.visuals.chart',return_value=None), \
              patch('squarebot.pipeline.publish',return_value=result) as send:
             code=editorial_pass(Settings(dry_run=dry_run))
@@ -390,6 +423,24 @@ class PipelineTests(Isolated):
         self.assertEqual(self.execute(review_ok=False),(1,0))
         self.assertFalse(Store().data['pending'])
 
+    def test_valid_backup_gets_source_review_before_invalid_lead(self):
+        lead = replace(story(), score=70)
+        backup = replace(story('s2'), score=50, symbols=['ETH'])
+        backup.facts = {key: value.replace('BTC', 'ETH') for key, value in backup.facts.items()}
+        invalid = replace(good_draft(), text=good_draft().text + ' Цена 999999 USDT.')
+        valid = replace(good_draft('s2'), text=good_draft('s2').text.replace('Биткоин', 'Эфир'))
+        with patch('squarebot.pipeline.configured_providers', return_value=[Mock()]), \
+             patch('squarebot.market.scan', return_value=[lead, backup]), \
+             patch('squarebot.news.scan', return_value=[]), \
+             patch('squarebot.author.Author.drafts', return_value=(batch for batch in [[invalid, valid]])), \
+             patch('squarebot.author.Author.review', side_effect=lambda s,d,r,**kwargs:d) as review:
+            self.assertEqual(editorial_pass(Settings(dry_run=True)), 0)
+        review.assert_called_once()
+        self.assertEqual(review.call_args.args[0].id, 's2')
+        report = json.loads((self.root/'editorial_report.json').read_text())
+        self.assertEqual(report['rejected'][0]['story_id'], 's1')
+        self.assertEqual(report['status'], 'dry_run')
+
     def test_corrupt_state_does_not_reset_send_memory(self):
         (self.root/'editorial_v13.json').write_text('{"posts":[],"pending":null}')
         with self.assertRaises(ValueError):
@@ -418,6 +469,15 @@ class PipelineTests(Isolated):
 
 
 class MetricsTests(unittest.TestCase):
+    def test_comparison_uses_immediately_previous_release(self):
+        now = utcnow()
+        def post(version, views):
+            return {'engine_version': version, 'published_at': (now-timedelta(hours=24)).isoformat(),
+                    'milestones': {'24h': {'views': views, 'age_minutes': 1440}}}
+        report = summarize([post(VERSION, 14), post(PREVIOUS_VERSION, 8), post('v13.0', 1)], now=now)
+        self.assertEqual(report['current']['24h']['median_views'], 14)
+        self.assertEqual(report['previous']['24h']['median_views'], 8)
+
     def test_lifetime_views_do_not_become_24h_observations(self):
         now=utcnow()
         rows=[{'engine_version':VERSION,'published_at':(now-timedelta(hours=48)).isoformat(),

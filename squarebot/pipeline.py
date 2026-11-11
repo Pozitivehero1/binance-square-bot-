@@ -12,7 +12,7 @@ import tempfile
 from runtime import ProcessLock, atomic_write_json, resolve_state_file, write_status
 from publisher import find_skill_dir, publish
 
-from . import VERSION
+from . import PREVIOUS_VERSION, VERSION
 from .author import Author, configured_providers
 from .models import Settings, utcnow
 from .store import Store, similarity
@@ -89,7 +89,7 @@ def record_analytics(store):
         # Keep source send time when recovering an earlier confirmed receipt.
         analytics = load_store()
         analytics["posts"][row["post_id"]]["published_at"] = row.get("created_at") or row["published_at"]
-        analytics["posts"][row["post_id"]]["engine_version"] = VERSION
+        analytics["posts"][row["post_id"]]["engine_version"] = row.get("engine_version", PREVIOUS_VERSION)
         save_store(analytics)
         if not any(r.get("post_id") == row["post_id"] for r in guard.state.get("publications", [])):
             guard.record_success(symbol=symbol, direction="OBSERVATION", content_format=draft["format"],
@@ -161,6 +161,7 @@ def editorial_pass(settings):
         while True:
             drafts = next(generator) if feedback is None else generator.send(feedback)
             feedback = []
+            candidates = {}
             for draft in sorted(drafts, key=lambda item: priority.get(item.story_id, len(priority))):
                 story = by_id.get(draft.story_id)
                 if not story:
@@ -172,12 +173,20 @@ def editorial_pass(settings):
                            "text": draft.text[:1800], "evidence_quote": draft.evidence_quote[:600]}
                     report["rejected"].append(row)
                     LOG.info("Draft factual/repetition rejection story=%s reasons=%s", story.id, ", ".join(reasons))
+                    if any(reason.startswith("repeated-narrative") for reason in reasons):
+                        feedback.append({"story_id": story.id, "reasons": list(reasons)})
+                        continue
                 else:
                     draft.text = text
-                # Let the source editor repair an initial factual/language defect
-                # before spending another complete topic-generation request.
-                # Only its fully revalidated result can reach the publisher.
-                revised = author.review(story, draft, recent)
+                if story.id not in candidates or (candidates[story.id][2] and not reasons):
+                    candidates[story.id] = (story, draft, reasons)
+            # Give a valid alternate draft a source check before repairing the lead.
+            ranked = sorted(candidates.values(), key=lambda item: bool(item[2]))
+            for index, (story, draft, reasons) in enumerate(ranked):
+                waiting = len(ranked) - index - 1
+                remaining = author.limit - author.calls
+                max_calls = 1 if reasons or remaining <= waiting + 2 else 2
+                revised = author.review(story, draft, recent, reasons=reasons, max_calls=max_calls)
                 if revised is None:
                     feedback.append({"story_id": draft.story_id, "reasons": list(reasons) or ["final-source-edit-unavailable"]})
                     continue

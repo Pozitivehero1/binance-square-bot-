@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 
 from runtime import atomic_write_json, resolve_state_file
+from . import VERSION
 from .models import utcnow
 
 
@@ -51,6 +52,7 @@ class Store:
     def reserve(self, story, draft):
         self.data["pending"][story.id] = {
             "story_id": story.id, "event_key": story.event_key, "text": draft.text,
+            "engine_version": VERSION,
             "created_at": utcnow().isoformat(), "story": story.brief(),
             "draft": {"provider": draft.provider, "model": draft.model, "format": draft.format},
         }

@@ -4,7 +4,7 @@ from math import log
 from statistics import median
 
 from evidence_metrics import observation, parse_time
-from . import VERSION
+from . import PREVIOUS_VERSION, VERSION
 from .models import utcnow
 
 
@@ -24,12 +24,12 @@ def summarize(posts, now=None):
     rows = [p for p in posts if isinstance(p, dict) and p.get("learning_eligible") is not False
             and (date := parse_time(p.get("published_at"))) and 0 <= (now-date).total_seconds() <= 7*86400]
     current = [p for p in rows if p.get("engine_version") == VERSION]
-    previous = [p for p in rows if p.get("engine_version") == "v13.0"]
+    previous = [p for p in rows if p.get("engine_version") == PREVIOUS_VERSION]
     kinds = defaultdict(list)
     for row in current:
         kinds[row.get("event_class") or "unknown"].append(row)
     return {
-        "version": VERSION, "previous_version": "v13.0", "window_days": 7,
+        "version": VERSION, "previous_version": PREVIOUS_VERSION, "window_days": 7,
         "measurement": "Actual 23–25h and 5.5–6.5h observations; missing observations remain missing",
         "current": {label: cohort(current, label) for label in ("6h", "24h")},
         "previous": {label: cohort(previous, label) for label in ("6h", "24h")},
