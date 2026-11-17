@@ -27,6 +27,7 @@ LOG = logging.getLogger(__name__)
 DATA_BRANCH = "square-bridge-data"
 MAX_DRAFT_BYTES = 950_000
 MAX_IMAGE_BYTES = 650_000
+COVER_DIR = Path(__file__).with_name("covers")
 
 
 def read_json(path):
@@ -74,6 +75,7 @@ def collect(destination):
         public_rows.append(row)
     atomic_write_json(destination / "bridge/market.json", {
         "schema": 1, "created_at": utcnow().isoformat(), "stories": public_rows,
+        "cover_symbols": sorted(path.stem for path in COVER_DIR.glob("*.jpg")),
     })
     atomic_write_json(destination / "bridge/charts.json", charts)
     LOG.info("Collected %d market and %d news stories", len(top), len(news_rows))
@@ -178,8 +180,7 @@ def load_draft(root, now):
     title = data.get("title", "").strip()
     if not 5 <= len(title) <= 130 or len(title.splitlines()) != 1:
         raise ValueError("An article title is required")
-    if not data.get("image_base64"):
-        raise ValueError("An article cover is required")
+    cover_path(data, story)
     body = data["text"].strip()
     closing = data.get("closing", "").strip()
     closing_paragraphs = []
@@ -206,10 +207,26 @@ def load_draft(root, now):
     return data, story, text
 
 
-def prepare_image(data, output):
+def cover_path(data, story):
+    symbol = data.get("cover_symbol")
+    if symbol is None:
+        if not data.get("image_base64"):
+            raise ValueError("An article cover is required")
+        return None
+    if (data.get("image_base64") or story.kind == "news" or not isinstance(symbol, str)
+            or not re.fullmatch(r"[A-Z0-9]{1,20}", symbol) or symbol != story.symbols[0]):
+        raise ValueError("Catalog cover must match the primary market symbol")
+    path = COVER_DIR / (symbol + ".jpg")
+    if not path.is_file():
+        raise ValueError("Catalog cover does not exist for this symbol")
+    return path
+
+
+def prepare_image(data, output, catalog_cover=None):
     from PIL import Image, ImageOps
 
-    raw = base64.b64decode(data["image_base64"], validate=True)
+    raw = (catalog_cover.read_bytes() if catalog_cover is not None
+           else base64.b64decode(data["image_base64"], validate=True))
     if len(raw) > MAX_IMAGE_BYTES:
         raise ValueError("Cover exceeds package limit")
     with Image.open(BytesIO(raw), formats=("JPEG", "PNG", "WEBP")) as image:
@@ -242,7 +259,7 @@ def deliver(root, output, live):
         LOG.info("Story already claimed or published")
         return
     output.mkdir(parents=True, exist_ok=True)
-    image = prepare_image(data, output)
+    image = prepare_image(data, output, cover_path(data, story))
     title = data["title"].strip()
     (output / "title.txt").write_text(title + "\n", encoding="utf-8")
     (output / "post.txt").write_text(text + "\n", encoding="utf-8")

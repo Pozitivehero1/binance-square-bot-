@@ -105,6 +105,29 @@ class BridgeTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Lists are not allowed"):
             bridge.deliver(self.root, self.output, live=False)
 
+    def test_market_catalog_cover_needs_no_image_bytes_in_queue(self):
+        self.draft.pop("image_base64")
+        self.draft["cover_symbol"] = "BTC"
+        self.save()
+        with patch.object(bridge, "COVER_DIR", self.root):
+            Image.new("RGB", (64, 36), "blue").save(self.root / "BTC.jpg", "JPEG")
+            bridge.deliver(self.root, self.output, live=False)
+            self.assertTrue((self.output / "post.jpg").exists())
+            self.draft["cover_symbol"] = "ETH"
+            self.save()
+            with self.assertRaisesRegex(ValueError, "must match"):
+                bridge.deliver(self.root, self.output, live=False)
+
+    def test_negative_guarantee_is_caution_and_positive_is_rejected(self):
+        self.draft["closing"] = ("Один сильный час ничего не гарантирует.\n\n"
+                                 "Что подтвердит выход из диапазона?")
+        self.save()
+        bridge.deliver(self.root, self.output, live=False)
+        self.draft["closing"] = "Этот ход гарантирует рост. Что покажет следующий час?"
+        self.save()
+        with self.assertRaisesRegex(ValueError, "unsupported-promise"):
+            bridge.deliver(self.root, self.output, live=False)
+
     def test_missing_cover_cannot_fall_back_to_a_chart(self):
         self.draft["image_base64"] = ""
         self.save()

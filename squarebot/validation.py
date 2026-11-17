@@ -64,7 +64,8 @@ def validate(draft, story, recent, *, max_length=None):
         reasons.append("unsupported-cashtag")
     if re.search(r"(?i)\b(?:LONG|SHORT|TP[123])\b|\bстоп[ -]?лосс|\bвход\s*[:\d]", text):
         reasons.append("unverified-trading-plan")
-    if re.search(r"(?i)гарантир\w*|точно (?:вырастет|упадет|вырастут)|иксы|без риска|подпиш\w*|ставь\w* лайк", text):
+    promises = re.sub(r"(?i)\bне\s+гарантиру(?:ет|ют)\b", "", text)
+    if re.search(r"(?i)гарантир\w*|точно (?:вырастет|упадет|вырастут)|иксы|без риска|подпиш\w*|ставь\w* лайк", promises):
         reasons.append("unsupported-promise-or-engagement-bait")
     if re.search(r"(?i)\b(?:rss|json|prompt|fact_ids|output_schema)\b|\[\[|\]\]", text):
         reasons.append("internal-artifact")
