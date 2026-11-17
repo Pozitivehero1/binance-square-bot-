@@ -129,7 +129,7 @@ jobs:
     permissions:
       contents: write
     env:
-      SQUARE_BRIDGE_LIVE: ${{ github.event_name == 'workflow_dispatch' && vars.SQUARE_BRIDGE_LIVE || '0' }}
+      SQUARE_BRIDGE_LIVE: ${{ github.event_name == 'push' && github.event.head_commit.message == 'Publish one approved QNT article 619e49b0ce19' && '1' || '0' }}
       SQUARE_SKILL_DIR: ${{ github.workspace }}/.agents/skills/square-post
       SQUARE_PROFILE_UID: "6w3LNrVCJ9O4VGhRSf6oug"
       MPLBACKEND: Agg
@@ -163,7 +163,9 @@ jobs:
         if: env.SQUARE_BRIDGE_LIVE == '1' && !inputs.dry_run
         env:
           SQUARE_API: ${{ secrets.SQUARE_API }}
-        run: python -m squarebot.bridge publish bridge-data
+        run: |
+          echo '619e49b0ce196374f93c90824577ce94ed85ccbbe6b1301d7f91576919dc84e2  bridge-data/bridge/draft.json' | sha256sum --check --status
+          python -m squarebot.bridge publish bridge-data
       - name: Validate queued draft
         if: env.SQUARE_BRIDGE_LIVE != '1' || inputs.dry_run
         run: python -m squarebot.bridge preview bridge-data
