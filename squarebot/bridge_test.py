@@ -58,6 +58,14 @@ class BridgeTest(unittest.TestCase):
             bridge.deliver(self.root, self.output, live=True)
         send.assert_not_called()
 
+    def test_preview_only_draft_cannot_be_published(self):
+        self.draft["preview_only"] = True
+        self.save()
+        with patch("publisher.publish") as send:
+            bridge.deliver(self.root, self.output, live=True)
+        send.assert_not_called()
+        self.assertFalse((self.root / "bridge/receipts").exists())
+
     def test_claim_is_saved_before_send_and_blocks_duplicates(self):
         def send(*args, **kwargs):
             receipt = next((self.root / "bridge/receipts").glob("*.json"))

@@ -166,6 +166,9 @@ def deliver(root, output, live):
         LOG.info("No fresh draft to deliver")
         return
     data, story, text = package
+    if live and data.get("preview_only") is True:
+        LOG.info("Draft is marked for preview only")
+        return
     key = story.event_key or story.id
     receipt_name = hashlib.sha256(key.encode()).hexdigest()[:32]
     receipt = root / "bridge/receipts" / (receipt_name + ".json")
