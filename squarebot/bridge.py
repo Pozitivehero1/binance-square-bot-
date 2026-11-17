@@ -128,18 +128,29 @@ def format_plan(plan, story):
     def price(number):
         return format(number, "f").replace(".", ",")
 
+    def reference(key):
+        extreme, window = key.split("_")
+        periods = {"1h": "часа", "4h": "четырёх часов", "24h": "суток"}
+        name = "максимум" if extreme == "high" else "минимум"
+        return f"{name} последних {periods[window]}" if window != "1h" else f"{name} последнего часа"
+
     zone_text = "–".join(map(price, zone))
     direction = "Лонг" if is_long else "Шорт"
     side = "выше" if is_long else "ниже"
-    trigger = price(zone[-1] if is_long else zone[0])
+    trigger_index = -1 if is_long else 0
+    trigger = reference(entry[trigger_index])
+    if len(zone) == 2:
+        trigger += f" на {price(zone[trigger_index])} USDT"
     lines = [
-        f"Условный сценарий · {direction}",
-        f"Вход — {zone_text} USDT, если час закроется {side} {trigger} USDT "
-        "и повторная проверка уровня подтвердит движение.",
-        *(f"TP{i} — {price(value)} USDT" for i, value in enumerate(goals, 1)),
-        f"Стоп-лосс — {price(invalidation)} USDT. На этом уровне сценарий теряет силу.",
+        f"{direction} рассматриваю только после подтверждения.",
+        f"Вход — {zone_text} USDT. Ориентир — {trigger}. Нужны закрытие часа {side} этой отметки "
+        "и успешная повторная проверка.",
+        *(f"TP{i} — {price(value)} USDT, {reference(key)}"
+          for i, (value, key) in enumerate(zip(goals, targets), 1)),
+        f"Стоп-лосс — {price(invalidation)} USDT, {reference(stop)}. "
+        "Возврат к этой отметке отменит сценарий.",
     ]
-    return "\n".join(lines)
+    return " ".join(line if line.endswith(".") else line + "." for line in lines)
 
 
 def load_draft(root, now):
@@ -171,18 +182,27 @@ def load_draft(root, now):
         raise ValueError("An article cover is required")
     body = data["text"].strip()
     closing = data.get("closing", "").strip()
+    closing_paragraphs = []
     if story.kind != "news":
-        if len(body.split("\n\n")) < 3 or len(closing.splitlines()) != 1 or not closing.endswith("?"):
-            raise ValueError("Expected higher timeframe, hourly view, thesis and a closing question")
+        closing_paragraphs = re.split(r"\n\s*\n", closing)
+        if (len(re.split(r"\n\s*\n", body)) < 3 or len(closing_paragraphs) > 2
+                or any(len(paragraph.splitlines()) != 1 for paragraph in closing_paragraphs)
+                or not closing.endswith("?")):
+            raise ValueError("Expected an analytical opening, two analysis paragraphs and a closing question")
         plan = format_plan(data.get("plan"), story)
-        body = body + "\n\n" + closing
+        body = "\n\n".join((body, *closing_paragraphs))
+    if re.search(r"(?m)^\s*(?:[-–—*•]\s+|\d+[.)]\s+)", body):
+        raise ValueError("Lists are not allowed in the article body")
+    tags = re.findall(r"\$([A-Za-z][A-Za-z0-9]{0,19})\b", body)
+    if not 1 <= len(tags) <= 3 or not set(tags).intersection(story.symbols):
+        raise ValueError("Expected one to three relevant cashtags in the article body")
     draft = Draft(story.id, body, title, evidence_quote=data.get("evidence_quote", ""))
     text, reasons = validate(draft, story, [], max_length=2600)
     if reasons:
         raise ValueError("Draft rejected: " + ", ".join(reasons))
     if story.kind != "news":
-        analysis, _, closing = text.rpartition("\n\n")
-        text = "\n\n".join((analysis, plan, closing))
+        analysis, *ending = text.rsplit("\n\n", len(closing_paragraphs))
+        text = "\n\n".join((analysis, plan, *ending))
     return data, story, text
 
 

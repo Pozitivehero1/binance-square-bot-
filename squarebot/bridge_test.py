@@ -61,8 +61,8 @@ class BridgeTest(unittest.TestCase):
             bridge.deliver(self.root, self.output, live=False)
         send.assert_not_called()
         text = (self.output / "post.txt").read_text()
-        self.assertLess(text.index("Условный сценарий"), text.index("Какой уровень"))
-        self.assertIn("TP2 — 100000 USDT", text)
+        self.assertLess(text.index("Лонг рассматриваю"), text.index("Какой уровень"))
+        self.assertIn("TP2 — 100000 USDT, максимум последних суток", text)
         self.assertFalse(final_text_reasons(text))
         self.assertEqual((self.output / "title.txt").read_text().strip(), self.draft["title"])
         self.assertTrue((self.output / "post.jpg").exists())
@@ -80,6 +80,30 @@ class BridgeTest(unittest.TestCase):
             bridge.deliver(self.root, self.output, live=True)
         send.assert_not_called()
         self.assertFalse((self.root / "bridge/receipts").exists())
+
+    def test_market_article_requires_one_plan(self):
+        self.draft.pop("plan")
+        self.save()
+        with self.assertRaisesRegex(ValueError, "conditional long or short"):
+            bridge.deliver(self.root, self.output, live=False)
+
+    def test_plan_is_a_single_paragraph_before_conclusion_and_question(self):
+        self.draft["closing"] = ("Следующий час покажет, сохранится ли импульс.\n\n"
+                                 "Что подтвердит выход из диапазона?")
+        self.save()
+        bridge.deliver(self.root, self.output, live=False)
+        text = (self.output / "post.txt").read_text()
+        plan = next(paragraph for paragraph in text.split("\n\n") if "Вход" in paragraph)
+        self.assertNotIn("\n", plan)
+        self.assertIn("TP2", plan)
+        self.assertIn("Стоп-лосс", plan)
+        self.assertIn("импульс.\n\nЧто подтвердит", text)
+
+    def test_list_marker_is_rejected(self):
+        self.draft["text"] = "• " + self.draft["text"]
+        self.save()
+        with self.assertRaisesRegex(ValueError, "Lists are not allowed"):
+            bridge.deliver(self.root, self.output, live=False)
 
     def test_missing_cover_cannot_fall_back_to_a_chart(self):
         self.draft["image_base64"] = ""
