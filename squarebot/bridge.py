@@ -142,7 +142,7 @@ def format_plan(plan, story):
     if len(zone) == 2:
         trigger += f" на {price(zone[trigger_index])} USDT"
     lines = [
-        f"{direction} рассматриваю только после подтверждения.",
+        f"{direction} возможен только после подтверждения.",
         f"Вход — {zone_text} USDT. Ориентир — {trigger}. Нужны закрытие часа {side} этой отметки "
         "и успешная повторная проверка.",
         *(f"TP{i} — {price(value)} USDT, {reference(key)}"

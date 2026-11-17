@@ -61,7 +61,7 @@ class BridgeTest(unittest.TestCase):
             bridge.deliver(self.root, self.output, live=False)
         send.assert_not_called()
         text = (self.output / "post.txt").read_text()
-        self.assertLess(text.index("Лонг рассматриваю"), text.index("Какой уровень"))
+        self.assertLess(text.index("Лонг возможен"), text.index("Какой уровень"))
         self.assertIn("TP2 — 100000 USDT, максимум последних суток", text)
         self.assertFalse(final_text_reasons(text))
         self.assertEqual((self.output / "title.txt").read_text().strip(), self.draft["title"])
