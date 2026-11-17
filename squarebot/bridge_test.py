@@ -67,6 +67,20 @@ class BridgeTest(unittest.TestCase):
         self.assertEqual((self.output / "title.txt").read_text().strip(), self.draft["title"])
         self.assertTrue((self.output / "post.jpg").exists())
 
+    def test_trusted_publication_skips_editorial_gate(self):
+        from publisher import publish
+        with patch("publisher._prepare_text_for_square", side_effect=AssertionError("editorial gate called")), \
+                patch("publisher.find_skill_dir", return_value=None):
+            result = publish("Текст готовой статьи", trusted_author=True)
+        self.assertEqual(result.stderr, "skill not found")
+
+    def test_other_publication_still_uses_its_normal_entry_point(self):
+        from publisher import publish
+        with patch("publisher._prepare_text_for_square", return_value=("Текст статьи", ())) as prepare, \
+                patch("publisher.find_skill_dir", return_value=None):
+            publish("Текст статьи")
+        prepare.assert_called_once_with("Текст статьи")
+
     def test_stale_snapshot_is_not_delivered(self):
         self.snapshot["created_at"] = (self.now - timedelta(minutes=46)).isoformat()
         with patch("publisher.publish") as send:
@@ -99,11 +113,20 @@ class BridgeTest(unittest.TestCase):
         self.assertIn("Стоп-лосс", plan)
         self.assertIn("импульс.\n\nЧто подтвердит", text)
 
-    def test_list_marker_is_rejected(self):
+    def test_author_lists_are_preserved(self):
         self.draft["text"] = "• " + self.draft["text"]
         self.save()
-        with self.assertRaisesRegex(ValueError, "Lists are not allowed"):
-            bridge.deliver(self.root, self.output, live=False)
+        bridge.deliver(self.root, self.output, live=False)
+        self.assertTrue((self.output / "post.txt").read_text().startswith("• "))
+
+    def test_author_percentage_wording_is_preserved(self):
+        self.draft["text"] = "$BTC за два последних часа вырос на 11,22%."
+        self.draft["closing"] = "Короткий вывод."
+        self.save()
+        bridge.deliver(self.root, self.output, live=False)
+        text = (self.output / "post.txt").read_text()
+        self.assertIn(self.draft["text"], text)
+        self.assertTrue(text.strip().endswith(self.draft["closing"]))
 
     def test_market_catalog_cover_needs_no_image_bytes_in_queue(self):
         self.draft.pop("image_base64")
@@ -126,16 +149,6 @@ class BridgeTest(unittest.TestCase):
             bridge.deliver(self.root, self.output, live=False)
         with Image.open(self.output / "post.jpg") as cover:
             self.assertEqual(cover.size, (1200, 675))
-
-    def test_negative_guarantee_is_caution_and_positive_is_rejected(self):
-        self.draft["closing"] = ("Один сильный час ничего не гарантирует.\n\n"
-                                 "Что подтвердит выход из диапазона?")
-        self.save()
-        bridge.deliver(self.root, self.output, live=False)
-        self.draft["closing"] = "Этот ход гарантирует рост. Что покажет следующий час?"
-        self.save()
-        with self.assertRaisesRegex(ValueError, "unsupported-promise"):
-            bridge.deliver(self.root, self.output, live=False)
 
     def test_missing_cover_cannot_fall_back_to_a_chart(self):
         self.draft["image_base64"] = ""
@@ -182,6 +195,7 @@ class BridgeTest(unittest.TestCase):
             self.assertEqual(bridge.read_json(receipt)["status"], "claimed")
             self.assertTrue(Path(kwargs["image_path"]).exists())
             self.assertEqual(kwargs["article_title"], self.draft["title"])
+            self.assertTrue(kwargs["trusted_author"])
             return PublishResult(True, "123")
         with patch.dict("os.environ", {"SQUARE_API": "test"}), \
                 patch("publisher.find_skill_dir", return_value="local"), \
