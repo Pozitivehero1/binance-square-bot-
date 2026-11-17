@@ -11,6 +11,7 @@ import re
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
+from decimal import Decimal
 from io import BytesIO
 
 import requests
@@ -18,7 +19,7 @@ from pathlib import Path
 
 from evidence_metrics import parse_time
 from runtime import atomic_write_json
-from . import market, news, visuals
+from . import market, news
 from .models import Draft, Settings, Story, utcnow
 from .validation import validate
 
@@ -60,13 +61,16 @@ def collect(destination):
         if story.candles:
             candles = story.candles
             charts[story.id] = candles[-289:] if story.range_level is not None else candles[-49:]
-            for hours in (1, 4):
+            ticker = "$" + story.symbols[0]
+            for hours, period in ((1, "час"), (4, "четыре часа"), (24, "двадцать четыре часа")):
                 window = candles[-12 * hours:]
                 low = market.price(min(c[3] for c in window))
                 high = market.price(max(c[2] for c in window))
-                row["facts"][f"range_{hours}h"] = (
-                    f"${story.symbols[0]}: минимум {low} USDT, максимум {high} USDT за {'час' if hours == 1 else 'четыре часа'}."
-                )
+                row["facts"].update({
+                    f"low_{hours}h": f"{ticker}: минимум {low} USDT за {period}.",
+                    f"high_{hours}h": f"{ticker}: максимум {high} USDT за {period}.",
+                })
+            row["facts"]["last_close"] = f"{ticker}: последнее закрытие {market.price(candles[-1][4])} USDT."
         public_rows.append(row)
     atomic_write_json(destination / "bridge/market.json", {
         "schema": 1, "created_at": utcnow().isoformat(), "stories": public_rows,
@@ -90,6 +94,54 @@ def within(timestamp, now, minutes):
     return date is not None and -timedelta(seconds=30) <= now - date <= timedelta(minutes=minutes)
 
 
+def format_plan(plan, story):
+    if not isinstance(plan, dict) or plan.get("direction") not in {"long", "short"}:
+        raise ValueError("Market article requires a conditional long or short scenario")
+    entry, targets, stop = plan.get("entry"), plan.get("targets"), plan.get("stop")
+    if not isinstance(entry, list) or not 1 <= len(entry) <= 2:
+        raise ValueError("Expected an entry level or zone")
+    if not isinstance(targets, list) or not 2 <= len(targets) <= 3:
+        raise ValueError("Expected two or three scenario targets")
+
+    def level(key):
+        if not isinstance(key, str) or not re.fullmatch(r"(?:high|low)_(?:1|4|24)h", key):
+            raise ValueError("Scenario levels must be selected from the snapshot")
+        match = re.fullmatch(r"\$[A-Z0-9]+: (?:минимум|максимум) (\d+(?:\.\d+)?) USDT за .+\.",
+                             story.facts.get(key, ""))
+        if not match:
+            raise ValueError("Scenario level is missing from the snapshot")
+        value = Decimal(match[1])
+        if value <= 0:
+            raise ValueError("Scenario levels must be positive")
+        return value
+
+    zone, goals, invalidation = [level(k) for k in entry], [level(k) for k in targets], level(stop)
+    if len(zone) == 2 and zone[0] >= zone[1]:
+        raise ValueError("Entry zone must be in ascending order")
+    is_long = plan["direction"] == "long"
+    ladder = [invalidation, zone[0], *zone[1:], *goals] if is_long else [
+        invalidation, zone[-1], *zone[:-1], *goals,
+    ]
+    if not all((a < b if is_long else a > b) for a, b in zip(ladder, ladder[1:])):
+        raise ValueError("Entry, stop and targets are inconsistent with the direction")
+
+    def price(number):
+        return format(number, "f").replace(".", ",")
+
+    zone_text = "–".join(map(price, zone))
+    direction = "Лонг" if is_long else "Шорт"
+    side = "выше" if is_long else "ниже"
+    trigger = price(zone[-1] if is_long else zone[0])
+    lines = [
+        f"Условный сценарий · {direction}",
+        f"Вход — {zone_text} USDT, если час закроется {side} {trigger} USDT "
+        "и повторная проверка уровня подтвердит движение.",
+        *(f"TP{i} — {price(value)} USDT" for i, value in enumerate(goals, 1)),
+        f"Стоп-лосс — {price(invalidation)} USDT. На этом уровне сценарий теряет силу.",
+    ]
+    return "\n".join(lines)
+
+
 def load_draft(root, now):
     path = root / "bridge/draft.json"
     if not path.is_file():
@@ -97,7 +149,7 @@ def load_draft(root, now):
     if path.stat().st_size > MAX_DRAFT_BYTES:
         raise ValueError("Draft package is too large")
     data = read_json(path)
-    if data["schema"] != 1 or not within(data["created_at"], now, 40):
+    if data["schema"] != 2 or not within(data["created_at"], now, 40):
         return None
     sha = data["source_commit"]
     if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{40}", sha):
@@ -112,52 +164,42 @@ def load_draft(root, now):
     story = Story(**row)
     if not within(story.observed_at, now, 24 * 60 if story.kind == "news" else 45):
         return None
-    draft = Draft(story.id, data["text"], data.get("title", ""), evidence_quote=data.get("evidence_quote", ""))
-    text, reasons = validate(draft, story, [])
+    title = data.get("title", "").strip()
+    if not 5 <= len(title) <= 130 or len(title.splitlines()) != 1:
+        raise ValueError("An article title is required")
+    if not data.get("image_base64"):
+        raise ValueError("An article cover is required")
+    body = data["text"].strip()
+    closing = data.get("closing", "").strip()
+    if story.kind != "news":
+        if len(body.split("\n\n")) < 3 or len(closing.splitlines()) != 1 or not closing.endswith("?"):
+            raise ValueError("Expected higher timeframe, hourly view, thesis and a closing question")
+        plan = format_plan(data.get("plan"), story)
+        body = body + "\n\n" + closing
+    draft = Draft(story.id, body, title, evidence_quote=data.get("evidence_quote", ""))
+    text, reasons = validate(draft, story, [], max_length=2600)
     if reasons:
         raise ValueError("Draft rejected: " + ", ".join(reasons))
+    if story.kind != "news":
+        analysis, _, closing = text.rpartition("\n\n")
+        text = "\n\n".join((analysis, plan, closing))
     return data, story, text
 
 
-def prepare_image(data, story, root, output):
+def prepare_image(data, output):
     from PIL import Image, ImageOps
 
-    if data.get("image_base64"):
-        raw = base64.b64decode(data["image_base64"], validate=True)
-        if len(raw) > MAX_IMAGE_BYTES:
-            raise ValueError("Image exceeds package limit")
-        with Image.open(BytesIO(raw), formats=("JPEG", "PNG", "WEBP")) as image:
-            if image.width * image.height > 8_000_000:
-                raise ValueError("Image dimensions exceed package limit")
-            picture = ImageOps.exif_transpose(image).convert("RGB")
-            picture.thumbnail((1600, 1200))
-            path = output / "post.jpg"
-            picture.save(path, "JPEG", quality=90)
-            return str(path)
-    charts = json.loads(git(root, "show", f"{data['source_commit']}:bridge/charts.json"))
-    story.candles = charts.get(story.id, [])
-    chart = visuals.chart(story, output)
-    if chart:
-        return chart
-
-    # A local editorial graphic uses only the supplied Russian title.
-    import textwrap
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
-    figure = plt.figure(figsize=(12, 6.75), facecolor="#101725", dpi=100)
-    try:
-        figure.text(.09, .80, "$" + story.symbols[0] + "  /  НОВОСТИ",
-                    color="#f3c95d", fontsize=20, weight="bold")
-        figure.text(.09, .52, textwrap.fill(data["title"], 32, break_long_words=True),
-                    color="#f3f6fc", fontsize=28, weight="bold", va="center")
-        figure.text(.09, .13, "PozitiveHero  /  Binance Square", color="#aab8d0", fontsize=14)
-        path = output / "news.png"
-        figure.savefig(path, facecolor=figure.get_facecolor())
+    raw = base64.b64decode(data["image_base64"], validate=True)
+    if len(raw) > MAX_IMAGE_BYTES:
+        raise ValueError("Cover exceeds package limit")
+    with Image.open(BytesIO(raw), formats=("JPEG", "PNG", "WEBP")) as image:
+        if image.width * image.height > 8_000_000:
+            raise ValueError("Cover dimensions exceed package limit")
+        picture = ImageOps.exif_transpose(image).convert("RGB")
+        picture.thumbnail((1600, 1200))
+        path = output / "post.jpg"
+        picture.save(path, "JPEG", quality=90)
         return str(path)
-    finally:
-        plt.close(figure)
 
 
 def deliver(root, output, live):
@@ -180,7 +222,9 @@ def deliver(root, output, live):
         LOG.info("Story already claimed or published")
         return
     output.mkdir(parents=True, exist_ok=True)
-    image = prepare_image(data, story, root, output)
+    image = prepare_image(data, output)
+    title = data["title"].strip()
+    (output / "title.txt").write_text(title + "\n", encoding="utf-8")
     (output / "post.txt").write_text(text + "\n", encoding="utf-8")
     if not live:
         LOG.info("Preview validated with image; no Binance call")
@@ -208,7 +252,7 @@ def deliver(root, output, live):
         # A later collection step must not accidentally push a failed claim.
         git(root, "reset", "--hard", before_claim)
         raise
-    result = publish(text, image_path=image, news=story.kind == "news")
+    result = publish(text, image_path=image, article_title=title, news=story.kind == "news")
     if not result or not result.post_id:
         raise RuntimeError("Square did not confirm publication; claim retained")
     state.update(status="published", post_id=result.post_id, published_at=utcnow().isoformat())

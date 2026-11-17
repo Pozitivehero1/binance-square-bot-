@@ -9,7 +9,7 @@ from .store import similarity
 TOKEN = re.compile(r"\[\[([a-zA-Z][a-zA-Z0-9_]*)\]\]")
 
 
-def validate(draft, story, recent):
+def validate(draft, story, recent, *, max_length=None):
     reasons = []
     raw = draft.text.strip()
     title = draft.title.strip()
@@ -50,8 +50,9 @@ def validate(draft, story, recent):
     # Do not spend another model call merely because the author omitted '$'.
     if not re.search(r"\$[A-Za-z][A-Za-z0-9]{0,19}", text) and story.symbols:
         text = "$"+story.symbols[0]+"\n\n"+text
-    if not 90 <= len(text) <= (1600 if story.kind == "news" else 1100):
-        reasons.append("length: aim for 90–1100 characters (news up to 1600)")
+    limit = max_length or (1600 if story.kind == "news" else 1100)
+    if not 90 <= len(text) <= limit:
+        reasons.append(f"length: aim for 90–{limit} characters")
     if title and not 5 <= len(title) <= 130:
         reasons.append("title-length")
     if story.kind == "news" and not title:
