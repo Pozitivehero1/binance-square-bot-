@@ -129,7 +129,7 @@ jobs:
     permissions:
       contents: write
     env:
-      SQUARE_BRIDGE_LIVE: ${{ github.event_name == 'workflow_dispatch' && vars.SQUARE_BRIDGE_LIVE || '0' }}
+      SQUARE_BRIDGE_LIVE: ${{ github.event_name == 'workflow_dispatch' && (vars.SQUARE_BRIDGE_LIVE || '1') || '0' }}
       SQUARE_SKILL_DIR: ${{ github.workspace }}/.agents/skills/square-post
       SQUARE_PROFILE_UID: "6w3LNrVCJ9O4VGhRSf6oug"
       MPLBACKEND: Agg
