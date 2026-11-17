@@ -27,7 +27,6 @@ LOG = logging.getLogger(__name__)
 DATA_BRANCH = "square-bridge-data"
 MAX_DRAFT_BYTES = 950_000
 MAX_IMAGE_BYTES = 650_000
-MAX_ATTACHED_COVER_BYTES = 8_000_000
 COVER_DIR = Path(__file__).with_name("covers")
 
 
@@ -208,12 +207,6 @@ def load_draft(root, now):
 
 
 def cover_path(data, story):
-    if "cover_blob_sha" in data:
-        sha = data["cover_blob_sha"]
-        if (not isinstance(sha, str) or not re.fullmatch(r"[a-f0-9]{40}", sha)
-                or data.get("image_base64") or data.get("cover_symbol") is not None):
-            raise ValueError("Expected only one committed cover with its exact Git blob SHA")
-        return None
     symbol = data.get("cover_symbol")
     if symbol is None:
         if not data.get("image_base64"):
@@ -256,26 +249,15 @@ def render_token_cover(symbol, output):
     return str(path)
 
 
-def read_committed_cover(root, sha):
-    if git(root, "rev-parse", "--verify", "HEAD:bridge/cover.png") != sha:
-        raise ValueError("Committed cover SHA does not match bridge/cover.png")
-    if int(git(root, "cat-file", "-s", sha)) > MAX_ATTACHED_COVER_BYTES:
-        raise ValueError("Committed cover exceeds package limit")
-    return subprocess.check_output(["git", "-C", str(root), "cat-file", "blob", sha])
-
-
-def prepare_image(data, output, catalog_cover=None, *, committed_cover=None):
+def prepare_image(data, output, catalog_cover=None):
     from PIL import Image, ImageOps
 
     if catalog_cover is not None and not catalog_cover.is_file():
         return render_token_cover(catalog_cover.stem, output)
-    if committed_cover is None:
-        raw = (catalog_cover.read_bytes() if catalog_cover is not None
-               else base64.b64decode(data["image_base64"], validate=True))
-        if len(raw) > MAX_IMAGE_BYTES:
-            raise ValueError("Cover exceeds package limit")
-    else:
-        raw = committed_cover
+    raw = (catalog_cover.read_bytes() if catalog_cover is not None
+           else base64.b64decode(data["image_base64"], validate=True))
+    if len(raw) > MAX_IMAGE_BYTES:
+        raise ValueError("Cover exceeds package limit")
     with Image.open(BytesIO(raw), formats=("JPEG", "PNG", "WEBP")) as image:
         if image.width * image.height > 8_000_000:
             raise ValueError("Cover dimensions exceed package limit")
@@ -306,9 +288,7 @@ def deliver(root, output, live):
         LOG.info("Story already claimed or published")
         return
     output.mkdir(parents=True, exist_ok=True)
-    cover_sha = data.get("cover_blob_sha")
-    committed_cover = read_committed_cover(root, cover_sha) if cover_sha else None
-    image = prepare_image(data, output, cover_path(data, story), committed_cover=committed_cover)
+    image = prepare_image(data, output, cover_path(data, story))
     title = data["title"].strip()
     (output / "title.txt").write_text(title + "\n", encoding="utf-8")
     (output / "post.txt").write_text(text + "\n", encoding="utf-8")
