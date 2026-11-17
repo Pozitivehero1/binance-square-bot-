@@ -75,7 +75,6 @@ def collect(destination):
         public_rows.append(row)
     atomic_write_json(destination / "bridge/market.json", {
         "schema": 1, "created_at": utcnow().isoformat(), "stories": public_rows,
-        "cover_symbols": sorted(path.stem for path in COVER_DIR.glob("*.jpg")),
     })
     atomic_write_json(destination / "bridge/charts.json", charts)
     LOG.info("Collected %d market and %d news stories", len(top), len(news_rows))
@@ -216,15 +215,45 @@ def cover_path(data, story):
     if (data.get("image_base64") or story.kind == "news" or not isinstance(symbol, str)
             or not re.fullmatch(r"[A-Z0-9]{1,20}", symbol) or symbol != story.symbols[0]):
         raise ValueError("Catalog cover must match the primary market symbol")
-    path = COVER_DIR / (symbol + ".jpg")
-    if not path.is_file():
-        raise ValueError("Catalog cover does not exist for this symbol")
-    return path
+    return COVER_DIR / (symbol + ".jpg")
+
+
+def render_token_cover(symbol, output):
+    """Build an editorial cover for any validated market symbol."""
+    from PIL import Image, ImageDraw, ImageFont
+    from matplotlib import get_data_path
+
+    width, height = 1200, 675
+    center = (width // 2, height // 2)
+    tint = bytes.fromhex(hashlib.sha256(symbol.encode()).hexdigest()[:6])
+    accent = tuple(130 + channel // 2 for channel in tint)
+    image = Image.new("RGB", (width, height))
+    draw = ImageDraw.Draw(image)
+    for radius in range(720, 0, -1):
+        glow = (1 - radius / 720) ** 2
+        shade = tuple(int(12 + channel * 0.23 * glow) for channel in accent)
+        draw.ellipse((center[0] - radius, center[1] - radius,
+                      center[0] + radius, center[1] + radius), fill=shade)
+
+    x, y = center
+    for radius, fill in ((245, "#07080c"), (234, accent), (224, "#22242d"),
+                         (205, "#363944"), (199, "#191b23")):
+        draw.ellipse((x - radius, y - radius, x + radius, y + radius), fill=fill)
+    draw.arc((x - 228, y - 228, x + 228, y + 228), 194, 342, fill="#f0f1f4", width=4)
+    draw.arc((x - 210, y - 210, x + 210, y + 210), 14, 158, fill=accent, width=2)
+    font_file = Path(get_data_path()) / "fonts/ttf/DejaVuSans-Bold.ttf"
+    font = ImageFont.truetype(str(font_file), size=max(15, min(132, 490 // len(symbol))))
+    draw.text(center, symbol, font=font, fill="#f3f4f6", anchor="mm", stroke_width=1, stroke_fill="#08090c")
+    path = output / "post.jpg"
+    image.save(path, "JPEG", quality=91)
+    return str(path)
 
 
 def prepare_image(data, output, catalog_cover=None):
     from PIL import Image, ImageOps
 
+    if catalog_cover is not None and not catalog_cover.is_file():
+        return render_token_cover(catalog_cover.stem, output)
     raw = (catalog_cover.read_bytes() if catalog_cover is not None
            else base64.b64decode(data["image_base64"], validate=True))
     if len(raw) > MAX_IMAGE_BYTES:

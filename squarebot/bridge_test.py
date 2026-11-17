@@ -118,6 +118,15 @@ class BridgeTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "must match"):
                 bridge.deliver(self.root, self.output, live=False)
 
+    def test_market_cover_is_generated_when_the_catalog_has_no_match(self):
+        self.draft.pop("image_base64")
+        self.draft["cover_symbol"] = "BTC"
+        self.save()
+        with patch.object(bridge, "COVER_DIR", self.root / "empty"):
+            bridge.deliver(self.root, self.output, live=False)
+        with Image.open(self.output / "post.jpg") as cover:
+            self.assertEqual(cover.size, (1200, 675))
+
     def test_negative_guarantee_is_caution_and_positive_is_rejected(self):
         self.draft["closing"] = ("Один сильный час ничего не гарантирует.\n\n"
                                  "Что подтвердит выход из диапазона?")
