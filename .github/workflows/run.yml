@@ -6,6 +6,7 @@ on:
     paths:
       - "squarebot/**"
       - "run_bot.py"
+      - ".github/workflows/run.yml"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -122,13 +123,13 @@ jobs:
           key: square-state-${{ github.ref_name }}-${{ github.run_id }}
 
   bridge:
-    if: github.event_name == 'workflow_dispatch' && github.ref_name == 'main'
+    if: github.ref_name == 'main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: write
     env:
-      SQUARE_BRIDGE_LIVE: ${{ vars.SQUARE_BRIDGE_LIVE }}
+      SQUARE_BRIDGE_LIVE: ${{ github.event_name == 'workflow_dispatch' && vars.SQUARE_BRIDGE_LIVE || '0' }}
       SQUARE_SKILL_DIR: ${{ github.workspace }}/.agents/skills/square-post
       SQUARE_PROFILE_UID: "6w3LNrVCJ9O4VGhRSf6oug"
       MPLBACKEND: Agg
@@ -150,24 +151,24 @@ jobs:
           git -C bridge-data config user.name "github-actions[bot]"
           git -C bridge-data config user.email "41898282+github-actions[bot]@users.noreply.github.com"
       - uses: actions/setup-node@v4
-        if: vars.SQUARE_BRIDGE_LIVE == '1' && !inputs.dry_run
+        if: env.SQUARE_BRIDGE_LIVE == '1' && !inputs.dry_run
         with:
           node-version: "22"
       - name: Install Square publishing scripts
-        if: vars.SQUARE_BRIDGE_LIVE == '1' && !inputs.dry_run
+        if: env.SQUARE_BRIDGE_LIVE == '1' && !inputs.dry_run
         run: |
           npx --yes skills add https://github.com/binance/binance-skills-hub --skill square-post -y
           test -f "$SQUARE_SKILL_DIR/scripts/post-image.mjs"
       - name: Deliver queued draft
-        if: vars.SQUARE_BRIDGE_LIVE == '1' && !inputs.dry_run
+        if: env.SQUARE_BRIDGE_LIVE == '1' && !inputs.dry_run
         env:
           SQUARE_API: ${{ secrets.SQUARE_API }}
         run: python -m squarebot.bridge publish bridge-data
       - name: Validate queued draft
-        if: vars.SQUARE_BRIDGE_LIVE != '1' || inputs.dry_run
+        if: env.SQUARE_BRIDGE_LIVE != '1' || inputs.dry_run
         run: python -m squarebot.bridge preview bridge-data
       - name: Save preview
-        if: "!cancelled() && (vars.SQUARE_BRIDGE_LIVE != '1' || inputs.dry_run)"
+        if: "!cancelled() && (env.SQUARE_BRIDGE_LIVE != '1' || inputs.dry_run)"
         uses: actions/upload-artifact@v4
         with:
           name: square-bridge-preview
