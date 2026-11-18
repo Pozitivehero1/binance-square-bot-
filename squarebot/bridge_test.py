@@ -101,17 +101,24 @@ class BridgeTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "conditional long or short"):
             bridge.deliver(self.root, self.output, live=False)
 
-    def test_plan_is_a_single_paragraph_before_conclusion_and_question(self):
+    def test_plan_uses_one_paragraph_per_level_before_conclusion_and_question(self):
+        self.story["facts"]["low_4h"] = "$BTC: минимум 96000 USDT за четыре часа."
         self.draft["closing"] = ("Следующий час покажет, сохранится ли импульс.\n\n"
                                  "Что подтвердит выход из диапазона?")
-        self.save()
-        bridge.deliver(self.root, self.output, live=False)
-        text = (self.output / "post.txt").read_text()
-        plan = next(paragraph for paragraph in text.split("\n\n") if "Вход" in paragraph)
-        self.assertNotIn("\n", plan)
-        self.assertIn("TP2", plan)
-        self.assertIn("Стоп-лосс", plan)
-        self.assertIn("импульс.\n\nЧто подтвердит", text)
+        for targets in (["high_4h", "high_24h"], ["high_1h", "high_4h", "high_24h"]):
+            with self.subTest(targets=targets):
+                self.draft["plan"] = {
+                    "direction": "long", "entry": ["low_1h"], "targets": targets, "stop": "low_4h",
+                }
+                self.save()
+                bridge.deliver(self.root, self.output, live=False)
+                paragraphs = (self.output / "post.txt").read_text().strip().split("\n\n")
+                labels = ["Вход", *(f"TP{i}" for i in range(1, len(targets) + 1)), "Стоп-лосс"]
+                self.assertEqual(len(paragraphs[-len(labels)-2:-2]), len(labels))
+                for paragraph, label in zip(paragraphs[-len(labels)-2:-2], labels):
+                    self.assertTrue(paragraph.startswith(f"{label} — "), paragraph)
+                    self.assertNotIn("\n", paragraph)
+                self.assertEqual("\n\n".join(paragraphs[-2:]), self.draft["closing"])
 
     def test_author_lists_are_preserved(self):
         self.draft["text"] = "• " + self.draft["text"]

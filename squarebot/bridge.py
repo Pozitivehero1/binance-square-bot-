@@ -150,7 +150,7 @@ def format_plan(plan, story):
         f"Стоп-лосс — {price(invalidation)} USDT, {reference(stop)}. "
         "Возврат к этой отметке отменит сценарий.",
     ]
-    return " ".join(line if line.endswith(".") else line + "." for line in lines)
+    return "\n\n".join(line if line.endswith(".") else line + "." for line in lines)
 
 
 def load_draft(root, now):
