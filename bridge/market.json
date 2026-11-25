@@ -1,56 +1,56 @@
 {
   "schema": 1,
-  "created_at": "2026-11-25T13:01:33.777011+00:00",
+  "created_at": "2026-11-25T13:21:07.521762+00:00",
   "stories": [
     {
-      "id": "e1c27eaf176c185b",
-      "kind": "range_return",
+      "id": "eaee71f643039f46",
+      "kind": "range_break",
       "symbols": [
-        "SPCXB"
+        "ZRO"
       ],
-      "headline": "Цена закрылась обратно внутри суточного диапазона",
+      "headline": "Закрытие за пределами предыдущего суточного диапазона",
       "facts": {
-        "f1": "$SPCXB: предыдущая пятиминутная свеча закрылась ниже минимума суточного диапазона (121.82 USDT), на 121.39 USDT.",
-        "f2": "$SPCXB: последняя пятиминутная свеча закрылась внутри того же диапазона, на 121.86 USDT.",
-        "f3": "$SPCXB: изменение за час -0.66%.",
-        "low_1h": "$SPCXB: минимум 121.36 USDT за час.",
-        "high_1h": "$SPCXB: максимум 122.72 USDT за час.",
-        "low_4h": "$SPCXB: минимум 121.36 USDT за четыре часа.",
-        "high_4h": "$SPCXB: максимум 124.17 USDT за четыре часа.",
-        "low_24h": "$SPCXB: минимум 121.36 USDT за двадцать четыре часа.",
-        "high_24h": "$SPCXB: максимум 132.57 USDT за двадцать четыре часа.",
-        "last_close": "$SPCXB: последнее закрытие 121.86 USDT."
+        "f1": "$ZRO: изменение за час -1.91%.",
+        "f2": "$ZRO: последняя пятиминутная свеча закрылась ниже минимума предыдущих двадцати четырёх часов (0.983 USDT).",
+        "f3": "$ZRO: цена закрытия пятиминутной свечи 0.978 USDT.",
+        "low_1h": "$ZRO: минимум 0.978 USDT за час.",
+        "high_1h": "$ZRO: максимум 1 USDT за час.",
+        "low_4h": "$ZRO: минимум 0.978 USDT за четыре часа.",
+        "high_4h": "$ZRO: максимум 1.002 USDT за четыре часа.",
+        "low_24h": "$ZRO: минимум 0.978 USDT за двадцать четыре часа.",
+        "high_24h": "$ZRO: максимум 1.062 USDT за двадцать четыре часа.",
+        "last_close": "$ZRO: последнее закрытие 0.978 USDT."
       },
-      "observed_at": "2026-11-25T13:00:00+00:00",
-      "score": 62.02411139874393,
+      "observed_at": "2026-11-25T13:20:00+00:00",
+      "score": 60.5342317375347,
       "source_url": "",
       "source_text": "",
-      "event_key": "range_return:SPCXB:from_below:2026-11-25-13",
-      "chart_symbol": "SPCXBUSDT",
-      "range_level": 121.82
+      "event_key": "range_break:ZRO:down:2026-11-25-13",
+      "chart_symbol": "ZROUSDT",
+      "range_level": 0.983
     },
     {
-      "id": "d3ec4dc90b0342a9",
+      "id": "74465a80833e7405",
       "kind": "reversal",
       "symbols": [
         "MMT"
       ],
       "headline": "Падение забрало только часть роста предыдущего часа.",
       "facts": {
-        "f1": "$MMT: изменение за час -2.93%.",
-        "f2": "$MMT: за предшествующий час изменение составляло +5.04%.",
-        "f3": "$MMT: изменение за два часа +1.96%.",
+        "f1": "$MMT: изменение за час -1.44%.",
+        "f2": "$MMT: за предшествующий час изменение составляло +5.80%.",
+        "f3": "$MMT: изменение за два часа +4.28%.",
         "f4": "Падение забрало только часть роста предыдущего часа.",
         "low_1h": "$MMT: минимум 0.2506 USDT за час.",
-        "high_1h": "$MMT: максимум 0.267 USDT за час.",
-        "low_4h": "$MMT: минимум 0.223 USDT за четыре часа.",
+        "high_1h": "$MMT: максимум 0.2651 USDT за час.",
+        "low_4h": "$MMT: минимум 0.229 USDT за четыре часа.",
         "high_4h": "$MMT: максимум 0.2697 USDT за четыре часа.",
         "low_24h": "$MMT: минимум 0.2147 USDT за двадцать четыре часа.",
         "high_24h": "$MMT: максимум 0.2697 USDT за двадцать четыре часа.",
-        "last_close": "$MMT: последнее закрытие 0.2548 USDT."
+        "last_close": "$MMT: последнее закрытие 0.2608 USDT."
       },
-      "observed_at": "2026-11-25T13:00:00+00:00",
-      "score": 60.2705000676007,
+      "observed_at": "2026-11-25T13:20:00+00:00",
+      "score": 55.80764420839258,
       "source_url": "",
       "source_text": "",
       "event_key": "reversal:MMT:down:2026-11-25-13",
@@ -58,55 +58,27 @@
       "range_level": null
     },
     {
-      "id": "d59bcb47cda65682",
-      "kind": "reversal",
-      "symbols": [
-        "ATM"
-      ],
-      "headline": "Отскок полностью перекрыл падение предыдущего часа.",
-      "facts": {
-        "f1": "$ATM: изменение за час +1.69%.",
-        "f2": "$ATM: за предшествующий час изменение составляло -0.72%.",
-        "f3": "$ATM: изменение за два часа +0.96%.",
-        "f4": "Отскок полностью перекрыл падение предыдущего часа.",
-        "low_1h": "$ATM: минимум 0.824 USDT за час.",
-        "high_1h": "$ATM: максимум 0.856 USDT за час.",
-        "low_4h": "$ATM: минимум 0.823 USDT за четыре часа.",
-        "high_4h": "$ATM: максимум 0.89 USDT за четыре часа.",
-        "low_24h": "$ATM: минимум 0.823 USDT за двадцать четыре часа.",
-        "high_24h": "$ATM: максимум 1.129 USDT за двадцать четыре часа.",
-        "last_close": "$ATM: последнее закрытие 0.841 USDT."
-      },
-      "observed_at": "2026-11-25T13:00:00+00:00",
-      "score": 55.24372834037562,
-      "source_url": "",
-      "source_text": "",
-      "event_key": "reversal:ATM:up:2026-11-25-13",
-      "chart_symbol": "ATMUSDT",
-      "range_level": null
-    },
-    {
-      "id": "cfb7a42c3d65f89b",
+      "id": "27b329726d263e8e",
       "kind": "reversal",
       "symbols": [
         "BIGTIME"
       ],
-      "headline": "Падение забрало только часть роста предыдущего часа.",
+      "headline": "Цена вернулась к отметке двухчасовой давности.",
       "facts": {
         "f1": "$BIGTIME: изменение за час -0.84%.",
-        "f2": "$BIGTIME: за предшествующий час изменение составляло +1.72%.",
-        "f3": "$BIGTIME: изменение за два часа +0.86%.",
-        "f4": "Падение забрало только часть роста предыдущего часа.",
+        "f2": "$BIGTIME: за предшествующий час изменение составляло +0.84%.",
+        "f3": "$BIGTIME: изменение за два часа +0.00%.",
+        "f4": "Цена вернулась к отметке двухчасовой давности.",
         "low_1h": "$BIGTIME: минимум 0.00681 USDT за час.",
-        "high_1h": "$BIGTIME: максимум 0.00735 USDT за час.",
+        "high_1h": "$BIGTIME: максимум 0.00743 USDT за час.",
         "low_4h": "$BIGTIME: минимум 0.00668 USDT за четыре часа.",
         "high_4h": "$BIGTIME: максимум 0.00795 USDT за четыре часа.",
-        "low_24h": "$BIGTIME: минимум 0.00401 USDT за двадцать четыре часа.",
+        "low_24h": "$BIGTIME: минимум 0.00403 USDT за двадцать четыре часа.",
         "high_24h": "$BIGTIME: максимум 0.01056 USDT за двадцать четыре часа.",
-        "last_close": "$BIGTIME: последнее закрытие 0.00705 USDT."
+        "last_close": "$BIGTIME: последнее закрытие 0.00711 USDT."
       },
-      "observed_at": "2026-11-25T13:00:00+00:00",
-      "score": 53.51050650611114,
+      "observed_at": "2026-11-25T13:20:00+00:00",
+      "score": 53.517633429659696,
       "source_url": "",
       "source_text": "",
       "event_key": "reversal:BIGTIME:down:2026-11-25-13",
@@ -114,27 +86,27 @@
       "range_level": null
     },
     {
-      "id": "2d783a22afc7e0b7",
+      "id": "523196f39f8b273e",
       "kind": "reversal",
       "symbols": [
         "NBISB"
       ],
       "headline": "Отскок вернул только часть падения предыдущего часа.",
       "facts": {
-        "f1": "$NBISB: изменение за час +0.69%.",
-        "f2": "$NBISB: за предшествующий час изменение составляло -0.98%.",
-        "f3": "$NBISB: изменение за два часа -0.30%.",
+        "f1": "$NBISB: изменение за час +0.99%.",
+        "f2": "$NBISB: за предшествующий час изменение составляло -1.42%.",
+        "f3": "$NBISB: изменение за два часа -0.45%.",
         "f4": "Отскок вернул только часть падения предыдущего часа.",
-        "low_1h": "$NBISB: минимум 80.73 USDT за час.",
+        "low_1h": "$NBISB: минимум 81.12 USDT за час.",
         "high_1h": "$NBISB: максимум 82.46 USDT за час.",
         "low_4h": "$NBISB: минимум 80.73 USDT за четыре часа.",
-        "high_4h": "$NBISB: максимум 83.01 USDT за четыре часа.",
+        "high_4h": "$NBISB: максимум 82.53 USDT за четыре часа.",
         "low_24h": "$NBISB: минимум 80.73 USDT за двадцать четыре часа.",
         "high_24h": "$NBISB: максимум 95.51 USDT за двадцать четыре часа.",
-        "last_close": "$NBISB: последнее закрытие 82.06 USDT."
+        "last_close": "$NBISB: последнее закрытие 81.96 USDT."
       },
-      "observed_at": "2026-11-25T13:00:00+00:00",
-      "score": 52.329834225428435,
+      "observed_at": "2026-11-25T13:20:00+00:00",
+      "score": 53.19145995309928,
       "source_url": "",
       "source_text": "",
       "event_key": "reversal:NBISB:up:2026-11-25-13",
@@ -142,53 +114,25 @@
       "range_level": null
     },
     {
-      "id": "a7cb9dd4ea85cc38",
-      "kind": "relative_strength",
-      "symbols": [
-        "ETH",
-        "BTC"
-      ],
-      "headline": "Сравнение Ethereum и Bitcoin за одинаковый час",
-      "facts": {
-        "f1": "$ETH: изменение за час +0.55%.",
-        "f2": "$BTC: изменение за час +0.19%.",
-        "f3": "Доходность $ETH за час выше доходности $BTC на 0.37 процентного пункта.",
-        "low_1h": "$ETH: минимум 1636.59 USDT за час.",
-        "high_1h": "$ETH: максимум 1649.03 USDT за час.",
-        "low_4h": "$ETH: минимум 1634.81 USDT за четыре часа.",
-        "high_4h": "$ETH: максимум 1653.74 USDT за четыре часа.",
-        "low_24h": "$ETH: минимум 1633.11 USDT за двадцать четыре часа.",
-        "high_24h": "$ETH: максимум 1706.4 USDT за двадцать четыре часа.",
-        "last_close": "$ETH: последнее закрытие 1647.88 USDT."
-      },
-      "observed_at": "2026-11-25T13:00:00+00:00",
-      "score": 52.1992940121573,
-      "source_url": "",
-      "source_text": "",
-      "event_key": "relative_strength:ETH,BTC:eth_leads:2026-11-25-13",
-      "chart_symbol": "ETHUSDT",
-      "range_level": null
-    },
-    {
-      "id": "6e4aec33c234970a",
+      "id": "8686e754f02de575",
       "kind": "mover",
       "symbols": [
         "OPG"
       ],
       "headline": "Движение цены в контексте последних часов",
       "facts": {
-        "f1": "$OPG: изменение за час -3.62%.",
-        "f2": "$OPG: изменение за четыре часа -6.18%.",
-        "low_1h": "$OPG: минимум 0.1622 USDT за час.",
-        "high_1h": "$OPG: максимум 0.1711 USDT за час.",
-        "low_4h": "$OPG: минимум 0.1622 USDT за четыре часа.",
+        "f1": "$OPG: изменение за час -4.08%.",
+        "f2": "$OPG: изменение за четыре часа -8.26%.",
+        "low_1h": "$OPG: минимум 0.1576 USDT за час.",
+        "high_1h": "$OPG: максимум 0.1679 USDT за час.",
+        "low_4h": "$OPG: минимум 0.1576 USDT за четыре часа.",
         "high_4h": "$OPG: максимум 0.1766 USDT за четыре часа.",
-        "low_24h": "$OPG: минимум 0.1364 USDT за двадцать четыре часа.",
+        "low_24h": "$OPG: минимум 0.1367 USDT за двадцать четыре часа.",
         "high_24h": "$OPG: максимум 0.1844 USDT за двадцать четыре часа.",
-        "last_close": "$OPG: последнее закрытие 0.1623 USDT."
+        "last_close": "$OPG: последнее закрытие 0.1599 USDT."
       },
-      "observed_at": "2026-11-25T13:00:00+00:00",
-      "score": 47.46661992390664,
+      "observed_at": "2026-11-25T13:20:00+00:00",
+      "score": 49.32325608642833,
       "source_url": "",
       "source_text": "",
       "event_key": "mover:OPG:down:2026-11-25-13",
@@ -196,59 +140,7 @@
       "range_level": null
     },
     {
-      "id": "462745ffbb47fda6",
-      "kind": "mover",
-      "symbols": [
-        "ETH"
-      ],
-      "headline": "Движение цены в контексте последних часов",
-      "facts": {
-        "f1": "$ETH: изменение за час +0.55%.",
-        "f2": "$ETH: изменение за четыре часа -0.33%.",
-        "low_1h": "$ETH: минимум 1636.59 USDT за час.",
-        "high_1h": "$ETH: максимум 1649.03 USDT за час.",
-        "low_4h": "$ETH: минимум 1634.81 USDT за четыре часа.",
-        "high_4h": "$ETH: максимум 1653.74 USDT за четыре часа.",
-        "low_24h": "$ETH: минимум 1633.11 USDT за двадцать четыре часа.",
-        "high_24h": "$ETH: максимум 1706.4 USDT за двадцать четыре часа.",
-        "last_close": "$ETH: последнее закрытие 1647.88 USDT."
-      },
-      "observed_at": "2026-11-25T13:00:00+00:00",
-      "score": 46.244772943079155,
-      "source_url": "",
-      "source_text": "",
-      "event_key": "mover:ETH:up:2026-11-25-13",
-      "chart_symbol": "ETHUSDT",
-      "range_level": null
-    },
-    {
-      "id": "0f0e8c20ff1dd416",
-      "kind": "mover",
-      "symbols": [
-        "BTC"
-      ],
-      "headline": "Движение цены в контексте последних часов",
-      "facts": {
-        "f1": "$BTC: изменение за час +0.19%.",
-        "f2": "$BTC: изменение за четыре часа -1.15%.",
-        "low_1h": "$BTC: минимум 58474.2 USDT за час.",
-        "high_1h": "$BTC: максимум 58784.01 USDT за час.",
-        "low_4h": "$BTC: минимум 58456.25 USDT за четыре часа.",
-        "high_4h": "$BTC: максимум 59442 USDT за четыре часа.",
-        "low_24h": "$BTC: минимум 58456.25 USDT за двадцать четыре часа.",
-        "high_24h": "$BTC: максимум 60687.53 USDT за двадцать четыре часа.",
-        "last_close": "$BTC: последнее закрытие 58749.22 USDT."
-      },
-      "observed_at": "2026-11-25T13:00:00+00:00",
-      "score": 46.03130831410969,
-      "source_url": "",
-      "source_text": "",
-      "event_key": "mover:BTC:up:2026-11-25-13",
-      "chart_symbol": "BTCUSDT",
-      "range_level": null
-    },
-    {
-      "id": "eb9d7aa9442d05bc",
+      "id": "e963aa6a1402d8dd",
       "kind": "market_map",
       "symbols": [
         "BTC",
@@ -256,19 +148,19 @@
       ],
       "headline": "Рынок целиком: лидеры и ширина движения",
       "facts": {
-        "f1": "$BTC: изменение за час +0.19%.",
-        "f2": "$ETH: изменение за час +0.55%.",
-        "f3": "За час среди 40 ликвидных пар Binance выросли 19, снизились 20, без изменения 1.",
+        "f1": "$BTC: изменение за час +0.31%.",
+        "f2": "$ETH: изменение за час +0.34%.",
+        "f3": "За час среди 40 ликвидных пар Binance выросли 11, снизились 24, без изменения 5.",
         "low_1h": "$BTC: минимум 58474.2 USDT за час.",
-        "high_1h": "$BTC: максимум 58784.01 USDT за час.",
+        "high_1h": "$BTC: максимум 58897.3 USDT за час.",
         "low_4h": "$BTC: минимум 58456.25 USDT за четыре часа.",
-        "high_4h": "$BTC: максимум 59442 USDT за четыре часа.",
+        "high_4h": "$BTC: максимум 59197.66 USDT за четыре часа.",
         "low_24h": "$BTC: минимум 58456.25 USDT за двадцать четыре часа.",
         "high_24h": "$BTC: максимум 60687.53 USDT за двадцать четыре часа.",
-        "last_close": "$BTC: последнее закрытие 58749.22 USDT."
+        "last_close": "$BTC: последнее закрытие 58677.19 USDT."
       },
-      "observed_at": "2026-11-25T13:00:00+00:00",
-      "score": 45.928371152009056,
+      "observed_at": "2026-11-25T13:20:00+00:00",
+      "score": 46.531505088805616,
       "source_url": "",
       "source_text": "",
       "event_key": "market_map:BTC,ETH:broad_down:2026-11-25-13",
@@ -276,30 +168,109 @@
       "range_level": null
     },
     {
-      "id": "1329d1de446b519f",
+      "id": "c37390c4759d9f13",
       "kind": "mover",
       "symbols": [
-        "MMT"
+        "BTC"
       ],
       "headline": "Движение цены в контексте последних часов",
       "facts": {
-        "f1": "$MMT: изменение за час -2.93%.",
-        "f2": "$MMT: изменение за четыре часа +14.36%.",
-        "low_1h": "$MMT: минимум 0.2506 USDT за час.",
-        "high_1h": "$MMT: максимум 0.267 USDT за час.",
-        "low_4h": "$MMT: минимум 0.223 USDT за четыре часа.",
-        "high_4h": "$MMT: максимум 0.2697 USDT за четыре часа.",
-        "low_24h": "$MMT: минимум 0.2147 USDT за двадцать четыре часа.",
-        "high_24h": "$MMT: максимум 0.2697 USDT за двадцать четыре часа.",
-        "last_close": "$MMT: последнее закрытие 0.2548 USDT."
+        "f1": "$BTC: изменение за час +0.31%.",
+        "f2": "$BTC: изменение за четыре часа -0.77%.",
+        "low_1h": "$BTC: минимум 58474.2 USDT за час.",
+        "high_1h": "$BTC: максимум 58897.3 USDT за час.",
+        "low_4h": "$BTC: минимум 58456.25 USDT за четыре часа.",
+        "high_4h": "$BTC: максимум 59197.66 USDT за четыре часа.",
+        "low_24h": "$BTC: минимум 58456.25 USDT за двадцать четыре часа.",
+        "high_24h": "$BTC: максимум 60687.53 USDT за двадцать четыре часа.",
+        "last_close": "$BTC: последнее закрытие 58677.19 USDT."
       },
-      "observed_at": "2026-11-25T13:00:00+00:00",
-      "score": 45.20383340093403,
+      "observed_at": "2026-11-25T13:20:00+00:00",
+      "score": 46.466051674229135,
       "source_url": "",
       "source_text": "",
-      "event_key": "mover:MMT:down:2026-11-25-13",
-      "chart_symbol": "MMTUSDT",
+      "event_key": "mover:BTC:up:2026-11-25-13",
+      "chart_symbol": "BTCUSDT",
       "range_level": null
+    },
+    {
+      "id": "50771baa5c83491e",
+      "kind": "mover",
+      "symbols": [
+        "ETH"
+      ],
+      "headline": "Движение цены в контексте последних часов",
+      "facts": {
+        "f1": "$ETH: изменение за час +0.34%.",
+        "f2": "$ETH: изменение за четыре часа +0.05%.",
+        "low_1h": "$ETH: минимум 1639.46 USDT за час.",
+        "high_1h": "$ETH: максимум 1653.99 USDT за час.",
+        "low_4h": "$ETH: минимум 1634.81 USDT за четыре часа.",
+        "high_4h": "$ETH: максимум 1653.99 USDT за четыре часа.",
+        "low_24h": "$ETH: минимум 1633.11 USDT за двадцать четыре часа.",
+        "high_24h": "$ETH: максимум 1706 USDT за двадцать четыре часа.",
+        "last_close": "$ETH: последнее закрытие 1645.75 USDT."
+      },
+      "observed_at": "2026-11-25T13:20:00+00:00",
+      "score": 45.35172114866193,
+      "source_url": "",
+      "source_text": "",
+      "event_key": "mover:ETH:up:2026-11-25-13",
+      "chart_symbol": "ETHUSDT",
+      "range_level": null
+    },
+    {
+      "id": "c286d12990d5dae1",
+      "kind": "mover",
+      "symbols": [
+        "PEPE"
+      ],
+      "headline": "Движение цены в контексте последних часов",
+      "facts": {
+        "f1": "$PEPE: изменение за час -2.33%.",
+        "f2": "$PEPE: изменение за четыре часа -3.18%.",
+        "low_1h": "$PEPE: минимум 0.00000334 USDT за час.",
+        "high_1h": "$PEPE: максимум 0.00000343 USDT за час.",
+        "low_4h": "$PEPE: минимум 0.00000334 USDT за четыре часа.",
+        "high_4h": "$PEPE: максимум 0.00000347 USDT за четыре часа.",
+        "low_24h": "$PEPE: минимум 0.00000331 USDT за двадцать четыре часа.",
+        "high_24h": "$PEPE: максимум 0.00000355 USDT за двадцать четыре часа.",
+        "last_close": "$PEPE: последнее закрытие 0.00000335 USDT."
+      },
+      "observed_at": "2026-11-25T13:20:00+00:00",
+      "score": 43.63457360217378,
+      "source_url": "",
+      "source_text": "",
+      "event_key": "mover:PEPE:down:2026-11-25-13",
+      "chart_symbol": "PEPEUSDT",
+      "range_level": null
+    },
+    {
+      "id": "59db5257cf9242f3",
+      "kind": "range_break",
+      "symbols": [
+        "ADA"
+      ],
+      "headline": "Закрытие за пределами предыдущего суточного диапазона",
+      "facts": {
+        "f1": "$ADA: изменение за час -0.57%.",
+        "f2": "$ADA: последняя пятиминутная свеча закрылась ниже минимума предыдущих двадцати четырёх часов (0.1393 USDT).",
+        "f3": "$ADA: цена закрытия пятиминутной свечи 0.1392 USDT.",
+        "low_1h": "$ADA: минимум 0.139 USDT за час.",
+        "high_1h": "$ADA: максимум 0.1406 USDT за час.",
+        "low_4h": "$ADA: минимум 0.139 USDT за четыре часа.",
+        "high_4h": "$ADA: максимум 0.1419 USDT за четыре часа.",
+        "low_24h": "$ADA: минимум 0.139 USDT за двадцать четыре часа.",
+        "high_24h": "$ADA: максимум 0.1462 USDT за двадцать четыре часа.",
+        "last_close": "$ADA: последнее закрытие 0.1392 USDT."
+      },
+      "observed_at": "2026-11-25T13:20:00+00:00",
+      "score": 35.71538194345329,
+      "source_url": "",
+      "source_text": "",
+      "event_key": "range_break:ADA:down:2026-11-25-13",
+      "chart_symbol": "ADAUSDT",
+      "range_level": 0.1393
     },
     {
       "id": "a7848a96153cb9dd",
@@ -311,7 +282,7 @@
       "headline": "Ether, DeFi fall twice as hard as bitcoin as equities selloff resumes",
       "facts": {},
       "observed_at": "2026-11-25T11:57:50+00:00",
-      "score": 65.93874591444444,
+      "score": 65.61286704444444,
       "source_url": "https://www.coindesk.com/markets/2026/11/25/ether-defi-fall-twice-as-hard-as-bitcoin-as-equities-selloff-resumes",
       "source_text": "Ether, DeFi fall twice as hard as bitcoin as equities selloff resumes Bitcoin (BTC) is down 1.2% since midnight UTC as the stock selloff resumes,",
       "event_key": "news:a7848a96153cb9dd",
@@ -327,7 +298,7 @@
       "headline": "Italy’s UniCredit launches six-year bitcoin certificate with gains capped at 65%",
       "facts": {},
       "observed_at": "2026-11-25T11:51:54+00:00",
-      "score": 65.83985702555556,
+      "score": 65.51397815555555,
       "source_url": "https://www.coindesk.com/business/2026/11/25/italy-s-unicredit-debuts-six-year-bitcoin-certificate-with-100-capital-protection-and-65-cap",
       "source_text": "Italy’s UniCredit launches six-year bitcoin certificate with gains capped at 65% UniCredit brings bitcoin investing to its roughly 8 million retail customers in Italy, offering",
       "event_key": "news:17b3bb8d2b44a772",
@@ -343,7 +314,7 @@
       "headline": "Japan’s SBI, SMFG launch Solana venture for stablecoins, tokenization",
       "facts": {},
       "observed_at": "2026-11-25T11:49:54+00:00",
-      "score": 65.80656229027778,
+      "score": 65.48067712305556,
       "source_url": "https://cointelegraph.com/news/sbi-smfg-solana-global-stablecoin-tokenization",
       "source_text": "Japan’s SBI, SMFG launch Solana venture for stablecoins, tokenization SBI Solana Global plans to develop stablecoin payment infrastructure, explore AI agent micropayments and tokenize financial",
       "event_key": "news:db8a203c750f7dd1",
@@ -359,7 +330,7 @@
       "headline": "Bitcoin ETFs near $5B in record monthly outflows amid AI stock rout",
       "facts": {},
       "observed_at": "2026-11-25T11:12:26+00:00",
-      "score": 65.18211784583333,
+      "score": 64.85623267861111,
       "source_url": "https://cointelegraph.com/markets/bitcoin-etfs-near-record-5-billion-monthly-outflows",
       "source_text": "Bitcoin ETFs near $5B in record monthly outflows amid AI stock rout US spot Bitcoin ETFs have recorded $4.94 billion in November net outflows, exceeding",
       "event_key": "news:9788784c3fa8298f",
@@ -375,7 +346,7 @@
       "headline": "Bitcoin price may fall below $53K if bear-market history repeats",
       "facts": {},
       "observed_at": "2026-11-25T11:09:38+00:00",
-      "score": 65.13545117916667,
+      "score": 64.80956601194444,
       "source_url": "https://cointelegraph.com/markets/bitcoin-price-bear-market-history-repeats",
       "source_text": "Bitcoin price may fall below $53K if bear-market history repeats Bitcoin price downside targets focused on the $53,200 realized price as research saw pointed to",
       "event_key": "news:b952d088132e7cdb",
